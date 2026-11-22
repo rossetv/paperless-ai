@@ -79,8 +79,12 @@ export function Toast({
     <div
       role={role}
       className={rootClasses}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse') setHovered(true);
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType === 'mouse') setHovered(false);
+      }}
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);

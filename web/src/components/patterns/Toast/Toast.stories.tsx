@@ -8,6 +8,14 @@ const meta = {
     layout: 'centered',
   },
   tags: ['autodocs'],
+  decorators: [
+    // The toast is position: fixed; a transform gives each story its own containing block.
+    (Story) => (
+      <div style={{ transform: 'translateZ(0)', minHeight: '8rem', width: '100%' }}>
+        <Story />
+      </div>
+    ),
+  ],
   argTypes: {
     variant: { control: { type: 'select' }, options: ['info', 'error'] },
     message: { control: 'text' },

@@ -71,8 +71,20 @@ describe('Toast', () => {
   describe('auto-dismiss timer', () => {
     beforeEach(() => {
       vi.useFakeTimers();
+      // jsdom has no PointerEvent, so pointerType would be dropped from the init.
+      vi.stubGlobal(
+        'PointerEvent',
+        class extends MouseEvent {
+          readonly pointerType: string;
+          constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
+            super(type, init);
+            this.pointerType = init.pointerType ?? '';
+          }
+        },
+      );
     });
     afterEach(() => {
+      vi.unstubAllGlobals();
       vi.useRealTimers();
     });
 
@@ -100,18 +112,28 @@ describe('Toast', () => {
       act(() => {
         vi.advanceTimersByTime(2000);
       });
-      fireEvent.mouseEnter(toast);
+      fireEvent.pointerEnter(toast, { pointerType: 'mouse' });
       act(() => {
         vi.advanceTimersByTime(10000);
       });
       expect(onDismiss).not.toHaveBeenCalled();
-      fireEvent.mouseLeave(toast);
+      fireEvent.pointerLeave(toast, { pointerType: 'mouse' });
       act(() => {
         vi.advanceTimersByTime(999);
       });
       expect(onDismiss).not.toHaveBeenCalled();
       act(() => {
         vi.advanceTimersByTime(1);
+      });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not pause for a touch pointer', () => {
+      const onDismiss = vi.fn();
+      render(<Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={onDismiss} />);
+      fireEvent.pointerEnter(screen.getByRole('status'), { pointerType: 'touch' });
+      act(() => {
+        vi.advanceTimersByTime(3000);
       });
       expect(onDismiss).toHaveBeenCalledTimes(1);
     });
@@ -143,8 +165,8 @@ describe('Toast', () => {
       act(() => {
         screen.getByRole('button', { name: /dismiss/i }).focus();
       });
-      fireEvent.mouseEnter(toast);
-      fireEvent.mouseLeave(toast);
+      fireEvent.pointerEnter(toast, { pointerType: 'mouse' });
+      fireEvent.pointerLeave(toast, { pointerType: 'mouse' });
       act(() => {
         vi.advanceTimersByTime(10000);
       });
