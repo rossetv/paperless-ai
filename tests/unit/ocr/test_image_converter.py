@@ -649,15 +649,93 @@ class TestImagePixelCap:
 class TestImageMaxSide:
     """Image uploads are scaled to max_side like PDF pages are."""
 
-    @pytest.mark.parametrize("mode", ["P", "1", "LA", "RGBA"])
-    def test_large_image_in_every_page_safe_mode_can_be_scaled(self, mode):
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [("P", "RGB"), ("1", "L"), ("LA", "LA"), ("RGBA", "RGBA")],
+    )
+    def test_large_image_in_every_page_safe_mode_can_be_scaled(self, mode, expected):
         content = _encode([Image.new(mode, (300, 200))], "PNG")
 
         with open_page_source(content, "image/png", max_side=100) as source:
             page = source.load_page(0)
 
         assert page.size == (100, 67)
-        assert page.mode == mode
+        assert page.mode == expected
+
+    def test_shrunk_bilevel_scan_keeps_its_thin_strokes(self):
+        img = Image.new("1", (3000, 2000), 1)
+        for x in range(0, 3000, 10):
+            img.paste(0, (x, 0, x + 1, 2000))
+        content = _encode([img], "PNG")
+
+        with open_page_source(content, "image/png", max_side=1000) as source:
+            page = source.load_page(0)
+
+        # Averaged strokes give greys; nearest sampling gives only black and white.
+        assert sum(page.histogram()[1:255]) > 0
+
+    def test_shrunk_palette_image_with_transparency_keeps_its_alpha(self):
+        img = Image.new("P", (300, 200), 0)
+        img.putpalette([255, 255, 255, 0, 0, 0])
+        img.info["transparency"] = 0
+        content = _encode([img], "PNG")
+
+        with open_page_source(content, "image/png", max_side=100) as source:
+            page = source.load_page(0)
+
+        assert page.mode == "RGBA"
+
+    def test_sixteen_bit_scan_is_never_widened_to_32_bit_at_full_size(self):
+        content = _encode([_sixteen_bit(2000, 1000, ink=2000, paper=60000)], "TIFF")
+        widened: list[int] = []
+        original = Image.Image.convert
+
+        def spy(self, mode=None, *args, **kwargs):
+            if mode == "I":
+                widened.append(self.width * self.height)
+            return original(self, mode, *args, **kwargs)
+
+        with patch.object(Image.Image, "convert", spy):
+            with open_page_source(content, "image/tiff", max_side=500) as source:
+                page = source.load_page(0)
+
+        assert page.size == (500, 250) and page.mode == "L"
+        assert max(widened) < 2000 * 1000
+
+    def test_32bit_greyscale_is_shrunk_before_it_is_converted(self):
+        content = _encode([Image.new("I", (2000, 1000), 60000)], "TIFF")
+        converted: list[int] = []
+        original = Image.Image.convert
+
+        def spy(self, mode=None, *args, **kwargs):
+            converted.append(self.width * self.height)
+            return original(self, mode, *args, **kwargs)
+
+        with patch.object(Image.Image, "convert", spy):
+            with open_page_source(content, "image/tiff", max_side=500) as source:
+                page = source.load_page(0)
+
+        assert page.size == (500, 250) and page.mode == "L"
+        assert max(converted) <= 500 * 250
+
+    @pytest.mark.parametrize(
+        ("orientation", "size"), [(1, (30, 20)), (6, (20, 30)), (3, (30, 20))]
+    )
+    def test_exif_orientation_is_applied_to_an_uploaded_photo(self, orientation, size):
+        img = Image.new("RGB", (30, 20), "white")
+        img.paste("red", (0, 0, 10, 10))
+        exif = Image.Exif()
+        exif[0x0112] = orientation
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=100, exif=exif)
+
+        with open_page_source(buf.getvalue(), "image/jpeg") as source:
+            page = source.load_page(0)
+
+        assert page.size == size
+        red_corner = {1: (2, 2), 6: (17, 2), 3: (27, 17)}[orientation]
+        assert page.getpixel(red_corner)[0] > 200
+        assert page.getpixel(red_corner)[1] < 80
 
     @pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
     def test_large_image_is_scaled_to_max_side_keeping_aspect(self, fmt):
