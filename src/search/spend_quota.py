@@ -5,9 +5,9 @@ spend: a leaked API key could run queries back to back. :func:`check_quota`
 runs before the pipeline and :func:`record_usage` after it.
 
 With the quota at ``0`` (the default) or a cookie caller, both steps do no
-I/O. The cap is soft: concurrent queries can pass the check together and
-overshoot slightly, which is fine for a spend ceiling and avoids a
-reservation. A new UTC date is a new, empty bucket.
+I/O. The cap is soft: the check is repeated once a search slot is held, so the
+overshoot is at most one query per slot, which is fine for a spend ceiling and
+avoids a reservation. A new UTC date is a new, empty bucket.
 """
 
 from __future__ import annotations
