@@ -413,3 +413,36 @@ def test_paperless_rejecting_the_server_token_is_a_502_not_a_login_prompt(
     response = TestClient(app).get("/boom")
     assert response.status_code == 502
     assert expected in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("upstream_status", "event"),
+    [(401, "paperless.token_rejected"), (403, "paperless.permission_denied")],
+)
+def test_paperless_401_and_403_are_logged_as_different_events(
+    upstream_status: int,
+    event: str,
+) -> None:
+    import httpx
+    import structlog.testing
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from search.api import register_paperless_exception_handlers
+
+    app = FastAPI()
+    register_paperless_exception_handlers(app)
+
+    @app.get("/boom")
+    def boom() -> None:
+        request = httpx.Request("GET", "http://paperless/api/x")
+        raise httpx.HTTPStatusError(
+            "rejected",
+            request=request,
+            response=httpx.Response(upstream_status, request=request),
+        )
+
+    with structlog.testing.capture_logs() as logs:
+        TestClient(app).get("/boom")
+
+    assert [e["event"] for e in logs] == [event]
