@@ -745,19 +745,51 @@ class TestImageMaxSide:
         assert page.getpixel(red_corner)[0] > 200
         assert page.getpixel(red_corner)[1] < 80
 
+    @pytest.mark.parametrize("fmt", ["PNG", "TIFF"])
     @pytest.mark.parametrize("orientation", [2, 3, 4, 5, 6, 7, 8])
-    def test_orientation_pixels_match_pillows_own_transpose(self, orientation):
+    def test_orientation_pixels_match_pillows_own_transpose(self, orientation, fmt):
         img = Image.effect_noise((30, 20), 80).convert("RGB")
         exif = Image.Exif()
         exif[0x0112] = orientation
         buf = BytesIO()
-        img.save(buf, format="PNG", exif=exif)
+        img.save(buf, format=fmt, exif=exif)
         expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
 
-        with open_page_source(buf.getvalue(), "image/png") as source:
+        with open_page_source(buf.getvalue(), "image/x") as source:
             page = source.load_page(0)
 
         assert page.tobytes() == expected.convert("RGB").tobytes()
+
+    @pytest.mark.parametrize("orientation", [3, 6, 8])
+    @pytest.mark.parametrize("compression", [None, "tiff_lzw", "tiff_adobe_deflate"])
+    def test_a_tiff_is_turned_upright_once(self, orientation, compression):
+        img = Image.effect_noise((30, 20), 80).convert("RGB")
+        buf = BytesIO()
+        img.save(
+            buf,
+            format="TIFF",
+            compression=compression,
+            tiffinfo={0x0112: orientation},
+        )
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.size == expected.size
+        assert page.tobytes() == expected.convert("RGB").tobytes()
+
+    def test_a_bilevel_group4_tiff_is_turned_upright_once(self):
+        img = Image.effect_noise((30, 20), 80).convert("1")
+        buf = BytesIO()
+        img.save(buf, format="TIFF", compression="group4", tiffinfo={0x0112: 6})
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.size == expected.size == (20, 30)
+        assert page.convert("L").tobytes() == expected.convert("L").tobytes()
 
     def test_a_damaged_exif_tag_does_not_stop_a_rotated_jpeg_opening(self):
         # Orientation 6 plus tag 0x0115 typed ASCII: rewriting this EXIF raises.

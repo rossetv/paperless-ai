@@ -225,6 +225,8 @@ def _check_pixel_cap(image: Image.Image) -> None:
 def _apply_exif_orientation(image: Image.Image) -> Image.Image:
     """Return *image* itself, or a rotated/flipped copy when EXIF says it is not upright."""
     try:
+        # Loaded first: Pillow turns a TIFF upright itself on load and drops its tag.
+        image.load()
         orientation = image.getexif().get(_EXIF_ORIENTATION, 1)
     except (SyntaxError, ValueError, struct.error):
         # A junk EXIF block means "upright", not an undecodable image.
