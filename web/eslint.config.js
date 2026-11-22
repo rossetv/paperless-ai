@@ -70,15 +70,14 @@ export default [
       // Imports flow downward only; within components/ the tiers stack as
       // patterns → layout → primitives. hooks/, styles/ and lib/ are leaves
       // every component tier may use.
-      // Imports flow downward only; within components/ the tiers stack as
-      // patterns → layout → primitives. hooks/, styles/ and lib/ are leaves
-      // every component tier may use.
       'boundaries/dependencies': [
         'error',
         {
           default: 'disallow',
           message:
-            'Layer-boundary violation: {{ from.element.type }} cannot import from {{ to.element.type }}. ' +
+            // The composition root is matched by file category, so it has no
+            // element type; exactly one of the two fields is filled.
+            'Layer-boundary violation: {{ from.element.type }}{{ from.file.categories.[0] }} cannot import from {{ to.element.type }}. ' +
             'Dependencies must flow downward only.',
           policies: [
             // styles/ has no policy: under the default it imports nothing.
