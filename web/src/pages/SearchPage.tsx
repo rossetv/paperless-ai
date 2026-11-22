@@ -83,10 +83,36 @@ export function SearchPage(): React.ReactElement {
     }
   }, [query, state.query, state.status, state.error, queryClient]);
 
+  // Each screen has its own search field, so a submit unmounts the one the
+  // person typed in; focus goes back to the next enabled field that appears.
+  const refocusField = React.useRef(false);
+
   function runSearch(submitted: string): void {
+    const active = document.activeElement;
+    refocusField.current =
+      active instanceof HTMLElement &&
+      (active.matches('input[type="search"]') || active.getAttribute('aria-label') === 'Search');
     setQuery(submitted.trim());
     setHighlightedIndex(undefined);
   }
+
+  const settled =
+    state.query === query.trim() && (state.status === 'done' || state.status === 'error');
+  React.useEffect(() => {
+    if (!refocusField.current) {
+      return;
+    }
+    const field = document.querySelector<HTMLInputElement>('input[type="search"]:not(:disabled)');
+    if (field !== null) {
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    }
+    // A field that is not there yet (the loading screen's is disabled) keeps the
+    // request pending until the search settles.
+    if (field !== null || settled) {
+      refocusField.current = false;
+    }
+  });
 
   function clearFilters(): void {
     setFilters(EMPTY_FILTERS);
