@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { SearchResponse } from '../../../api/types';
 import { EMPTY_TELEMETRY } from '../../../api/types/__fixtures__/searchResponse';
 import { ResultsScreen } from './ResultsScreen';

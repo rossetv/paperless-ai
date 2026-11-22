@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { LoginScreen } from './LoginScreen';
 
 /** Storybook does not wire TanStack Query, so this is a visual reference only. */

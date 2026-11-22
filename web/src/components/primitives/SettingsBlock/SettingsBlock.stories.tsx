@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { SettingsBlock } from './SettingsBlock';
 import { SettingsCard } from '../SettingsCard/SettingsCard';
 
