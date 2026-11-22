@@ -667,6 +667,35 @@ describe('DocumentScreen', () => {
     expect(sentPatches()[1]).toEqual({ title: 'Renamed', correspondent_id: 2 });
   });
 
+  it('sends an edit queued behind a save after the user has left the page', async () => {
+    const first = deferred<LibraryDocument>();
+    mockPatchDocument.mockReturnValueOnce(first.promise);
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/document/934']}>
+          <Routes>
+            <Route
+              path="/document/934"
+              element={<DocumentScreen document={DOC} parent="library" parentSearch="" role="member" />}
+            />
+            <Route path="/library" element={<p>library page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    renameTitle('Renamed');
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
+    fireEvent.click(screen.getByText('Revenue.ie'));
+    fireEvent.click(screen.getByRole('link', { name: /library/i }));
+    expect(await screen.findByText('library page')).toBeInTheDocument();
+
+    first.resolve(DOC);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ correspondent_id: 2 });
+  });
+
   it('retry button re-sends the failed PATCH', async () => {
     mockPatchDocument.mockRejectedValueOnce(new Error('network down'));
     renderScreen({ role: 'member' });

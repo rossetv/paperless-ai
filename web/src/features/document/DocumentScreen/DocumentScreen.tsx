@@ -160,21 +160,21 @@ export function DocumentScreen({
     send(merged);
   }
 
+  // mutateAsync, not mutate's callbacks: TanStack skips those after unmount, and
+  // an edit queued behind a save must still be sent if the user leaves the page.
   function send(patch: DocumentPatch): void {
     inFlightRef.current = true;
-    update.mutate(
-      { id: document.id, patch },
-      {
-        onError: () => {
-          failedRef.current = { ...patch, ...pendingRef.current };
-          pendingRef.current = null;
-        },
-        onSettled: () => {
-          inFlightRef.current = false;
-          const next = pendingRef.current;
-          pendingRef.current = null;
-          if (next !== null) send(next);
-        },
+    update.mutateAsync({ id: document.id, patch }).then(
+      () => {
+        inFlightRef.current = false;
+        const next = pendingRef.current;
+        pendingRef.current = null;
+        if (next !== null) send(next);
+      },
+      () => {
+        inFlightRef.current = false;
+        failedRef.current = { ...patch, ...pendingRef.current };
+        pendingRef.current = null;
       },
     );
   }
