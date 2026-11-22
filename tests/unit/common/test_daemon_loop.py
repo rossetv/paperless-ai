@@ -658,14 +658,17 @@ def test_a_queued_document_is_not_started_once_shutdown_is_requested() -> None:
     assert started == [1]
 
 
-def test_default_wait_returns_at_once_when_shutdown_is_requested():
+def test_default_wait_returns_soon_after_shutdown_is_requested_mid_wait():
+    import threading
+
     from common.shutdown import request_shutdown, reset_shutdown
 
     calls = []
+    timer = threading.Timer(0.1, request_shutdown)
 
     def fetch_work():
         calls.append(1)
-        request_shutdown()
+        timer.start()  # fires while the loop sits in its 30s wait
         return []
 
     start = time.monotonic()
@@ -678,7 +681,8 @@ def test_default_wait_returns_at_once_when_shutdown_is_requested():
             max_workers=1,
         )
     finally:
+        timer.cancel()
         reset_shutdown()
 
     assert calls == [1]
-    assert time.monotonic() - start < 5
+    assert time.monotonic() - start < 3
