@@ -47,6 +47,7 @@ export function SearchErrorScreen({
         {/* Keyed by `query` so it re-seeds whenever a new search is attempted. */}
         <SearchField
           key={query}
+          ariaLabel="What do you want to know?"
           id="search-error-search"
           defaultValue={query}
           onSubmit={onSearch}

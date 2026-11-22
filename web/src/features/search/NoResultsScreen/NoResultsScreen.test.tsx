@@ -77,6 +77,13 @@ function renderScreen(
 }
 
 describe('NoResultsScreen', () => {
+  it('names the search field for assistive tech', () => {
+    renderScreen();
+    expect(
+      screen.getByRole('searchbox', { name: 'What do you want to know?' }),
+    ).toBeInTheDocument();
+  });
+
   it('recaps the query in the search field', () => {
     renderScreen();
     expect(

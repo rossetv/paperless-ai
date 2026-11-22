@@ -86,6 +86,7 @@ export function LoadingScreen({
       <Stack direction="vertical" gap={10}>
         {/* Read-only query recap */}
         <SearchField
+          ariaLabel="What do you want to know?"
           id="loading-search"
           value={query}
           disabled

@@ -109,6 +109,7 @@ export function NoResultsScreen({
         {/* Editable query recap */}
         <SearchField
           key={query}
+          ariaLabel="What do you want to know?"
           id="no-results-search"
           defaultValue={query}
           onSubmit={onSearch}

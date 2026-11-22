@@ -10,6 +10,8 @@ export interface SearchFieldProps {
   id: string;
   /** Visible label text rendered above the field. Omit to label externally. */
   label?: string;
+  /** Accessible name when there is no visible label and no placeholder to name the field. */
+  ariaLabel?: string;
   placeholder?: string;
   /** Controlled value. Supply alongside onChange for controlled usage. */
   value?: string;
@@ -38,6 +40,7 @@ export interface SearchFieldProps {
 export function SearchField({
   id,
   label,
+  ariaLabel,
   placeholder,
   value,
   defaultValue = '',
@@ -91,6 +94,7 @@ export function SearchField({
             id={inputId}
             type="search"
             role="searchbox"
+            aria-label={ariaLabel}
             placeholder={placeholder}
             value={currentValue}
             disabled={disabled}

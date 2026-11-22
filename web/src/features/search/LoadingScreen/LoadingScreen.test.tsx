@@ -72,6 +72,13 @@ function renderLoading(
 }
 
 describe('LoadingScreen', () => {
+  it('names the search field for assistive tech', () => {
+    renderLoading();
+    expect(
+      screen.getByRole('searchbox', { name: 'What do you want to know?' }),
+    ).toBeInTheDocument();
+  });
+
   it('recaps the current query', () => {
     renderLoading();
     expect(
