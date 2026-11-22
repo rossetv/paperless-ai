@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { LibraryDocument } from '../../../api/types';
+import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useUpdateDocument,
@@ -18,8 +18,10 @@ import {
   useRetranscribeDocument,
   useDeleteDocument,
 } from '../../../api/hooks';
+import { queryKeys } from '../../../api/hooks/keys';
 import { documentPdfUrl } from '../../../api/client';
 import { Card } from '../../../components/primitives/Card/Card';
+import { Toast, type ToastVariant } from '../../../components/patterns/Toast/Toast';
 import { DocumentTitle } from '../DocumentTitle/DocumentTitle';
 import { DocumentActions } from '../DocumentActions/DocumentActions';
 import { PdfViewerCard } from '../PdfViewerCard/PdfViewerCard';
@@ -39,6 +41,18 @@ const FILENAME_ILLEGAL_RE = /[/\\:*?"<>|]/g;
 function toDownloadFilename(title: string | null, id: number): string {
   const sanitised = (title ?? '').replace(FILENAME_ILLEGAL_RE, '').trim();
   return sanitised.length > 0 ? `${sanitised}.pdf` : `Document ${id}.pdf`;
+}
+
+/** Ids for every name, or null if any name is not in `tags`. */
+function resolveTagIds(names: string[], tags: TaxonomyItem[]): number[] | null {
+  const byName = new Map(tags.map((t) => [t.name, t.id]));
+  const ids: number[] = [];
+  for (const name of names) {
+    const id = byName.get(name);
+    if (id === undefined) return null;
+    ids.push(id);
+  }
+  return ids;
 }
 
 export type { Role };
@@ -81,6 +95,7 @@ export function DocumentScreen({
 
   const qc = useQueryClient();
   const canEdit = role !== 'readonly';
+  const [toast, setToast] = React.useState<{ message: string; variant: ToastVariant } | null>(null);
 
   // The last attempted patch, so the retry button can re-fire it.
   const lastAttemptRef = React.useRef<{ id: number; patch: Parameters<typeof update.mutate>[0]['patch'] } | null>(null);
@@ -137,25 +152,49 @@ export function DocumentScreen({
     mutate({ id: document.id, patch: { title: next === '' ? null : next } });
   }
 
+  /**
+   * A tag patch replaces the whole set, so every tag the document has must
+   * resolve to an id first; a stale list is refetched once, and if a name is
+   * still unknown nothing is sent rather than dropping that tag.
+   */
+  function changeTags(change: (ids: number[]) => number[], known: TaxonomyItem[] = []): void {
+    // The latest cached document, not the render-time prop: two quick creates
+    // would otherwise each overwrite the other's tag.
+    const latestNames = (): string[] =>
+      qc.getQueryData<LibraryDocument>(queryKeys.document(document.id))?.tags ?? document.tags;
+    const send = (ids: number[]): void => {
+      mutate({ id: document.id, patch: { tags: change(ids) } });
+    };
+
+    const ids = resolveTagIds(latestNames(), [...(tags.data ?? []), ...known]);
+    if (ids !== null) {
+      send(ids);
+      return;
+    }
+    void tags.refetch().then((result) => {
+      const fresh = resolveTagIds(latestNames(), [...(result.data ?? []), ...known]);
+      if (fresh === null) {
+        setToast({
+          message: "Couldn't update tags: some of this document's tags are unknown. Reload and try again.",
+          variant: 'error',
+        });
+        return;
+      }
+      send(fresh);
+    });
+  }
+
   function addTag(id: number): void {
-    mutate({ id: document.id, patch: { tags: [...currentTagIds, id] } });
+    changeTags((ids) => (ids.includes(id) ? ids : [...ids, id]));
   }
 
   function removeTag(id: number): void {
-    mutate({ id: document.id, patch: { tags: currentTagIds.filter((t) => t !== id) } });
+    changeTags((ids) => ids.filter((t) => t !== id));
   }
 
   function createTagThenAdd(name: string): void {
     createTag.mutate(name, {
-      onSuccess: (created) => {
-        // Read the latest cached document, not the captured `currentTagIds`: two
-        // quick creates would otherwise each overwrite the other's tag.
-        const latest = qc.getQueryData<{ id: number; tags: string[] }>(['document', document.id]);
-        const latestTagIds = ((latest?.tags ?? document.tags) as string[])
-          .map((tagName) => tagsByName.get(tagName)?.id)
-          .filter((id): id is number => id !== undefined);
-        mutate({ id: document.id, patch: { tags: [...latestTagIds, created.id] } });
-      },
+      onSuccess: (created) => changeTags((ids) => [...ids, created.id], [created]),
     });
   }
 
@@ -248,7 +287,7 @@ export function DocumentScreen({
             <TagEditor
               selectedIds={currentTagIds}
               availableTags={tags.data ?? []}
-              canEdit={canEdit}
+              canEdit={canEdit && tags.data !== undefined}
               onAdd={addTag}
               onRemove={removeTag}
               onCreate={createTagThenAdd}
@@ -275,6 +314,14 @@ export function DocumentScreen({
           />
         </aside>
       </div>
+
+      {toast !== null && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </main>
   );
 }

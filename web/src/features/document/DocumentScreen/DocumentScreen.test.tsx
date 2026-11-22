@@ -317,6 +317,35 @@ describe('DocumentScreen', () => {
     expect(call.patch.tags).not.toContain(101); // 101 = ireland
   });
 
+  it('does not offer tag editing before the tag list has loaded', () => {
+    mockUseTags.mockReturnValue({ ...queryOk(undefined), isPending: true, isSuccess: false, status: 'pending' });
+    renderScreen({ role: 'member' });
+    expect(screen.queryByRole('button', { name: /add tag/i })).not.toBeInTheDocument();
+  });
+
+  it('refetches a stale tag list so a tag missing from it is not dropped', async () => {
+    const stale = ALL_TAGS.filter((t) => t.name !== 'payroll');
+    const refetch = vi.fn().mockResolvedValue({ data: ALL_TAGS });
+    mockUseTags.mockReturnValue({ ...queryOk(stale), refetch });
+    const mutate = vi.fn();
+    renderScreen({ role: 'member', mutate });
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    await waitFor(() => expect(mutate).toHaveBeenCalled());
+    const call = mutate.mock.calls[0]?.[0] as { patch: { tags: number[] } };
+    expect(call.patch.tags).toEqual([100, 102]);
+  });
+
+  it('sends no tag patch and shows an error when a document tag cannot be resolved', async () => {
+    const stale = ALL_TAGS.filter((t) => t.name !== 'payroll');
+    const refetch = vi.fn().mockResolvedValue({ data: stale });
+    mockUseTags.mockReturnValue({ ...queryOk(stale), refetch });
+    const mutate = vi.fn();
+    renderScreen({ role: 'member', mutate });
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/tags/i);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it('readonly user sees no edit affordances on the title', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.getByRole('heading', { name: 'eBay Payslip 05/2026' })).toBeInTheDocument();
