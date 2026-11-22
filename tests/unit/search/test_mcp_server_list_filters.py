@@ -47,12 +47,12 @@ def _build_app(core: MagicMock):
 
 @pytest.mark.anyio
 async def test_list_filters_returns_catalog_with_counts() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool("list_filters", {})
 
     core.list_filters.assert_called_once()
@@ -68,7 +68,7 @@ async def test_list_filters_returns_catalog_with_counts() -> None:
 
 @pytest.mark.anyio
 async def test_list_filters_sanitises_store_failure() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     core.list_filters.side_effect = RuntimeError(
@@ -76,7 +76,7 @@ async def test_list_filters_sanitises_store_failure() -> None:
     )
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool("list_filters", {})
 
     assert result.isError is True

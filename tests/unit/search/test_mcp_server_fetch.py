@@ -79,12 +79,12 @@ def _build_app(core: MagicMock, client: _StubClient):
 
 @pytest.mark.anyio
 async def test_fetch_documents_returns_content_and_closes_client() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core, client = _make_core({1: {"content": "the whole document text"}})
     app = _build_app(core, client)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as session:
+    async with connect_client(app._server) as session:
         result = await session.call_tool("fetch_documents", {"document_ids": [1]})
 
     payload = json.loads(result.content[0].text)
@@ -98,12 +98,12 @@ async def test_fetch_documents_returns_content_and_closes_client() -> None:
 
 @pytest.mark.anyio
 async def test_fetch_documents_truncates_large_content() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core, client = _make_core({1: {"content": "x" * 60000}})
     app = _build_app(core, client)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as session:
+    async with connect_client(app._server) as session:
         result = await session.call_tool("fetch_documents", {"document_ids": [1]})
 
     doc = json.loads(result.content[0].text)["documents"][0]
@@ -114,12 +114,12 @@ async def test_fetch_documents_truncates_large_content() -> None:
 
 @pytest.mark.anyio
 async def test_fetch_documents_unknown_id_is_per_id_error() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core, client = _make_core({})  # any id → 404
     app = _build_app(core, client)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as session:
+    async with connect_client(app._server) as session:
         result = await session.call_tool("fetch_documents", {"document_ids": [9]})
 
     doc = json.loads(result.content[0].text)["documents"][0]
@@ -129,12 +129,12 @@ async def test_fetch_documents_unknown_id_is_per_id_error() -> None:
 
 @pytest.mark.anyio
 async def test_fetch_documents_rejects_too_many_ids() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core, client = _make_core({})
     app = _build_app(core, client)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as session:
+    async with connect_client(app._server) as session:
         result = await session.call_tool(
             "fetch_documents", {"document_ids": [1, 2, 3, 4, 5, 6]}
         )
@@ -145,13 +145,29 @@ async def test_fetch_documents_rejects_too_many_ids() -> None:
 
 @pytest.mark.anyio
 async def test_fetch_documents_rejects_empty_ids() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core, client = _make_core({})
     app = _build_app(core, client)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as session:
+    async with connect_client(app._server) as session:
         result = await session.call_tool("fetch_documents", {"document_ids": []})
 
     assert result.isError is True
     core.fetch_documents.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_fetch_documents_refusal_tells_the_caller_why() -> None:
+    from tests.helpers.mcp_client import connect_client
+
+    core, client = _make_core({})
+    app = _build_app(core, client)
+
+    async with connect_client(app._server) as session:
+        result = await session.call_tool(
+            "fetch_documents", {"document_ids": [1, 2, 3, 4, 5, 6]}
+        )
+
+    assert result.isError is True
+    assert "at most 5" in result.content[0].text

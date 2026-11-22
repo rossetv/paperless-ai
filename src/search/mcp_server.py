@@ -14,7 +14,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import Response
@@ -140,6 +141,44 @@ class _BearerAuthMiddleware:
             app_db.close()
 
 
+class _SseAcceptOnGetMiddleware:
+    """Answer 406 to a GET whose Accept header does not name ``text/event-stream``.
+
+    The transport also takes ``*/*`` there, and in stateless mode the GET stream
+    it then opens never sends anything or ends, so a plain GET would hang.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] == "GET":
+            accept = Request(scope).headers.get("accept", "")
+            if not any(
+                media_type.strip().startswith("text/event-stream")
+                for media_type in accept.split(",")
+            ):
+                response = Response(
+                    content=json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": "server-error",
+                            "error": {
+                                "code": -32600,
+                                "message": "Not Acceptable: Client must accept "
+                                "text/event-stream",
+                            },
+                        },
+                        separators=(",", ":"),
+                    ),
+                    status_code=406,
+                    media_type="application/json",
+                )
+                await response(scope, receive, send)
+                return
+        await self._app(scope, receive, send)
+
+
 def _serialise_result(result: SearchResult) -> str:
     """Serialise a SearchResult to JSON, dropping the SPA-only reasoning trace."""
     payload = dataclasses.asdict(result)
@@ -184,11 +223,14 @@ def _run_search_tool(
     """Normalise the query, run *core_call* and serialise the result.
 
     A core failure is logged server-side and raised to the client as a
-    sanitised :class:`ValueError` with no internal detail.
+    sanitised :class:`ToolError` with no internal detail.
     """
     # Outside the try so an invalid query gets its own message, not the
     # sanitised fallback.
-    query = normalise_query(query)
+    try:
+        query = normalise_query(query)
+    except ValueError as exc:
+        raise ToolError(str(exc)) from None
 
     try:
         ui_filters = _to_search_filters(filters)
@@ -197,20 +239,35 @@ def _run_search_tool(
     except Exception:
         log.exception(error_event)
         # The original may carry filesystem paths or internal state.
-        raise ValueError("search failed — see server logs") from None
+        raise ToolError("search failed — see server logs") from None
 
 
 class _McpApp:
-    """The auth-wrapped ASGI app, keeping the FastMCP instance for tests."""
+    """The auth-wrapped ASGI app, keeping the MCPServer instance for tests."""
 
     def __init__(
         self,
-        fastmcp: FastMCP,
+        server: MCPServer,
         app_db_path: str,
     ) -> None:
-        self._fastmcp = fastmcp
-        starlette_app = fastmcp.streamable_http_app()
-        self._asgi_app: ASGIApp = _BearerAuthMiddleware(starlette_app, app_db_path)
+        self._server = server
+        starlette_app = server.streamable_http_app(
+            stateless_http=True,
+            # streamable_http_path stays at the default "/mcp" because
+            # search.api.create_app attaches this app as an exact-path Route,
+            # which forwards the path unchanged.
+            # The transport's DNS-rebinding check auto-enables a localhost-only
+            # Host allowlist, which 421s every request through the reverse
+            # proxy. It is redundant: auth runs before the transport, the proxy
+            # controls Host, and the SameSite=Strict cookie plus CSP
+            # connect-src 'self' block cross-origin browser calls.
+            transport_security=TransportSecuritySettings(
+                enable_dns_rebinding_protection=False
+            ),
+        )
+        self._asgi_app: ASGIApp = _BearerAuthMiddleware(
+            _SseAcceptOnGetMiddleware(starlette_app), app_db_path
+        )
 
     @property
     def session_manager(self) -> StreamableHTTPSessionManager:
@@ -219,14 +276,14 @@ class _McpApp:
         A parent app never runs an attached sub-app's lifespan, so
         ``search.api.create_app`` must run this manager itself.
         """
-        return self._fastmcp.session_manager
+        return self._server.session_manager
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self._asgi_app(scope, receive, send)
 
 
 def _register_search_tools(
-    mcp: FastMCP,
+    mcp: MCPServer,
     resolve_core: Callable[[str], SearchCore],
     app_db_path: str,
     search_semaphore: LazySemaphore,
@@ -262,7 +319,7 @@ def _register_search_tools(
                     api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
                 )
             except QuotaExceededError as exc:
-                raise ValueError(
+                raise ToolError(
                     "Daily LLM token quota for this API key has been reached; "
                     "it resets at UTC midnight."
                 ) from exc
@@ -412,7 +469,7 @@ def _register_search_tools(
             except Exception:
                 # A store fault may carry a filesystem path; sanitise it.
                 log.exception("mcp.list_filters_error")
-                raise ValueError("list_filters failed — see server logs") from None
+                raise ToolError("list_filters failed — see server logs") from None
             return json.dumps(
                 {
                     "correspondents": [
@@ -452,12 +509,15 @@ def _register_search_tools(
     ) -> str:
         """Call core.keyword_search (FTS/browse, zero LLM) and return JSON."""
         if query is not None and len(query) > MAX_QUERY_LENGTH:
-            raise ValueError(
+            raise ToolError(
                 f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
             )
         bounded_limit = max(1, min(int(limit), 50))
         bounded_offset = max(0, int(offset))
-        ui_filters = _to_search_filters(filters)
+        try:
+            ui_filters = _to_search_filters(filters)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
 
         def _build(core: SearchCore) -> str:
             try:
@@ -467,7 +527,7 @@ def _register_search_tools(
             except Exception:
                 # A store fault may carry a filesystem path; sanitise it.
                 log.exception("mcp.keyword_search_error")
-                raise ValueError("keyword search failed — see server logs") from None
+                raise ToolError("keyword search failed — see server logs") from None
             base = core.settings.PAPERLESS_PUBLIC_URL
             return json.dumps(
                 {
@@ -508,12 +568,12 @@ def _register_search_tools(
         # Validate before dispatch so a bad request never opens a Paperless
         # connection.
         if not document_ids:
-            raise ValueError("document_ids must contain at least one id")
+            raise ToolError("document_ids must contain at least one id")
         if len(document_ids) > 5:
-            raise ValueError("fetch_documents accepts at most 5 document_ids per call")
+            raise ToolError("fetch_documents accepts at most 5 document_ids per call")
         ids = [int(i) for i in document_ids]
         if any(i <= 0 for i in ids):
-            raise ValueError("document_ids must be positive integers")
+            raise ToolError("document_ids must be positive integers")
 
         def _build(core: SearchCore) -> str:
             client = paperless_factory(core.settings)
@@ -540,7 +600,7 @@ def build_mcp_app(
     *search_semaphore* is shared with the HTTP search route so
     ``SEARCH_MAX_CONCURRENT`` is one cap across both surfaces.
     """
-    mcp = FastMCP(
+    mcp = MCPServer(
         name="paperless-search",
         instructions=(
             "Search and read a personal Paperless-ngx document archive. Five "
@@ -571,18 +631,6 @@ def build_mcp_app(
             "Default to semantic_search. Discover filters with list_filters. "
             "Read whole documents with fetch_documents. Reach for deep_search "
             "only with a concrete reason the free tools cannot serve."
-        ),
-        stateless_http=True,
-        # streamable_http_path stays at the default "/mcp" because
-        # search.api.create_app attaches this app as an exact-path Route, which
-        # forwards the path unchanged.
-        # FastMCP's DNS-rebinding check auto-enables a localhost-only Host
-        # allowlist, which 421s every request through the reverse proxy. It is
-        # redundant: auth runs before the transport, the proxy controls Host,
-        # and the SameSite=Strict cookie plus CSP connect-src 'self' block
-        # cross-origin browser calls.
-        transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=False
         ),
     )
     _register_search_tools(
