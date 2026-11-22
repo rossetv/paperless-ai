@@ -4,9 +4,11 @@ A browser marks each request with ``Sec-Fetch-Site``. A state-changing request
 that carries the session cookie and is marked ``same-site`` or ``cross-site``
 did not come from the app's own pages, so it is answered 403 before routing.
 ``same-origin``, ``none`` (typed or bookmarked) and an absent header (older
-browsers, non-browser clients) pass, as does any request carrying an API key:
-a page on another origin cannot attach one without a CORS grant the app never
-gives. Host and Origin are not compared, so a reverse proxy changes nothing.
+browsers, non-browser clients) pass, as does a request carrying an API key and
+no session cookie: a page on another origin cannot attach a key without a CORS
+grant the app never gives. The cookie decides, whatever Authorization holds,
+because the session cookie is tried before the key. Host and Origin are not
+compared, so a reverse proxy changes nothing.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from starlette.requests import cookie_parser
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from search.auth import SESSION_COOKIE_NAME, extract_bearer
+from search.auth import SESSION_COOKIE_NAME
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _OTHER_SITE = frozenset({"same-site", "cross-site"})
@@ -42,19 +44,14 @@ class FetchSiteMiddleware:
 
         fetch_site = ""
         cookies: list[str] = []
-        authorization: str | None = None
         for name, value in scope["headers"]:
             if name == b"sec-fetch-site":
                 fetch_site = value.decode("latin-1").strip().lower()
             elif name == b"cookie":
                 cookies.append(value.decode("latin-1"))
-            elif name == b"authorization":
-                authorization = value.decode("latin-1")
 
-        if (
-            fetch_site in _OTHER_SITE
-            and extract_bearer(authorization) is None
-            and SESSION_COOKIE_NAME in cookie_parser("; ".join(cookies))
+        if fetch_site in _OTHER_SITE and SESSION_COOKIE_NAME in cookie_parser(
+            "; ".join(cookies)
         ):
             await _forbidden()(scope, receive, send)
             return

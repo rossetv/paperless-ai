@@ -59,13 +59,30 @@ def test_a_cookie_session_get_marked_cross_site_is_unaffected(tmp_path: Path) ->
     assert response.status_code == 200
 
 
-def test_an_api_key_post_marked_cross_site_is_accepted(tmp_path: Path) -> None:
+def test_an_api_key_post_without_a_session_cookie_marked_cross_site_is_accepted(
+    tmp_path: Path,
+) -> None:
     client, raw_key = _logged_in_client(tmp_path)
+    client.cookies.clear()
     response = client.post(
         "/api/reconcile",
         headers={"Sec-Fetch-Site": "cross-site", "Authorization": f"Bearer {raw_key}"},
     )
     assert response.status_code == 202
+
+
+@pytest.mark.parametrize("fetch_site", ["cross-site", "same-site"])
+def test_a_cookie_session_post_with_any_bearer_value_marked_from_another_site_gets_403(
+    tmp_path: Path, fetch_site: str
+) -> None:
+    client, raw_key = _logged_in_client(tmp_path)
+    for bearer in (raw_key, "not-a-real-key"):
+        response = client.post(
+            "/api/reconcile",
+            headers={"Sec-Fetch-Site": fetch_site, "Authorization": f"Bearer {bearer}"},
+        )
+        assert response.status_code == 403
+    assert not (tmp_path / "reconcile.request").exists()
 
 
 def test_a_post_without_a_session_cookie_marked_cross_site_reaches_auth() -> None:
