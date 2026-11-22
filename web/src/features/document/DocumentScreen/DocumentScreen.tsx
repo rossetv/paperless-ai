@@ -134,8 +134,8 @@ export function DocumentScreen({
   const notifyError = (fallback: string) => (err: Error): void =>
     setToast({ message: errorDetail(err, fallback), variant: 'error' });
 
-  // The last attempted patch, so the retry button can re-fire it.
-  const lastAttemptRef = React.useRef<DocumentPatch | null>(null);
+  // The patch of a failed save; the retry, or the next edit, sends it again.
+  const failedRef = React.useRef<DocumentPatch | null>(null);
   const inFlightRef = React.useRef(false);
   // Edits made while a save is in flight, merged so later edits to a field win.
   const pendingRef = React.useRef<DocumentPatch | null>(null);
@@ -151,22 +151,22 @@ export function DocumentScreen({
 
   function save(patch: DocumentPatch): void {
     keepUnsaved({ ...unsavedRef.current, ...patch });
+    const merged = { ...failedRef.current, ...pendingRef.current, ...patch };
+    failedRef.current = null;
     if (inFlightRef.current) {
-      pendingRef.current = { ...pendingRef.current, ...patch };
+      pendingRef.current = merged;
       return;
     }
-    send(patch);
+    send(merged);
   }
 
   function send(patch: DocumentPatch): void {
-    lastAttemptRef.current = patch;
     inFlightRef.current = true;
     update.mutate(
       { id: document.id, patch },
       {
         onError: () => {
-          // Retry sends the failed patch together with anything queued behind it.
-          lastAttemptRef.current = { ...patch, ...pendingRef.current };
+          failedRef.current = { ...patch, ...pendingRef.current };
           pendingRef.current = null;
         },
         onSettled: () => {
@@ -310,9 +310,7 @@ export function DocumentScreen({
         {saveStatus === 'error' ? (
           <SaveStatusPill
             status={saveStatus}
-            onRetry={() => {
-              if (lastAttemptRef.current !== null) send(lastAttemptRef.current);
-            }}
+            onRetry={() => save({})}
           />
         ) : (
           <SaveStatusPill status={saveStatus} />

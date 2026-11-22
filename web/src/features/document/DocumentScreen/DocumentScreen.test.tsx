@@ -638,6 +638,35 @@ describe('DocumentScreen', () => {
     expect(screen.getByRole('button', { name: 'Edit title: Renamed' })).toBeInTheDocument();
   });
 
+  it('a tag edit made while a retry is in flight keeps the tag being retried', async () => {
+    const retry = deferred<LibraryDocument>();
+    mockPatchDocument.mockRejectedValueOnce(new Error('network down')).mockReturnValueOnce(retry.promise);
+    renderScreen({ role: 'member' });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /couldn't save/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    retry.resolve(DOC);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(3));
+    expect(sentPatches()[2]).toEqual({ tags: [100, 102, 103] });
+  });
+
+  it('an edit made after a failed save is sent together with the failed change', async () => {
+    mockPatchDocument.mockRejectedValueOnce(new Error('network down'));
+    renderScreen({ role: 'member' });
+
+    renameTitle('Renamed');
+    await screen.findByRole('button', { name: /couldn't save/i });
+    fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
+    fireEvent.click(screen.getByText('Revenue.ie'));
+
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ title: 'Renamed', correspondent_id: 2 });
+  });
+
   it('retry button re-sends the failed PATCH', async () => {
     mockPatchDocument.mockRejectedValueOnce(new Error('network down'));
     renderScreen({ role: 'member' });
