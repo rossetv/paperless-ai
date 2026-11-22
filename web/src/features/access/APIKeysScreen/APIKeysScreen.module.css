@@ -14,7 +14,6 @@
 
 .key-meta {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-6);
   margin-top: var(--spacing-3);
@@ -23,8 +22,15 @@
   color: var(--colour-text-tertiary);
 }
 
-.key-prefix {
-  white-space: nowrap;
+/* Phones: the request count drops under the key prefix instead of widening the row. */
+@media (width <= 699.98px) {
+  .key-meta {
+    flex-wrap: wrap;
+  }
+
+  .key-prefix {
+    white-space: nowrap;
+  }
 }
 
 .key-count {
@@ -39,6 +45,7 @@
 }
 
 .expiry-expired {
+  white-space: nowrap;
   color: var(--colour-status-danger-fg);
 }
 
