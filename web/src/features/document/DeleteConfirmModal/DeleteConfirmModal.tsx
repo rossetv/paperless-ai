@@ -9,6 +9,10 @@ export interface DeleteConfirmModalProps {
   onCancel: () => void;
   /** The caller runs the actual DELETE mutation. */
   onConfirm: () => void;
+  /** True while the delete runs: both buttons are disabled meanwhile. */
+  pending?: boolean;
+  /** Why the last delete failed, shown inside the dialog. */
+  error?: string | null;
 }
 
 /**
@@ -19,6 +23,8 @@ export function DeleteConfirmModal({
   title,
   onCancel,
   onConfirm,
+  pending = false,
+  error = null,
 }: DeleteConfirmModalProps): React.ReactElement {
   return (
     <Modal isOpen title="Delete document" onClose={onCancel}>
@@ -26,12 +32,17 @@ export function DeleteConfirmModal({
         Delete <strong>{title}</strong>? This deletes the document in
         Paperless-ngx — it cannot be undone here.
       </p>
+      {error !== null && (
+        <p className={styles['error']} role="alert">
+          {error}
+        </p>
+      )}
       <div className={styles['buttons']}>
-        <Button variant="ghost" onClick={onCancel}>
+        <Button variant="ghost" disabled={pending} onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="destructive" onClick={onConfirm}>
-          Delete
+        <Button variant="destructive" disabled={pending} onClick={onConfirm}>
+          {pending ? 'Deleting…' : 'Delete'}
         </Button>
       </div>
     </Modal>

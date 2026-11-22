@@ -138,4 +138,14 @@ describe('TaxonomyCombobox', () => {
     expect(onSelect).toHaveBeenCalledWith(null);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
+
+  it('counts one document as "1 doc", not "1 docs"', () => {
+    render(
+      <TaxonomyCombobox label="Correspondent" items={[...ITEMS, { id: 3, name: 'Solo', document_count: 1 }]}
+        selectedId={null} canEdit={true} onSelect={vi.fn()} onCreate={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText('1 doc')).toBeInTheDocument();
+    expect(screen.getByText('87 docs')).toBeInTheDocument();
+  });
 });

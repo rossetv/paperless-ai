@@ -5,9 +5,9 @@ import userEvent from '@testing-library/user-event';
 import { SaveStatusPill } from './SaveStatusPill';
 
 describe('SaveStatusPill', () => {
-  it('renders "Saved" label and role="status" for idle state', () => {
+  it('shows nothing when idle but keeps the status region for later announcements', () => {
     render(<SaveStatusPill status="idle" />);
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('renders "Saving…" label and role="status" for saving state', () => {

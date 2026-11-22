@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
@@ -11,6 +11,7 @@ import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
 import { LibraryCard } from '../LibraryCard/LibraryCard';
 import { useDocuments, useFacets } from '../../../api/hooks';
+import { formatShortDate } from '../../../lib/formatDate';
 import { useLibraryUrlState } from './useLibraryUrlState';
 import type {
   DocumentsQuery,
@@ -47,6 +48,12 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
   return entries.find((e) => e.id === id)?.name ?? `#${id}`;
 }
 
+/** A short date, or the raw URL value when it does not parse. */
+function dateLabel(iso: string): string {
+  const formatted = formatShortDate(iso);
+  return formatted === '—' ? iso : formatted;
+}
+
 /**
  * True below SearchScreenLayout's 834px breakpoint, where the rail stacks above
  * the content. matchMedia is missing in some test environments.
@@ -78,7 +85,14 @@ export function LibraryScreen(): React.ReactElement {
   // the fold. Read once at mount: it only concerns the initial layout.
   const [railDefaultExpanded] = React.useState(() => !isNarrowViewport());
 
+  // The field follows the URL's query (Back, Forward, Clear all) but stays editable.
+  const urlText = query.query ?? '';
+  const [searchText, setSearchText] = React.useState(urlText);
+  useEffect(() => setSearchText(urlText), [urlText]);
+
   function submitSearch(text: string): void {
+    // A blank submit leaves the URL as it is, so the field must be cleared here.
+    if (text.trim() === '') setSearchText('');
     setQuery({ ...query, query: text.trim() === '' ? null : text.trim(), page: 1 });
   }
 
@@ -103,22 +117,32 @@ export function LibraryScreen(): React.ReactElement {
   }
 
   function clearAllFilters(): void {
-    applyFilters({
+    setQuery({
+      ...query,
+      query: null,
       correspondent_id: null,
       document_type_id: null,
       tag_ids: [],
       date_from: null,
       date_to: null,
+      page: 1,
     });
   }
 
   // Active-filter chips, with ids resolved to names via the facets.
   const facetData = facets.data;
   const activeChips = useMemo(() => {
-    if (facetData === undefined) {
-      return [];
-    }
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+    if (query.query != null && query.query !== '') {
+      chips.push({
+        key: 'text',
+        label: `“${query.query}”`,
+        onRemove: () => setQuery({ ...query, query: null, page: 1 }),
+      });
+    }
+    if (facetData === undefined) {
+      return chips;
+    }
     if (query.correspondent_id != null) {
       chips.push({
         key: 'correspondent',
@@ -150,14 +174,14 @@ export function LibraryScreen(): React.ReactElement {
     if (query.date_from != null && query.date_from !== '') {
       chips.push({
         key: 'date-from',
-        label: `From ${query.date_from}`,
+        label: `From ${dateLabel(query.date_from)}`,
         onRemove: () => setQuery({ ...query, date_from: null, page: 1 }),
       });
     }
     if (query.date_to != null && query.date_to !== '') {
       chips.push({
         key: 'date-to',
-        label: `To ${query.date_to}`,
+        label: `To ${dateLabel(query.date_to)}`,
         onRemove: () => setQuery({ ...query, date_to: null, page: 1 }),
       });
     }
@@ -179,8 +203,28 @@ export function LibraryScreen(): React.ReactElement {
   const rangeStart = total === 0 ? 0 : (query.page - 1) * effectivePageSize + 1;
   const rangeEnd =
     total === 0 ? 0 : Math.min(query.page * effectivePageSize, total);
+  // From the query, not the chips: tag and name chips wait for the facets.
+  const hasFilters =
+    (query.query != null && query.query !== '') ||
+    query.correspondent_id != null ||
+    query.document_type_id != null ||
+    query.tag_ids.length > 0 ||
+    (query.date_from != null && query.date_from !== '') ||
+    (query.date_to != null && query.date_to !== '');
   const isFirstPage = query.page <= 1;
   const isLastPage = query.page >= pageCount;
+
+  // Past the last page there is nothing to show: land on the last one without a history entry.
+  // Placeholder data is the previous query's, so its total says nothing about this page.
+  const pastEnd =
+    documents.data !== undefined &&
+    !documents.isPlaceholderData &&
+    query.page > pageCount;
+  useEffect(() => {
+    if (pastEnd) {
+      setQuery({ ...query, page: pageCount }, { replace: true });
+    }
+  }, [pastEnd, pageCount, query, setQuery]);
 
   const rail = (
     <FilterControls
@@ -225,6 +269,9 @@ export function LibraryScreen(): React.ReactElement {
         {/* In-library search */}
         <SearchField
           id="library-search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          allowEmpty
           placeholder="Filter library… (try title, correspondent, or document type)"
           onSubmit={submitSearch}
         />
@@ -264,17 +311,30 @@ export function LibraryScreen(): React.ReactElement {
               icon="warning"
               message="Could not load documents"
               description="The library list is unavailable. Try again in a moment."
+              action={
+                <Button variant="secondary" onClick={() => void documents.refetch()}>
+                  Try again
+                </Button>
+              }
             />
           </div>
         ) : total === 0 ? (
           <div className={styles['state']}>
-            <EmptyState
-              icon="search"
-              message="No documents match"
-              description="No documents match the current filters. Clear a filter to widen the results."
-            />
+            {hasFilters ? (
+              <EmptyState
+                icon="search"
+                message="No documents match"
+                description="No documents match the current filters. Clear a filter to widen the results."
+              />
+            ) : (
+              <EmptyState
+                icon="search"
+                message="The library is empty"
+                description="Documents show up here once they have been indexed."
+              />
+            )}
           </div>
-        ) : (
+        ) : pastEnd ? null : (
           <>
             <div
               className={view === 'grid' ? styles['grid'] : styles['list']}

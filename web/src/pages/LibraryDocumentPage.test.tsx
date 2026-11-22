@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route, Link } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LibraryDocumentPage } from './LibraryDocumentPage';
 import { ApiError } from '../api/client';
@@ -118,5 +118,60 @@ describe('LibraryDocumentPage', () => {
     await waitFor(() =>
       expect(screen.getByText(/could not load document/i)).toBeInTheDocument(),
     );
+  });
+
+  it('opening another cached document does not carry over an unsaved edit', async () => {
+    const doc = (id: number, title: string) => ({
+      id,
+      title,
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+      paperless_url: `https://paperless.test/documents/${id}/`,
+    });
+    vi.spyOn(client, 'getDocument').mockImplementation(async (id: number) => doc(id, id === 42 ? 'First' : 'Second'));
+    vi.spyOn(client, 'patchDocument').mockReturnValue(new Promise(() => {}));
+    vi.spyOn(client, 'me').mockResolvedValue({
+      user: {
+        id: 1,
+        username: 'm',
+        display_name: null,
+        email: null,
+        role: 'member',
+        status: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+        last_login_at: null,
+      },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(['document', 7], doc(7, 'Second'));
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/library/document/42']}>
+          <Routes>
+            <Route
+              path="/library/document/:id"
+              element={
+                <>
+                  <LibraryDocumentPage />
+                  <Link to="/library/document/7">next</Link>
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit title: First' }));
+    const input = screen.getByDisplayValue('First');
+    fireEvent.change(input, { target: { value: 'Renamed' } });
+    fireEvent.blur(input);
+    expect(screen.getByRole('button', { name: 'Edit title: Renamed' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'next' }));
+    expect(await screen.findByRole('button', { name: 'Edit title: Second' })).toBeInTheDocument();
   });
 });

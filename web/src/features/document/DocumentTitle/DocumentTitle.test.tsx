@@ -9,6 +9,11 @@ describe('DocumentTitle', () => {
     expect(screen.getByRole('heading', { name: 'An invoice' })).toBeInTheDocument();
   });
 
+  it('shows the full title on hover, since it can be cut', () => {
+    render(<DocumentTitle title="An invoice" canEdit={false} onChange={() => {}} />);
+    expect(screen.getByRole('heading', { name: 'An invoice' })).toHaveAttribute('title', 'An invoice');
+  });
+
   it('falls back to "Untitled document" when title is null', () => {
     render(<DocumentTitle title={null} canEdit={false} onChange={() => {}} />);
     expect(screen.getByRole('heading', { name: /untitled document/i })).toBeInTheDocument();

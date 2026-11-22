@@ -29,7 +29,6 @@
   flex-shrink: 0;
 }
 
-.pill-idle .dot,
 .pill-saved .dot {
   background-color: var(--colour-status-ok-fg);
 }

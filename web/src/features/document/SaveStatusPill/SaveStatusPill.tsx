@@ -8,8 +8,7 @@ export interface SaveStatusPillProps {
   onRetry?: () => void;
 }
 
-const LABELS: Record<SaveStatus, string> = {
-  idle: 'Saved',
+const LABELS: Record<Exclude<SaveStatus, 'idle'>, string> = {
   saving: 'Saving…',
   saved: 'Saved',
   error: "Couldn't save — retry",
@@ -17,7 +16,7 @@ const LABELS: Record<SaveStatus, string> = {
 };
 
 /**
- * Document save-state pill: a coloured dot and a label.
+ * Document save-state pill: a coloured dot and a label; nothing before any save.
  *
  * The error state is a retry `<button>` with a separate hidden alert beside it;
  * putting `role="alert"` on the button itself would strip its button semantics.
@@ -43,6 +42,9 @@ export function SaveStatusPill({
       </>
     );
   }
+
+  // An empty region still sits in the page so the next "Saving…" is announced.
+  if (status === 'idle') return <span role="status" aria-live="polite" />;
 
   return (
     <span

@@ -37,7 +37,7 @@ export function TaxonomyCombobox({
   const listboxItems: FilterableItem<number>[] = items.map((i) => ({
     value: i.id,
     label: i.name,
-    meta: `${i.document_count} docs`,
+    meta: `${i.document_count} ${i.document_count === 1 ? 'doc' : 'docs'}`,
   }));
 
   return (

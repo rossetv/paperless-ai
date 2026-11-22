@@ -47,6 +47,7 @@ export function LibraryDocumentPage(): React.ReactElement {
     <Page>
       <AppNavBar />
       <DocumentScreen
+        key={docQuery.data.id}
         document={docQuery.data}
         parent="library"
         parentSearch={parentSearchString === '' ? '' : `?${parentSearchString}`}

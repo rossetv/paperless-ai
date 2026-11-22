@@ -86,6 +86,7 @@ export function DocumentTitle({
       ref={headingRef}
       className={styles['title']}
       style={{ '--title-scale': scale } as React.CSSProperties}
+      title={title ?? 'Untitled document'}
       role={canEdit ? 'button' : undefined}
       tabIndex={canEdit ? 0 : undefined}
       aria-label={canEdit ? `Edit title: ${title ?? 'Untitled document'}` : undefined}

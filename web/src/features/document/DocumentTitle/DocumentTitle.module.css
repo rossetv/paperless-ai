@@ -53,3 +53,16 @@
   outline: none;
   box-shadow: var(--shadow-focus);
 }
+
+/* Touch users have no hover tooltip, so a narrow screen wraps the title to a
+   few lines instead of ellipsising one. */
+@media (width <= 640px) {
+  .title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+}

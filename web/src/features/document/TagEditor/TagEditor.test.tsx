@@ -110,4 +110,14 @@ describe('TagEditor', () => {
     expect(screen.queryByRole('button', { name: /add tag/i })).not.toBeInTheDocument();
     expect(screen.getByText('2026')).toBeInTheDocument();
   });
+
+  it('counts one document as "1 doc", not "1 docs"', () => {
+    render(
+      <TagEditor selectedIds={[]} availableTags={[{ id: 1, name: 'solo', document_count: 1 }, ...ALL]}
+        canEdit={true} onAdd={vi.fn()} onRemove={vi.fn()} onCreate={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    expect(screen.getByText('1 doc')).toBeInTheDocument();
+    expect(screen.getByText('30 docs')).toBeInTheDocument();
+  });
 });

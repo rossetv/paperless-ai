@@ -90,7 +90,8 @@ function queryToParams(
 export interface LibraryUrlState {
   query: DocumentsQuery;
   view: LibraryView;
-  setQuery: (next: DocumentsQuery) => void;
+  /** `replace` swaps the current history entry instead of adding one. */
+  setQuery: (next: DocumentsQuery, options?: { replace?: boolean }) => void;
   setView: (next: LibraryView) => void;
   /** `?q=invoice&tag=5` style suffix, or `''`; for links that keep the parent state. */
   searchString: string;
@@ -104,8 +105,8 @@ export function useLibraryUrlState(): LibraryUrlState {
   const view = useMemo(() => paramsToView(searchParams), [searchParams]);
 
   const setQuery = useCallback(
-    (next: DocumentsQuery) => {
-      setSearchParams(queryToParams(next, view));
+    (next: DocumentsQuery, options?: { replace?: boolean }) => {
+      setSearchParams(queryToParams(next, view), { replace: options?.replace === true });
     },
     [setSearchParams, view],
   );
