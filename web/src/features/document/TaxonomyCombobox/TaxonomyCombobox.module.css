@@ -1,7 +1,7 @@
 /* Same row grid as EditableField. */
 .row {
   display: grid;
-  grid-template-columns: var(--width-doc-field-label) 1fr;
+  grid-template-columns: var(--width-doc-field-label) minmax(0, 1fr);
   gap: var(--spacing-10);
   padding: var(--spacing-6) 0;
   border-bottom: var(--spacing-1) solid var(--colour-border);
@@ -28,4 +28,5 @@
 /* Positioning context for the FilterableListbox popover. */
 .cell {
   position: relative;
+  min-width: 0;
 }

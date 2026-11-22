@@ -291,7 +291,7 @@ export function FilterableListbox<T extends string | number = string>({
           aria-expanded={false}
           onClick={openList}
         >
-          <span className={styles['trigger-label']}>
+          <span className={styles['trigger-label']} title={selectedLabel}>
             {selectedLabel ?? triggerLabel}
           </span>
           {!multiple && (
