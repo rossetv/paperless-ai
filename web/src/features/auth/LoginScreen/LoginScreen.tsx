@@ -6,7 +6,7 @@ import { Icon } from '../../../components/primitives/Icon/Icon';
 import { IconButton } from '../../../components/primitives/IconButton/IconButton';
 import { useLogin } from '../../../api/hooks';
 import { Unauthenticated, ApiError } from '../../../api/client';
-import { validateUsername, validatePassword } from '../../../lib/credentials';
+import { validateUsername } from '../../../lib/credentials';
 import styles from './LoginScreen.module.css';
 
 /** User-facing copy for a login error; the raw message is internal and never shown. */
@@ -37,7 +37,8 @@ export function LoginScreen(): React.ReactElement {
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const uErr = validateUsername(username);
-    const pErr = validatePassword(password);
+    // Only emptiness: accounts made under an older, shorter minimum must still sign in.
+    const pErr = password === '' ? 'Enter your password.' : undefined;
     setUsernameError(uErr);
     setPasswordError(pErr);
     if (uErr !== undefined || pErr !== undefined) {

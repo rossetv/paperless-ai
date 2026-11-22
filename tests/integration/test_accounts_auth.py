@@ -415,3 +415,23 @@ def test_non_remember_login_sets_an_eight_hour_cookie(tmp_path: Path) -> None:
     finally:
         store_reader.close()
         app_db.close()
+
+
+def test_login_accepts_a_password_shorter_than_the_creation_minimum(
+    tmp_path: Path,
+) -> None:
+    """An account made when the floor was lower can still sign in."""
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_user(app_db, username="alice", password="ninechars", role="member")
+        client = build_account_client(settings, app_db, store_reader)
+        assert login(client, username="alice", password="ninechars").status_code == 200
+        assert login(client, username="alice", password="").status_code == 422
+        wrong = login(client, username="alice", password="wrongpw9c")
+        assert wrong.status_code == 401
+    finally:
+        store_reader.close()
+        app_db.close()

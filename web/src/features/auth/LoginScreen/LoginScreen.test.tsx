@@ -74,12 +74,25 @@ describe('LoginScreen', () => {
     expect(screen.getByText(/letters, numbers/i)).toBeInTheDocument();
   });
 
-  it('shows a password validation error when shorter than 12 characters', async () => {
-    renderScreen();
+  it('submits a password shorter than the creation minimum', async () => {
+    const mutate = vi.fn();
+    renderScreen(makeLogin({ mutate }));
     await userEvent.type(screen.getByLabelText('Username'), 'alex.morgan');
-    await userEvent.type(screen.getByLabelText('Password'), 'tooshort123');
+    await userEvent.type(screen.getByLabelText('Password'), 'ninechars');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
-    expect(screen.getByText(/at least 12 characters/i)).toBeInTheDocument();
+    expect(mutate).toHaveBeenCalledWith(
+      { username: 'alex.morgan', password: 'ninechars', remember: false },
+      {},
+    );
+  });
+
+  it('refuses an empty password without calling the login mutation', async () => {
+    const mutate = vi.fn();
+    renderScreen(makeLogin({ mutate }));
+    await userEvent.type(screen.getByLabelText('Username'), 'alex.morgan');
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    expect(screen.getByText(/enter your password/i)).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
   });
 
   it('does not call the login mutation when validation fails', async () => {

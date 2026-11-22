@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Annotated, TYPE_CHECKING
 
-from pydantic import AfterValidator, BaseModel, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
 
 from search.validation import (
     validate_display_name,
@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 _Username = Annotated[str, AfterValidator(validate_username)]
 _Password = Annotated[str, AfterValidator(validate_password)]
+# Login checks only that something was sent: the creation minimum is newer than
+# some existing accounts' passwords. The cap bounds the hashing work.
+_LoginPassword = Annotated[str, Field(min_length=1, max_length=1024)]
 _Role = Annotated[str, AfterValidator(validate_role)]
 _DisplayName = Annotated[str | None, AfterValidator(validate_display_name)]
 _Email = Annotated[str | None, AfterValidator(validate_email)]
@@ -46,7 +49,7 @@ class LoginRequest(BaseModel):
     """
 
     username: _Username
-    password: _Password
+    password: _LoginPassword
     remember: bool = False
 
 
