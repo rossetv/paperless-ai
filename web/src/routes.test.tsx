@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SetupStatus, MeResponse } from './api/types';
+import { Unauthenticated } from './api/client';
 import { AppRoutes, returnTarget } from './routes';
 
 // Leaf pages are mocked so routing is tested in isolation.
@@ -163,11 +164,21 @@ describe('AppRoutes', () => {
   it('shows the login page, not a redirect loop, when a cached user has a failed re-check', async () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(
-      meResult({ isError: true, error: new Error('Unauthenticated'), data: { user: SAMPLE_USER } }),
+      meResult({ isError: true, error: new Unauthenticated(), data: { user: SAMPLE_USER } }),
     );
     renderAt('/library?tag=tax');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
     expect(screen.getByTestId('where')).toHaveTextContent('/login');
+  });
+
+  it('keeps a signed-in person on the page when the re-check fails for a reason other than 401', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(
+      meResult({ isError: true, error: new TypeError('Failed to fetch'), data: { user: SAMPLE_USER } }),
+    );
+    renderAt('/index');
+    await waitFor(() => expect(screen.getByTestId('index-page')).toBeInTheDocument());
+    expect(screen.getByTestId('where')).toHaveTextContent('/index');
   });
 
   it('returns to the page asked for once the user has signed in', async () => {

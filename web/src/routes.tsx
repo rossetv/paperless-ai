@@ -39,6 +39,7 @@ const DocumentPage = React.lazy(() =>
 );
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
+import { Unauthenticated } from './api/client';
 import { useRouteAnnounce } from './hooks/useRouteAnnounce';
 
 /** Renders nothing; lives inside Suspense so it acts once the new page has rendered. */
@@ -48,9 +49,18 @@ function RouteAnnouncer({ fallback }: { fallback: React.RefObject<HTMLElement | 
 }
 
 /**
+ * Whether `me` names a signed-in user. A failed re-check (offline, 5xx, abort)
+ * keeps the last known user; only a 401 signs them out.
+ */
+function isSignedIn(meQuery: ReturnType<typeof useMe>): boolean {
+  if (meQuery.data?.user === undefined) return false;
+  return meQuery.isSuccess || (meQuery.isError && !(meQuery.error instanceof Unauthenticated));
+}
+
+/**
  * Wraps the protected app. Resolves auth via `useMe`:
  *  - while loading → the bootstrap loader
- *  - on error / no user → redirect to `/login`
+ *  - on a 401 / no user → redirect to `/login`
  *  - authenticated → render `children`
  *
  * Setup-status is checked one level up by `AppRoutes`, so by the time a
@@ -63,9 +73,8 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
   if (meQuery.isLoading) {
     return <FullPageLoading />;
   }
-  // Branch on success explicitly so an errored or user-less `me` never renders
-  // protected UI.
-  if (!meQuery.isSuccess || meQuery.data.user === undefined) {
+  // A user-less or 401'd `me` never renders protected UI.
+  if (!isSignedIn(meQuery)) {
     const from = location.pathname + location.search + location.hash;
     return <Navigate to="/login" replace state={{ from }} />;
   }
@@ -160,8 +169,7 @@ function BootstrapGate({
   // intent === 'login'. Render the form without waiting for `me`: after a
   // logout redirect the query is mid-refetch, and a loader would flash a blank
   // frame between sign-out and the form.
-  // Same reading as ProtectedRoute: a stale user behind a failed re-check is not signed in.
-  if (meQuery.isSuccess && meQuery.data.user !== undefined) {
+  if (isSignedIn(meQuery)) {
     return <Navigate to={returnTarget(location.state)} replace />;
   }
   return children;
