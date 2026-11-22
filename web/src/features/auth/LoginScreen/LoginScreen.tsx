@@ -13,6 +13,9 @@ import styles from './LoginScreen.module.css';
 function loginErrorMessage(e: Error): string {
   if (e instanceof Unauthenticated) return 'Incorrect username or password.';
   if (e instanceof ApiError && e.status === 403) return 'This account is suspended.';
+  if (e instanceof ApiError && e.status === 429) {
+    return 'Too many attempts. Wait a while and try again later.';
+  }
   return 'Sign-in failed. Please try again.';
 }
 
@@ -124,7 +127,7 @@ export function LoginScreen(): React.ReactElement {
                   onChange={(e) => setRemember(e.target.checked)}
                 />
                 <span className={styles['remember-label']}>
-                  Keep me signed in for 7 days
+                  Keep me signed in on this device
                 </span>
               </label>
 

@@ -130,6 +130,17 @@ describe('LoginScreen', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/account is suspended/i);
   });
 
+  it('maps ApiError 429 to a wait-and-retry message', () => {
+    renderScreen(makeLogin({ isError: true, error: new ApiError(429) }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/too many attempts.*try again later/i);
+  });
+
+  it('does not promise a fixed session length for keep me signed in', () => {
+    renderScreen();
+    expect(screen.getByRole('checkbox', { name: /keep me signed in/i })).toBeInTheDocument();
+    expect(screen.queryByText(/\d+ days/i)).not.toBeInTheDocument();
+  });
+
   it('maps an unexpected ApiError to a generic fallback message', () => {
     renderScreen(makeLogin({ isError: true, error: new ApiError(500) }));
     expect(screen.getByRole('alert')).toHaveTextContent(/sign-in failed/i);
