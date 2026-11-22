@@ -243,10 +243,12 @@ def register_paperless_exception_handlers(app: FastAPI) -> None:
             )
         if status in (401, 403):
             log.warning("paperless.token_rejected", status=status)
-            return JSONResponse(
-                status_code=502,
-                content={"detail": "Paperless-ngx rejected the server's API token"},
+            detail = (
+                "Paperless-ngx rejected the server's API token"
+                if status == 401
+                else "Paperless-ngx denied the server's API token permission for this request"
             )
+            return JSONResponse(status_code=502, content={"detail": detail})
         if status >= 500:
             log.warning("paperless.upstream_error", status=status)
             return JSONResponse(

@@ -250,8 +250,7 @@ def test_concurrent_wrong_passwords_beyond_the_limit_get_429(
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     gate = threading.Event()
-    # Released once per request when it either reaches the password check or
-    # comes back, so each request is decided before the next is sent.
+    # Released when a request reaches the password check or returns, so requests are sent one at a time.
     progress = threading.Semaphore(0)
 
     def held_authenticate(*_args: object) -> None:

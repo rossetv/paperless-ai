@@ -161,6 +161,24 @@ async def test_stream_ends_with_error_frame_when_result_cannot_be_serialised(
 
 
 @pytest.mark.anyio
+async def test_stream_still_ends_with_the_result_when_a_phase_cannot_be_serialised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _broken(_event: Any, _seq: int) -> str:
+        raise ValueError("unserialisable")
+
+    monkeypatch.setattr("search.routes.event_line", _broken)
+
+    resp = await _search_stream(
+        _request(), _emitting_core(), _noop_semaphore(), asker=None
+    )
+    lines = await _lines(resp)
+
+    assert [line["type"] for line in lines] == ["result"]
+    assert lines[0]["seq"] == 1
+
+
+@pytest.mark.anyio
 async def test_stream_ends_with_error_frame_when_the_quota_cannot_be_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

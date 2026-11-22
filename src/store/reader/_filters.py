@@ -5,6 +5,7 @@ Only fixed SQL and ``?`` placeholders are interpolated; every value is bound.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 from datetime import date, timedelta
 
@@ -132,11 +133,37 @@ def build_browse_where(
 MAX_FTS_TERMS = 64
 
 
+def _token_key(term: str) -> tuple[str, ...]:
+    """Return what the FTS5 default tokenizer would index *term* as, conservatively.
+
+    ``chunks_fts`` uses the default ``unicode61`` tokenizer: it lower-cases and
+    splits on every character that is not a letter or number. Combining marks
+    are kept inside a token and diacritics are not folded, so two terms share a
+    key only when the tokenizer certainly treats them alike. A term with no
+    token keeps its exact spelling as its key.
+    """
+    tokens: list[str] = []
+    current: list[str] = []
+    for char in term.lower():
+        if char.isalnum() or unicodedata.category(char).startswith("M"):
+            current.append(char)
+        elif current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
+    return tuple(tokens) if tokens else (term,)
+
+
 def build_match_expr(terms: Sequence[str]) -> str:
     """AND-combine *terms* into a quoted FTS5 MATCH expression.
 
-    Exact repeats are dropped (first occurrence wins) and at most
-    :data:`MAX_FTS_TERMS` distinct terms are kept.
+    Terms the tokenizer treats identically (case and punctuation variants) are
+    dropped, first spelling wins, and at most :data:`MAX_FTS_TERMS` distinct
+    terms are kept.
     """
-    distinct = list(dict.fromkeys(terms))[:MAX_FTS_TERMS]
-    return " AND ".join(f'"{escape_fts_term(term)}"' for term in distinct)
+    distinct: dict[tuple[str, ...], str] = {}
+    for term in terms:
+        distinct.setdefault(_token_key(term), term)
+    kept = list(distinct.values())[:MAX_FTS_TERMS]
+    return " AND ".join(f'"{escape_fts_term(term)}"' for term in kept)

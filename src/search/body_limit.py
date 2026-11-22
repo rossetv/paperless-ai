@@ -3,7 +3,7 @@
 It sits inside :class:`~search.security_headers.SecurityHeadersMiddleware` so the
 413 carries the same headers as every other response, and outside routing so it
 runs before authentication and body parsing. The largest legitimate body is a
-settings update, far below the limit.
+settings update, which stays under the limit.
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ from __future__ import annotations
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-MAX_BODY_BYTES = 2 * 1024 * 1024
+# A settings update is bounded in characters (100 values of 8192), which JSON-escaped
+# non-ASCII text can stretch to about 5 MiB of bytes.
+MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 def _too_large() -> JSONResponse:

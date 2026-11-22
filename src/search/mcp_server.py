@@ -7,6 +7,7 @@ the ``mcp`` scope.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 from collections.abc import Callable
@@ -56,6 +57,10 @@ def _default_paperless_factory(settings: Settings) -> PaperlessClient:
 
 
 log = structlog.get_logger(__name__)
+
+# Strong references to tool bodies whose caller was cancelled: the loop holds
+# tasks only weakly, and a body must run on to free its slot.
+_in_flight: set[asyncio.Task[str]] = set()
 
 
 class _BearerAuthMiddleware:
@@ -260,21 +265,34 @@ def _register_search_tools(
         if bills_llm:
             await _enforce_quota()
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
-        async with search_semaphore.acquire():
-            if bills_llm:
-                # Calls queued for a slot passed the first check before any
-                # of them recorded usage; look again now that they have run.
-                await _enforce_quota()
-            output = await run_blocking(lambda: build_output(core))
-            if bills_llm:
-                # Still holding the slot, so the next call's check sees this.
-                await record_usage(
-                    api_key_id=api_key_id,
-                    quota=quota,
-                    tokens=0 if cache_hits else _total_tokens(output),
-                    app_db_path=app_db_path,
-                )
-        return output
+        slot = search_semaphore.acquire()
+        await slot.__aenter__()
+
+        async def _run_holding_slot() -> str:
+            try:
+                if bills_llm:
+                    # Calls queued for a slot passed the first check before
+                    # any of them recorded usage; look again now they have run.
+                    await _enforce_quota()
+                output = await run_blocking(lambda: build_output(core))
+                if bills_llm:
+                    # Still holding the slot, so the next call's check sees this.
+                    await record_usage(
+                        api_key_id=api_key_id,
+                        quota=quota,
+                        tokens=0 if cache_hits else _total_tokens(output),
+                        app_db_path=app_db_path,
+                    )
+                return output
+            finally:
+                await slot.__aexit__(None, None, None)
+
+        # A cancelled call cannot stop the worker thread, so the work keeps
+        # its slot and records its spend until it really ends.
+        work = asyncio.ensure_future(_run_holding_slot())
+        _in_flight.add(work)
+        work.add_done_callback(_in_flight.discard)
+        return await asyncio.shield(work)
 
     async def _dispatch(
         *,

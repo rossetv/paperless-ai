@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from search.body_limit import MAX_BODY_BYTES, BodyLimitMiddleware
 from search.wire import CreateApiKeyRequest, DocumentPatchRequest, UpdateApiKeyRequest
+from search.wire.settings import MAX_SETTINGS_KEYS, MAX_SETTINGS_VALUE_LENGTH
 from tests.helpers.factories import make_search_settings
 from tests.unit.search.conftest import build_test_client
 
@@ -35,7 +36,10 @@ def test_oversized_mcp_body_gets_413() -> None:
 
 
 async def _drive(
-    chunks: list[bytes], *, headers: list[tuple[bytes, bytes]] | None = None
+    chunks: list[bytes],
+    *,
+    headers: list[tuple[bytes, bytes]] | None = None,
+    max_bytes: int = 10,
 ) -> tuple[list[dict], list[bytes]]:
     """Run the middleware over an echo app; return (sent messages, bodies the app read)."""
     seen: list[bytes] = []
@@ -64,7 +68,7 @@ async def _drive(
         sent.append(message)
 
     scope = {"type": "http", "headers": headers or []}
-    await BodyLimitMiddleware(app, max_bytes=10)(scope, receive, send)
+    await BodyLimitMiddleware(app, max_bytes=max_bytes)(scope, receive, send)
     return sent, seen
 
 
@@ -111,6 +115,22 @@ def test_a_false_content_length_does_not_hide_a_large_body() -> None:
         _drive([b"1234567890123"], headers=[(b"content-length", b"3")])
     )
     assert sent[0]["status"] == 413
+
+
+def test_a_max_size_settings_body_with_non_ascii_text_is_not_refused() -> None:
+    changes = {
+        f"KEY_{i}": "é" * MAX_SETTINGS_VALUE_LENGTH for i in range(MAX_SETTINGS_KEYS)
+    }
+    body = json.dumps({"changes": changes}).encode()  # \\u escapes: 6 bytes a character
+    assert len(body) > 2 * 1024 * 1024
+    sent, _ = asyncio.run(
+        _drive(
+            [body],
+            headers=[(b"content-length", str(len(body)).encode())],
+            max_bytes=MAX_BODY_BYTES,
+        )
+    )
+    assert sent[0]["status"] == 200
 
 
 def test_document_patch_tags_are_bounded() -> None:
