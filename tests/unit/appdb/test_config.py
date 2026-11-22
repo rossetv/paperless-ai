@@ -261,3 +261,32 @@ def test_run_migrations_e2e_v5_to_v6_splits_ai_models(tmp_path) -> None:
         assert "AI_MODELS" not in stored
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_seed_from_env_skips_blank_values_where_blank_means_the_default(
+    conn, blank
+) -> None:
+    seeded = config_store.seed_from_env(
+        conn,
+        environ={"CLASSIFY_TAG_LIMIT": blank, "LOG_LEVEL": blank, "CHUNK_SIZE": "2000"},
+        keys={"CLASSIFY_TAG_LIMIT", "LOG_LEVEL", "CHUNK_SIZE"},
+    )
+    assert seeded == 1
+    assert config_store.get_all(conn) == {"CHUNK_SIZE": "2000"}
+
+
+def test_seed_from_env_keeps_blank_where_blank_is_a_real_value(conn) -> None:
+    keys = {"OCR_REFUSAL_MARKERS", "SEARCH_FORWARDED_ALLOW_IPS"}
+    seeded = config_store.seed_from_env(
+        conn, environ=dict.fromkeys(keys, ""), keys=keys
+    )
+    assert seeded == 2
+    assert config_store.get_all(conn) == dict.fromkeys(keys, "")
+
+
+def test_seed_from_env_keeps_surrounding_spaces_on_a_non_blank_value(conn) -> None:
+    config_store.seed_from_env(
+        conn, environ={"LOG_LEVEL": " DEBUG "}, keys={"LOG_LEVEL"}
+    )
+    assert config_store.get(conn, "LOG_LEVEL") == " DEBUG "
