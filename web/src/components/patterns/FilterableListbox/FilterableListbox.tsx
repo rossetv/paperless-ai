@@ -177,6 +177,7 @@ export function FilterableListbox<T extends string | number = string>({
   }
 
   function openList(): void {
+    pointerMoved.current = false;
     setOpen(true);
     setHighlight(-1);
   }

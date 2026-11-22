@@ -87,6 +87,7 @@ export function Select<T extends string = string>({
 
   function open(initialHighlight?: number): void {
     if (disabled) return;
+    pointerMoved.current = false;
     setIsOpen(true);
     // Pre-highlight the currently selected option so arrow keys start from there.
     // If an initial highlight index is supplied (e.g. ArrowDown → first item),

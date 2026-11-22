@@ -348,6 +348,23 @@ describe('Select keyboard and semantics', () => {
     }
   });
 
+  it('scrolls to the selected option when reopened after hovering it', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      render(<Select id="fruit" options={OPTIONS} value="banana" onChange={vi.fn()} />);
+      await userEvent.click(screen.getByRole('combobox'));
+      scroll.mockClear();
+      await userEvent.hover(screen.getByRole('option', { name: 'Banana' }));
+      await userEvent.click(screen.getByRole('option', { name: 'Banana' }));
+      await userEvent.click(screen.getByRole('combobox'));
+      expect(scroll).toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
   it('builds option ids from the instance id and index, not the raw value', async () => {
     render(
       <Select id="odd" options={[{ value: 'a b/c', label: 'Odd' }]} onChange={vi.fn()} />,
