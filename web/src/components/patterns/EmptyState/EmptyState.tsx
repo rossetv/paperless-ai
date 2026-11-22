@@ -9,6 +9,8 @@ export interface EmptyStateProps {
   icon: IconName;
   /** Primary message explaining the empty state. */
   message: string;
+  /** Element for the message; a heading when the empty state is the page's main content. */
+  messageAs?: 'p' | 'h1';
   /** Optional secondary text below the message. */
   description?: string;
   /** Optional call to action, typically a `Button`, shown below the message. */
@@ -23,6 +25,7 @@ export interface EmptyStateProps {
 export function EmptyState({
   icon,
   message,
+  messageAs: Message = 'p',
   description,
   action,
   className,
@@ -35,7 +38,7 @@ export function EmptyState({
         <Icon name={icon} size="xlarge" />
       </span>
 
-      <p className={styles['message']}>{message}</p>
+      <Message className={styles['message']}>{message}</Message>
 
       {description !== undefined && (
         <p className={styles['description']}>{description}</p>
