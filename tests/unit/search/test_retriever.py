@@ -390,3 +390,24 @@ class TestRetrievalSignal:
 
         assert signal.best_vector_similarity is None
         assert signal.has_keyword_hit is False
+
+
+def test_a_bad_ui_date_from_does_not_beat_the_planners_date_from() -> None:
+    from search.retriever import _intersect
+
+    spec = SearchFilters(
+        date_from="2025-04-01",
+        date_to=None,
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+    ui = SearchFilters(
+        date_from="April 2025",
+        date_to=None,
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+
+    assert _intersect(spec, ui).date_from == "2025-04-01"

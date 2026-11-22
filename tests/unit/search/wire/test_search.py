@@ -9,7 +9,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from search.wire import MAX_QUERY_LENGTH, FilterRequest, SearchRequest
+from search.wire import (
+    MAX_QUERY_LENGTH,
+    FilterRequest,
+    SearchRequest,
+    to_search_filters,
+)
 
 
 def test_search_request_accepts_a_normal_query() -> None:
@@ -58,3 +63,19 @@ def test_filter_request_rejects_over_64_tag_ids() -> None:
     """A filter naming more than 64 tags is rejected, matching the GET bound."""
     with pytest.raises(ValidationError):
         FilterRequest(tag_ids=list(range(65)))
+
+
+@pytest.mark.parametrize("bad", ["April 2025", "2025-4-01", "2025-13-40"])
+def test_an_invalid_date_from_is_dropped_like_date_to(bad: str) -> None:
+    result = to_search_filters(FilterRequest(date_from=bad, date_to=bad))
+
+    assert result is not None
+    assert result.date_from is None
+    assert result.date_to is None
+
+
+def test_a_timestamp_date_from_keeps_only_its_day() -> None:
+    result = to_search_filters(FilterRequest(date_from="2025-04-01T10:00:00Z"))
+
+    assert result is not None
+    assert result.date_from == "2025-04-01"

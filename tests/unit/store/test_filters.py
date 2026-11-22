@@ -67,3 +67,15 @@ def test_out_of_range_excluded() -> None:
         "2025-05-01T00:00:00+00:00",
         _make_filters(date_to="2025-04-30"),
     )
+
+
+def test_lower_bound_timestamp_keeps_midnight_document() -> None:
+    assert _match(
+        "2025-04-25T00:00:00+00:00",
+        _make_filters(date_from="2025-04-25T09:30:00+00:00"),
+    )
+
+
+def test_invalid_lower_bound_is_dropped_not_matching_nothing() -> None:
+    assert _match("2025-04-25T00:00:00+00:00", _make_filters(date_from="April 2025"))
+    assert _match("2025-04-25T00:00:00+00:00", _make_filters(date_from="2025-4-01"))
