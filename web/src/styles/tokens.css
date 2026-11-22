@@ -422,6 +422,9 @@
   --colour-dark-text-secondary: rgb(255 255 255 / 62%);
   --colour-dark-text-tertiary:  rgb(255 255 255 / 38%);
 
+  /* Error text on the dark island */
+  --colour-dark-danger:         #ff8a80;
+
   /* Hairline borders on the dark island */
   --colour-dark-border:         rgb(255 255 255 / 10%);
   --colour-dark-border-card:    rgb(255 255 255 / 6%);

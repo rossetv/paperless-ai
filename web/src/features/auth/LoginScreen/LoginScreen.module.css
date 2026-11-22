@@ -170,10 +170,10 @@
   position: absolute;
   right: var(--spacing-6);
 
-  /* IconButton reads theme tokens; pin their dark-theme values for the dark card. */
-  --colour-overlay: rgb(0 0 0 / 64%);
-  --colour-text-tertiary: rgb(255 255 255 / 64%);
-  --colour-text-primary: #fff;
+  /* IconButton reads theme tokens; pin dark values for the dark card. */
+  --colour-overlay: var(--colour-dark-control-bg);
+  --colour-text-tertiary: var(--colour-dark-text-secondary);
+  --colour-text-primary: var(--colour-dark-text-primary);
   --colour-surface: #272729;
   --colour-button-light-bg: #272729;
   --colour-button-active-bg: #1d1d1f;
@@ -213,10 +213,7 @@
 .error {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
-
-  --colour-error-on-dark: #ff8a80; /* the dark theme's danger-fg; legible on the dark card in both themes */
-
-  color: var(--colour-error-on-dark);
+  color: var(--colour-dark-danger);
 }
 
 /* Stack hero above the card. Collapses early so a 1024px desktop never shows
