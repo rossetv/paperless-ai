@@ -283,6 +283,17 @@ describe('UserEditDrawer — edit mode', () => {
       expect(mutateAsync).not.toHaveBeenCalled();
     });
 
+    it('closes the drawer only on the second Escape while delete is armed', async () => {
+      const onClose = vi.fn();
+      render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={onClose} />);
+      await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+      await userEvent.keyboard('{Escape}');
+      expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Escape}');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
     it('disarms after a few seconds', async () => {
       render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
       await userEvent.click(screen.getByRole('button', { name: /delete account/i }));

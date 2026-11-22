@@ -50,7 +50,10 @@ export function useArmedConfirm<Key>(): ArmedConfirm<Key> {
         if (!event.currentTarget.contains(event.relatedTarget)) disarm();
       },
       onKeyDown: (event) => {
-        if (event.key === 'Escape') disarm();
+        if (event.key !== 'Escape' || armed === null) return;
+        // Handled here, so a surrounding dialog does not also close on this Escape.
+        event.preventDefault();
+        disarm();
       },
     },
   };
