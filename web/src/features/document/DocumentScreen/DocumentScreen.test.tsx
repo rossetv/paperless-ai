@@ -643,6 +643,53 @@ describe('DocumentScreen', () => {
     expect(sentPatches()[1]).toEqual({ tags: [100, 102, 103] });
   });
 
+  it('a tag edit keeps a tag another change added while an earlier edit was pending', async () => {
+    mockUseTags.mockReturnValue(queryOk([
+      ...ALL_TAGS,
+      { id: 104, name: 'medical', document_count: 1 },
+      { id: 105, name: 'car', document_count: 1 },
+    ]));
+    // By the next read the index has the edit and a tag the pipeline added meanwhile.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: [...DOC.tags, 'new-tag', 'medical'] });
+    renderScreen({ role: 'member', live: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    await waitFor(() => expect(mockGetDocument).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: /remove medical/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: /car/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 101, 102, 103, 104, 105] });
+  });
+
+  it('shows a title another change set after the user\'s rename', async () => {
+    mockGetDocument.mockResolvedValue({ ...DOC, title: 'Set by someone else' });
+    renderScreen({ role: 'member', live: true });
+    renameTitle('Renamed');
+    expect(await screen.findByRole('button', { name: 'Edit title: Set by someone else' })).toBeInTheDocument();
+  });
+
+  it('a tag removed and added back is kept when a read shows the state in between', async () => {
+    const queryClient = makeQueryClient();
+    renderScreen({ role: 'member', live: true, queryClient });
+
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /ireland/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/^saved$/i)).toBeInTheDocument();
+
+    // The index catches up with the removal only.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: ['2026', 'payroll'] });
+    await act(() => queryClient.invalidateQueries({ queryKey: ['document', DOC.id] }));
+
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(3));
+    expect(sentPatches()[2]).toEqual({ tags: [100, 102, 101, 103] });
+  });
+
   it('keeps showing a saved title while the index still has the old one', async () => {
     renderScreen({ role: 'member', live: true });
     renameTitle('Renamed');

@@ -61,32 +61,64 @@ function nameOf(items: TaxonomyItem[], id: number | null | undefined): string | 
   return id === null ? null : items.find((i) => i.id === id)?.name;
 }
 
-interface Lists {
-  tags: TaxonomyItem[];
-  correspondents: TaxonomyItem[];
-  documentTypes: TaxonomyItem[];
+type Field = 'title' | 'correspondent_id' | 'document_type_id' | 'document_date';
+
+/** What the fetched document shows for a field, as it shows it. */
+function fetchedValue(doc: LibraryDocument, field: Field): string | null {
+  switch (field) {
+    case 'title': return doc.title;
+    case 'correspondent_id': return doc.correspondent;
+    case 'document_type_id': return doc.document_type;
+    case 'document_date': return isoDateOnly(doc.created);
+  }
 }
 
-/** The fields of `patch` that `doc` does not show yet. */
-function notYetShown(patch: DocumentPatch, doc: LibraryDocument, lists: Lists): DocumentPatch {
-  const rest = { ...patch };
-  if ('title' in rest && rest.title === doc.title) delete rest.title;
-  if ('correspondent_id' in rest && nameOf(lists.correspondents, rest.correspondent_id) === doc.correspondent) {
-    delete rest.correspondent_id;
-  }
-  if ('document_type_id' in rest && nameOf(lists.documentTypes, rest.document_type_id) === doc.document_type) {
-    delete rest.document_type_id;
-  }
-  if ('document_date' in rest && (rest.document_date ?? '') === isoDateOnly(doc.created)) {
-    delete rest.document_date;
-  }
-  if (rest.tags !== undefined) {
-    const names = rest.tags.map((id) => nameOf(lists.tags, id));
-    if (names.length === doc.tags.length && names.every((n) => n != null && doc.tags.includes(n))) {
-      delete rest.tags;
+/**
+ * Edits the fetched document does not show yet. A field keeps the value it had
+ * when edited and is dropped once the fetched value moves off it, to ours or to
+ * someone else's. Tags are kept as additions and removals over the fetched tags,
+ * so a tag another change adds or removes meanwhile is neither hidden nor undone.
+ */
+interface Layer {
+  fields: Partial<Record<Field, { patch: DocumentPatch; base: string | null }>>;
+  /**
+   * `armed` once the fetched tags have differed from the edit: a tag removed and
+   * added back is only settled after a read shows the state in between.
+   */
+  tags: Map<number, { name: string; add: boolean; armed: boolean }>;
+}
+
+const EMPTY_LAYER: Layer = { fields: {}, tags: new Map() };
+
+/** `layer` less what `doc` now shows; the same object when nothing changed. */
+function settle(layer: Layer, doc: LibraryDocument): Layer {
+  let changed = false;
+  const fields = { ...layer.fields };
+  for (const field of Object.keys(fields) as Field[]) {
+    if (fetchedValue(doc, field) !== fields[field]?.base) {
+      delete fields[field];
+      changed = true;
     }
   }
-  return rest;
+  const tags = new Map(layer.tags);
+  for (const [id, op] of tags) {
+    const shown = doc.tags.includes(op.name) === op.add;
+    if (shown && op.armed) {
+      tags.delete(id);
+      changed = true;
+    } else if (!shown && !op.armed) {
+      tags.set(id, { ...op, armed: true });
+      changed = true;
+    }
+  }
+  return changed ? { fields, tags } : layer;
+}
+
+/** `ids` with the layer's removals taken out and its additions put in. */
+function applyTagOps(ids: number[], ops: Layer['tags']): number[] {
+  const kept = ids.filter((id) => ops.get(id)?.add !== false);
+  for (const [id, op] of ops) if (op.add && !kept.includes(id)) kept.push(id);
+  return kept;
 }
 
 export type { Role };
@@ -142,18 +174,31 @@ export function DocumentScreen({
   const inFlightRef = React.useRef(false);
   // Edits made while a save is in flight, merged so later edits to a field win.
   const pendingRef = React.useRef<DocumentPatch | null>(null);
-  // Edits the fetched document does not show yet: shown over it and the base for
-  // the next edit, since a save's response and a read right after it come from
-  // the search index and may still hold the old values.
-  const unsavedRef = React.useRef<DocumentPatch>({});
-  const [unsaved, setUnsaved] = React.useState<DocumentPatch>({});
-  const keepUnsaved = (next: DocumentPatch): void => {
-    unsavedRef.current = next;
-    setUnsaved(next);
+  // Shown over the fetched document and the base for the next edit, since a
+  // save's response and a read right after it come from the search index and
+  // may still hold the old values.
+  const layerRef = React.useRef<Layer>(EMPTY_LAYER);
+  const [layer, setLayer] = React.useState<Layer>(EMPTY_LAYER);
+  const keepLayer = (next: Layer): void => {
+    layerRef.current = next;
+    setLayer(next);
   };
+  // The latest cached document, not the render-time prop: an edit made right
+  // after another must build on what the cache holds now.
+  const latestDoc = (): LibraryDocument =>
+    qc.getQueryData<LibraryDocument>(queryKeys.document(document.id)) ?? document;
+
+  /** Keeps a field edit in the layer and saves it. */
+  function editFields(patch: DocumentPatch): void {
+    const fields = { ...layerRef.current.fields };
+    for (const field of Object.keys(patch) as Field[]) {
+      fields[field] = { patch: { [field]: patch[field] }, base: fields[field]?.base ?? fetchedValue(latestDoc(), field) };
+    }
+    keepLayer({ ...layerRef.current, fields });
+    save(patch);
+  }
 
   function save(patch: DocumentPatch): void {
-    keepUnsaved({ ...unsavedRef.current, ...patch });
     const merged = { ...failedRef.current, ...pendingRef.current, ...patch };
     failedRef.current = null;
     if (inFlightRef.current) {
@@ -222,30 +267,30 @@ export function DocumentScreen({
   // Once nothing is being saved, drop the edits the fetched document now shows.
   React.useEffect(() => {
     if (inFlightRef.current) return;
-    const lists = {
-      tags: tags.data ?? [],
-      correspondents: correspondents.data ?? [],
-      documentTypes: documentTypes.data ?? [],
-    };
-    const rest = notYetShown(unsavedRef.current, document, lists);
-    if (Object.keys(rest).length < Object.keys(unsavedRef.current).length) keepUnsaved(rest);
-  }, [document, tags.data, correspondents.data, documentTypes.data, update.status]);
+    const next = settle(layerRef.current, document);
+    if (next !== layerRef.current) keepLayer(next);
+  }, [document, update.status]);
 
+  const edited = (field: Field): DocumentPatch | undefined => layer.fields[field]?.patch;
+  const title = edited('title');
+  const correspondent = edited('correspondent_id');
+  const documentType = edited('document_type_id');
+  const documentDate = edited('document_date');
   const shown: LibraryDocument = {
     ...document,
-    ...('title' in unsaved ? { title: unsaved.title ?? null } : {}),
-    ...('correspondent_id' in unsaved
-      ? { correspondent: nameOf(correspondents.data ?? [], unsaved.correspondent_id) ?? null }
+    ...(title ? { title: title.title ?? null } : {}),
+    ...(correspondent
+      ? { correspondent: nameOf(correspondents.data ?? [], correspondent.correspondent_id) ?? null }
       : {}),
-    ...('document_type_id' in unsaved
-      ? { document_type: nameOf(documentTypes.data ?? [], unsaved.document_type_id) ?? null }
+    ...(documentType
+      ? { document_type: nameOf(documentTypes.data ?? [], documentType.document_type_id) ?? null }
       : {}),
-    ...('document_date' in unsaved ? { created: unsaved.document_date ?? null } : {}),
+    ...(documentDate ? { created: documentDate.document_date ?? null } : {}),
   };
-  const shownTagIds = unsaved.tags ?? currentTagIds;
+  const shownTagIds = applyTagOps(currentTagIds, layer.tags);
 
   function commitTitle(next: string): void {
-    save({ title: next === '' ? null : next });
+    editFields({ title: next === '' ? null : next });
   }
 
   /**
@@ -253,26 +298,24 @@ export function DocumentScreen({
    * resolve to an id first; a stale list is refetched once, and if a name is
    * still unknown nothing is sent rather than dropping that tag.
    */
-  function changeTags(change: (ids: number[]) => number[], known: TaxonomyItem[] = []): void {
-    // The latest cached document, not the render-time prop: two quick creates
-    // would otherwise each overwrite the other's tag.
-    const latestNames = (): string[] =>
-      qc.getQueryData<LibraryDocument>(queryKeys.document(document.id))?.tags ?? document.tags;
+  function changeTag(tag: TaxonomyItem, add: boolean): void {
     const send = (ids: number[]): void => {
-      save({ tags: change(unsavedRef.current.tags ?? ids) });
+      const ops = new Map(layerRef.current.tags);
+      ops.delete(tag.id);
+      const armed = latestDoc().tags.includes(tag.name) !== add;
+      ops.set(tag.id, { name: tag.name, add, armed });
+      keepLayer({ ...layerRef.current, tags: ops });
+      save({ tags: applyTagOps(ids, ops) });
     };
 
-    if (unsavedRef.current.tags !== undefined) {
-      send(unsavedRef.current.tags);
-      return;
-    }
-    const ids = resolveTagIds(latestNames(), [...(tags.data ?? []), ...known]);
+    const known = [...(tags.data ?? []), tag];
+    const ids = resolveTagIds(latestDoc().tags, known);
     if (ids !== null) {
       send(ids);
       return;
     }
     void tags.refetch().then((result) => {
-      const fresh = resolveTagIds(latestNames(), [...(result.data ?? []), ...known]);
+      const fresh = resolveTagIds(latestDoc().tags, [...(result.data ?? []), tag]);
       if (fresh === null) {
         showToast("Couldn't update tags: some of this document's tags are unknown. Reload and try again.", 'error');
         return;
@@ -281,12 +324,20 @@ export function DocumentScreen({
     });
   }
 
+  // A tag just created may be on the page before the tag list has it.
+  const tagById = (id: number): TaxonomyItem | undefined => {
+    const op = layerRef.current.tags.get(id);
+    return tags.data?.find((t) => t.id === id) ?? (op && { id, name: op.name, document_count: 0 });
+  };
+
   function addTag(id: number): void {
-    changeTags((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    const tag = tagById(id);
+    if (tag) changeTag(tag, true);
   }
 
   function removeTag(id: number): void {
-    changeTags((ids) => ids.filter((t) => t !== id));
+    const tag = tagById(id);
+    if (tag) changeTag(tag, false);
   }
 
   // A create already running ignores another press, so a double press makes one.
@@ -295,7 +346,7 @@ export function DocumentScreen({
     createTag.mutate(name, {
       onSuccess: (created) => {
         notify(`Created tag “${created.name}”.`);
-        changeTags((ids) => [...ids, created.id], [created]);
+        changeTag(created, true);
       },
       onError: notifyError("Couldn't create the tag."),
     });
@@ -362,13 +413,13 @@ export function DocumentScreen({
             correspondents={correspondents.data ?? []}
             documentTypes={documentTypes.data ?? []}
             canEdit={canEdit}
-            onPatch={save}
+            onPatch={editFields}
             onCreateCorrespondent={(name) =>
               !createCorrespondent.isPending &&
               createCorrespondent.mutate(name, {
                 onSuccess: (created) => {
                   notify(`Created correspondent “${created.name}”.`);
-                  save({ correspondent_id: created.id });
+                  editFields({ correspondent_id: created.id });
                 },
                 onError: notifyError("Couldn't create the correspondent."),
               })
@@ -378,7 +429,7 @@ export function DocumentScreen({
               createDocumentType.mutate(name, {
                 onSuccess: (created) => {
                   notify(`Created document type “${created.name}”.`);
-                  save({ document_type_id: created.id });
+                  editFields({ document_type_id: created.id });
                 },
                 onError: notifyError("Couldn't create the document type."),
               })
