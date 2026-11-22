@@ -32,6 +32,7 @@ import { ActionsCard, type Role } from '../ActionsCard/ActionsCard';
 import { MatchCard } from '../MatchCard/MatchCard';
 import { parseSearchParams } from '../../../lib/parseSearchParams';
 import { cn } from '../../../lib/cn';
+import { isoDateOnly } from '../../../lib/formatDate';
 import styles from './DocumentScreen.module.css';
 
 /** Characters that are illegal in filenames across Windows, macOS, and Linux. */
@@ -53,6 +54,39 @@ function resolveTagIds(names: string[], tags: TaxonomyItem[]): number[] | null {
     ids.push(id);
   }
   return ids;
+}
+
+/** The item's name; null for no item, undefined when the id is not in `items`. */
+function nameOf(items: TaxonomyItem[], id: number | null | undefined): string | null | undefined {
+  return id === null ? null : items.find((i) => i.id === id)?.name;
+}
+
+interface Lists {
+  tags: TaxonomyItem[];
+  correspondents: TaxonomyItem[];
+  documentTypes: TaxonomyItem[];
+}
+
+/** The fields of `patch` that `doc` does not show yet. */
+function notYetShown(patch: DocumentPatch, doc: LibraryDocument, lists: Lists): DocumentPatch {
+  const rest = { ...patch };
+  if ('title' in rest && rest.title === doc.title) delete rest.title;
+  if ('correspondent_id' in rest && nameOf(lists.correspondents, rest.correspondent_id) === doc.correspondent) {
+    delete rest.correspondent_id;
+  }
+  if ('document_type_id' in rest && nameOf(lists.documentTypes, rest.document_type_id) === doc.document_type) {
+    delete rest.document_type_id;
+  }
+  if ('document_date' in rest && (rest.document_date ?? '') === isoDateOnly(doc.created)) {
+    delete rest.document_date;
+  }
+  if (rest.tags !== undefined) {
+    const names = rest.tags.map((id) => nameOf(lists.tags, id));
+    if (names.length === doc.tags.length && names.every((n) => n != null && doc.tags.includes(n))) {
+      delete rest.tags;
+    }
+  }
+  return rest;
 }
 
 export type { Role };
@@ -105,12 +139,18 @@ export function DocumentScreen({
   const inFlightRef = React.useRef(false);
   // Edits made while a save is in flight, merged so later edits to a field win.
   const pendingRef = React.useRef<DocumentPatch | null>(null);
-  // The tag set last sent or queued: the base for the next tag edit until the
-  // saved document is back, since the document's own tags are still the old ones.
-  const sentTagsRef = React.useRef<number[] | null>(null);
+  // Edits the fetched document does not show yet: shown over it and the base for
+  // the next edit, since a save's response and a read right after it come from
+  // the search index and may still hold the old values.
+  const unsavedRef = React.useRef<DocumentPatch>({});
+  const [unsaved, setUnsaved] = React.useState<DocumentPatch>({});
+  const keepUnsaved = (next: DocumentPatch): void => {
+    unsavedRef.current = next;
+    setUnsaved(next);
+  };
 
   function save(patch: DocumentPatch): void {
-    if (patch.tags !== undefined) sentTagsRef.current = patch.tags;
+    keepUnsaved({ ...unsavedRef.current, ...patch });
     if (inFlightRef.current) {
       pendingRef.current = { ...pendingRef.current, ...patch };
       return;
@@ -124,16 +164,10 @@ export function DocumentScreen({
     update.mutate(
       { id: document.id, patch },
       {
-        onSuccess: (saved) => {
-          if (pendingRef.current !== null) return;
-          qc.setQueryData(queryKeys.document(document.id), saved);
-          sentTagsRef.current = null;
-        },
         onError: () => {
           // Retry sends the failed patch together with anything queued behind it.
           lastAttemptRef.current = { ...patch, ...pendingRef.current };
           pendingRef.current = null;
-          sentTagsRef.current = null;
         },
         onSettled: () => {
           inFlightRef.current = false;
@@ -182,6 +216,31 @@ export function DocumentScreen({
     [document.tags, tagsByName],
   );
 
+  // Once nothing is being saved, drop the edits the fetched document now shows.
+  React.useEffect(() => {
+    if (inFlightRef.current) return;
+    const lists = {
+      tags: tags.data ?? [],
+      correspondents: correspondents.data ?? [],
+      documentTypes: documentTypes.data ?? [],
+    };
+    const rest = notYetShown(unsavedRef.current, document, lists);
+    if (Object.keys(rest).length < Object.keys(unsavedRef.current).length) keepUnsaved(rest);
+  }, [document, tags.data, correspondents.data, documentTypes.data, update.status]);
+
+  const shown: LibraryDocument = {
+    ...document,
+    ...('title' in unsaved ? { title: unsaved.title ?? null } : {}),
+    ...('correspondent_id' in unsaved
+      ? { correspondent: nameOf(correspondents.data ?? [], unsaved.correspondent_id) ?? null }
+      : {}),
+    ...('document_type_id' in unsaved
+      ? { document_type: nameOf(documentTypes.data ?? [], unsaved.document_type_id) ?? null }
+      : {}),
+    ...('document_date' in unsaved ? { created: unsaved.document_date ?? null } : {}),
+  };
+  const shownTagIds = unsaved.tags ?? currentTagIds;
+
   function commitTitle(next: string): void {
     save({ title: next === '' ? null : next });
   }
@@ -197,11 +256,11 @@ export function DocumentScreen({
     const latestNames = (): string[] =>
       qc.getQueryData<LibraryDocument>(queryKeys.document(document.id))?.tags ?? document.tags;
     const send = (ids: number[]): void => {
-      save({ tags: change(sentTagsRef.current ?? ids) });
+      save({ tags: change(unsavedRef.current.tags ?? ids) });
     };
 
-    if (sentTagsRef.current !== null) {
-      send(sentTagsRef.current);
+    if (unsavedRef.current.tags !== undefined) {
+      send(unsavedRef.current.tags);
       return;
     }
     const ids = resolveTagIds(latestNames(), [...(tags.data ?? []), ...known]);
@@ -247,7 +306,7 @@ export function DocumentScreen({
       </Link>
 
       <div className={styles['title-row']}>
-        <DocumentTitle title={document.title} canEdit={canEdit} onChange={commitTitle} />
+        <DocumentTitle title={shown.title} canEdit={canEdit} onChange={commitTitle} />
         {saveStatus === 'error' ? (
           <SaveStatusPill
             status={saveStatus}
@@ -277,16 +336,16 @@ export function DocumentScreen({
       <DocumentActions
         className={cn(styles['actions'])}
         pdfUrl={documentPdfUrl(document.id)}
-        downloadFilename={toDownloadFilename(document.title, document.id)}
+        downloadFilename={toDownloadFilename(shown.title, document.id)}
         paperlessUrl={document.paperless_url}
       />
 
       <div className={styles['grid']}>
         <PdfViewerCard
           documentId={document.id}
-          title={document.title ?? `Document ${document.id}`}
+          title={shown.title ?? `Document ${document.id}`}
           paperlessUrl={document.paperless_url}
-          downloadFilename={toDownloadFilename(document.title, document.id)}
+          downloadFilename={toDownloadFilename(shown.title, document.id)}
         />
 
         <aside className={styles['side']}>
@@ -299,7 +358,7 @@ export function DocumentScreen({
           )}
 
           <MetadataCard
-            document={document}
+            document={shown}
             correspondents={correspondents.data ?? []}
             documentTypes={documentTypes.data ?? []}
             canEdit={canEdit}
@@ -327,7 +386,7 @@ export function DocumentScreen({
           <Card>
             <h3 className={styles['card-h']}>Tags</h3>
             <TagEditor
-              selectedIds={currentTagIds}
+              selectedIds={shownTagIds}
               availableTags={tags.data ?? []}
               canEdit={canEdit && tags.data !== undefined}
               onAdd={addTag}
@@ -338,7 +397,7 @@ export function DocumentScreen({
 
           <ActionsCard
             documentId={document.id}
-            title={document.title ?? `Document ${document.id}`}
+            title={shown.title ?? `Document ${document.id}`}
             role={role}
             reclassifying={reclassify.isPending}
             retranscribing={retranscribe.isPending}

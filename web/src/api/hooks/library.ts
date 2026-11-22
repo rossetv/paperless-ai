@@ -29,38 +29,20 @@ export function useDocument(
 }
 
 /**
- * Partially update a document's metadata — PATCH /api/documents/{id}, optimistically.
+ * Partially update a document's metadata — PATCH /api/documents/{id}.
  *
- * Title and date are merged into the cache at once and rolled back on error. The
- * PATCH response is not written to the cache: it carries pre-edit values until
- * the next reconcile and would revert the edit. Tags, correspondent and type are
- * ids in the patch but names on `LibraryDocument`, so they wait for the refetch.
+ * Nothing is written to the cache: the response, and a GET right after it, come
+ * from the search index and may still hold the pre-edit values until the next
+ * reconcile, so the caller shows the edit until a fetch reflects it.
  */
 export function useUpdateDocument(): UseMutationResult<
   LibraryDocument,
   Error,
-  { id: number; patch: DocumentPatch },
-  { previous: LibraryDocument | undefined }
+  { id: number; patch: DocumentPatch }
 > {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }) => patchDocument(id, patch),
-    onMutate: async ({ id, patch }) => {
-      await qc.cancelQueries({ queryKey: queryKeys.document(id) });
-      const previous = qc.getQueryData<LibraryDocument>(queryKeys.document(id));
-      if (previous !== undefined) {
-        const optimistic: LibraryDocument = { ...previous };
-        if ('title' in patch) optimistic.title = patch.title ?? null;
-        if ('document_date' in patch) optimistic.created = patch.document_date ?? null;
-        qc.setQueryData(queryKeys.document(id), optimistic);
-      }
-      return { previous };
-    },
-    onError: (_err, vars, context) => {
-      if (context?.previous !== undefined) {
-        qc.setQueryData(queryKeys.document(vars.id), context.previous);
-      }
-    },
     onSettled: (_data, _err, vars) => {
       void qc.invalidateQueries({ queryKey: queryKeys.document(vars.id) });
       void qc.invalidateQueries({ queryKey: ['documents'] });

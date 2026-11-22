@@ -5,11 +5,20 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tanstack/react-query';
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
-import { ApiError } from '../../../api/client';
+import { ApiError, patchDocument, getDocument } from '../../../api/client';
+import { useDocument } from '../../../api/hooks/library';
 import { DocumentScreen } from './DocumentScreen';
 
-vi.mock('../../../api/hooks', () => ({
-  useUpdateDocument: vi.fn(),
+// The save queue lives in TanStack's callback timing, so the real update hook
+// runs against a mocked HTTP layer.
+vi.mock('../../../api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../api/client')>()),
+  patchDocument: vi.fn(),
+  getDocument: vi.fn(),
+}));
+
+vi.mock('../../../api/hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../api/hooks')>()),
   useCorrespondents: vi.fn(),
   useDocumentTypes: vi.fn(),
   useTags: vi.fn(),
@@ -23,7 +32,6 @@ vi.mock('../../../api/hooks', () => ({
 }));
 
 import {
-  useUpdateDocument,
   useCorrespondents,
   useDocumentTypes,
   useTags,
@@ -36,7 +44,8 @@ import {
   useSearch,
 } from '../../../api/hooks';
 
-const mockUseUpdateDocument = useUpdateDocument as ReturnType<typeof vi.fn>;
+const mockPatchDocument = patchDocument as ReturnType<typeof vi.fn>;
+const mockGetDocument = getDocument as ReturnType<typeof vi.fn>;
 const mockUseCorrespondents = useCorrespondents as ReturnType<typeof vi.fn>;
 const mockUseDocumentTypes = useDocumentTypes as ReturnType<typeof vi.fn>;
 const mockUseTags = useTags as ReturnType<typeof vi.fn>;
@@ -75,30 +84,6 @@ const ALL_TAGS: TaxonomyItem[] = [
   { id: 102, name: 'payroll', document_count: 30 },
   { id: 103, name: 'new-tag', document_count: 0 },
 ];
-
-function mutationStub(
-  overrides: Partial<UseMutationResult<LibraryDocument, Error, { id: number; patch: object }>> = {},
-): UseMutationResult<LibraryDocument, Error, { id: number; patch: object }> {
-  return {
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    data: undefined,
-    error: null,
-    isPending: false,
-    isSuccess: false,
-    isError: false,
-    isIdle: true,
-    status: 'idle',
-    reset: vi.fn(),
-    context: undefined,
-    failureCount: 0,
-    failureReason: null,
-    isPaused: false,
-    submittedAt: 0,
-    variables: undefined,
-    ...overrides,
-  } as unknown as UseMutationResult<LibraryDocument, Error, { id: number; patch: object }>;
-}
 
 function voidMutationStub(
   overrides: Partial<UseMutationResult<void, Error, number>> = {},
@@ -166,37 +151,50 @@ function makeQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 }
 
-function renderScreen(
-  opts: { role?: Role; mutate?: ReturnType<typeof vi.fn>; queryClient?: QueryClient } = {},
-) {
-  const mutate = opts.mutate ?? vi.fn();
-  // vitest types vi.fn() as a generic Mock that does not assign to
-  // react-query's narrowly typed mutate; cast to the expected signature.
-  mockUseUpdateDocument.mockReturnValue(
-    mutationStub({
-      mutate: mutate as unknown as UseMutateFunction<
-        LibraryDocument,
-        Error,
-        { id: number; patch: object }
-      >,
-    }),
-  );
+/** Resolvable from the test, for a request that is still in flight. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
-  return {
-    mutate,
-    ...render(
-      <QueryClientProvider client={opts.queryClient ?? makeQueryClient()}>
-        <MemoryRouter>
-          <DocumentScreen
-            document={DOC}
-            parent="library"
-            parentSearch=""
-            role={opts.role ?? 'member'}
-          />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    ),
-  };
+/** Reads the document from the cache as the pages do, so a save's refetch reaches the screen. */
+function LiveScreen({ role }: { role: Role }): React.ReactElement | null {
+  const doc = useDocument(DOC.id);
+  return doc.data ? <DocumentScreen document={doc.data} parent="library" parentSearch="" role={role} /> : null;
+}
+
+function renderScreen(opts: { role?: Role; queryClient?: QueryClient; live?: boolean } = {}) {
+  const queryClient = opts.queryClient ?? makeQueryClient();
+  const role = opts.role ?? 'member';
+  if (opts.live) queryClient.setQueryData(['document', DOC.id], DOC);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        {opts.live ? (
+          <LiveScreen role={role} />
+        ) : (
+          <DocumentScreen document={DOC} parent="library" parentSearch="" role={role} />
+        )}
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** The patch of each PATCH request sent so far. */
+function sentPatches(): object[] {
+  return mockPatchDocument.mock.calls.map((c) => c[1] as object);
+}
+
+function renameTitle(to: string): void {
+  fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
+  const input = screen.getByDisplayValue('eBay Payslip 05/2026');
+  fireEvent.change(input, { target: { value: to } });
+  fireEvent.blur(input);
 }
 
 function searchPendingStub(): UseQueryResult<never, Error> {
@@ -213,6 +211,9 @@ function searchPendingStub(): UseQueryResult<never, Error> {
 }
 
 beforeEach(() => {
+  mockPatchDocument.mockReset().mockResolvedValue(DOC);
+  // The search index lags behind Paperless: a read right after a save still has the old values.
+  mockGetDocument.mockReset().mockResolvedValue(DOC);
   mockUseCorrespondents.mockReturnValue(queryOk(CORRESPONDENTS));
   mockUseDocumentTypes.mockReturnValue(queryOk(DOC_TYPES));
   mockUseTags.mockReturnValue(queryOk(ALL_TAGS));
@@ -244,8 +245,6 @@ describe('DocumentScreen', () => {
   });
 
   it('breadcrumb preserves parent search-string for library', () => {
-    const mutate = vi.fn();
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     render(
       <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter>
@@ -257,8 +256,6 @@ describe('DocumentScreen', () => {
   });
 
   it('breadcrumb says "Search results" linking to / with the query string when parent is search', () => {
-    const mutate = vi.fn();
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     render(
       <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter>
@@ -277,45 +274,32 @@ describe('DocumentScreen', () => {
   });
 
   it('changing the title fires PATCH with the new title on blur', async () => {
-    const mutate = vi.fn();
-    renderScreen({ role: 'member', mutate });
-    fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
-    const input = screen.getByDisplayValue('eBay Payslip 05/2026');
-    fireEvent.change(input, { target: { value: 'Renamed' } });
-    fireEvent.blur(input);
-    await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith({ id: 934, patch: { title: 'Renamed' } }, expect.anything()),
-    );
+    renderScreen({ role: 'member' });
+    renameTitle('Renamed');
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledWith(934, { title: 'Renamed' }));
   });
 
   it('does not fire PATCH when the title is unchanged', async () => {
-    const mutate = vi.fn();
-    renderScreen({ role: 'member', mutate });
+    renderScreen({ role: 'member' });
     fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
     fireEvent.blur(screen.getByDisplayValue('eBay Payslip 05/2026'));
     await new Promise((r) => setTimeout(r, 50));
-    expect(mutate).not.toHaveBeenCalled();
+    expect(mockPatchDocument).not.toHaveBeenCalled();
   });
 
   it('changing the correspondent fires PATCH with correspondent_id', async () => {
-    const mutate = vi.fn();
-    renderScreen({ role: 'member', mutate });
+    renderScreen({ role: 'member' });
     // Exact match, so it does not hit the title button.
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.click(screen.getByText('Revenue.ie'));
-    await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 2 } }, expect.anything()),
-    );
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledWith(934, { correspondent_id: 2 }));
   });
 
   it('removing a tag fires PATCH with the updated tag id list', async () => {
-    const mutate = vi.fn();
-    renderScreen({ role: 'member', mutate });
+    renderScreen({ role: 'member' });
     fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
-    await waitFor(() => expect(mutate).toHaveBeenCalled());
-    const call = mutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
-    expect(call.id).toBe(934);
-    expect(call.patch.tags).not.toContain(101); // 101 = ireland
+    // 101 = ireland
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledWith(934, { tags: [100, 102] }));
   });
 
   it('does not offer tag editing before the tag list has loaded', () => {
@@ -328,23 +312,20 @@ describe('DocumentScreen', () => {
     const stale = ALL_TAGS.filter((t) => t.name !== 'payroll');
     const refetch = vi.fn().mockResolvedValue({ data: ALL_TAGS });
     mockUseTags.mockReturnValue({ ...queryOk(stale), refetch });
-    const mutate = vi.fn();
-    renderScreen({ role: 'member', mutate });
+    renderScreen({ role: 'member' });
     fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
-    await waitFor(() => expect(mutate).toHaveBeenCalled());
-    const call = mutate.mock.calls[0]?.[0] as { patch: { tags: number[] } };
-    expect(call.patch.tags).toEqual([100, 102]);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalled());
+    expect(sentPatches()[0]).toEqual({ tags: [100, 102] });
   });
 
   it('sends no tag patch and shows an error when a document tag cannot be resolved', async () => {
     const stale = ALL_TAGS.filter((t) => t.name !== 'payroll');
     const refetch = vi.fn().mockResolvedValue({ data: stale });
     mockUseTags.mockReturnValue({ ...queryOk(stale), refetch });
-    const mutate = vi.fn();
-    renderScreen({ role: 'member', mutate });
+    renderScreen({ role: 'member' });
     fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/tags/i);
-    expect(mutate).not.toHaveBeenCalled();
+    expect(mockPatchDocument).not.toHaveBeenCalled();
   });
 
   it('readonly user sees no edit affordances on the title', () => {
@@ -485,8 +466,6 @@ describe('DocumentScreen', () => {
   });
 
   it('renders MatchCard at the top of the sidebar when parent is search', () => {
-    const mutate = vi.fn();
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     mockUseSearch.mockReturnValue(queryOk({
       answer: '…',
       sources: [
@@ -522,8 +501,6 @@ describe('DocumentScreen', () => {
   });
 
   it('omits MatchCard when parent is library', () => {
-    const mutate = vi.fn();
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     render(
       <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter>
@@ -541,7 +518,6 @@ describe('DocumentScreen', () => {
   });
 
   it('creating a new correspondent patches it onto the document', async () => {
-    const updateMutate = vi.fn();
     const correspondentMutate = vi.fn((
       _name: string,
       opts?: { onSuccess?: (data: TaxonomyItem) => void },
@@ -549,23 +525,21 @@ describe('DocumentScreen', () => {
       opts?.onSuccess?.({ id: 50, name: 'New Corp', document_count: 0 });
     });
 
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate: updateMutate }));
     mockUseCreateCorrespondent.mockReturnValue(
       createMutationStub({ mutate: correspondentMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
     );
 
-    renderScreen({ role: 'member', mutate: updateMutate });
+    renderScreen({ role: 'member' });
 
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Corp' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     expect(correspondentMutate).toHaveBeenCalledWith('New Corp', expect.objectContaining({ onSuccess: expect.any(Function) }));
-    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 50 } }, expect.anything());
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledWith(934, { correspondent_id: 50 }));
   });
 
   it('creating a new document type patches it onto the document', async () => {
-    const updateMutate = vi.fn();
     const documentTypeMutate = vi.fn((
       _name: string,
       opts?: { onSuccess?: (data: TaxonomyItem) => void },
@@ -573,23 +547,21 @@ describe('DocumentScreen', () => {
       opts?.onSuccess?.({ id: 60, name: 'New Type', document_count: 0 });
     });
 
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate: updateMutate }));
     mockUseCreateDocumentType.mockReturnValue(
       createMutationStub({ mutate: documentTypeMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
     );
 
-    renderScreen({ role: 'member', mutate: updateMutate });
+    renderScreen({ role: 'member' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Payslip' }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Type' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     expect(documentTypeMutate).toHaveBeenCalledWith('New Type', expect.objectContaining({ onSuccess: expect.any(Function) }));
-    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } }, expect.anything());
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledWith(934, { document_type_id: 60 }));
   });
 
-  it('createTagThenAdd keeps a tag added since render by reading the cached document', () => {
-    const updateMutate = vi.fn();
+  it('createTagThenAdd keeps a tag added since render by reading the cached document', async () => {
     const tagMutate = vi.fn(
       (name: string, opts?: { onSuccess?: (data: TaxonomyItem) => void }) => {
         opts?.onSuccess?.({ id: 200, name, document_count: 0 });
@@ -602,101 +574,78 @@ describe('DocumentScreen', () => {
     const queryClient = makeQueryClient();
     queryClient.setQueryData(['document', DOC.id], { ...DOC, tags: [...DOC.tags, 'new-tag'] });
 
-    renderScreen({ role: 'member', mutate: updateMutate, queryClient });
+    renderScreen({ role: 'member', queryClient });
     fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'alpha-tag' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
-    expect(updateMutate).toHaveBeenCalledTimes(1);
-    const call = updateMutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
-    expect(call.patch.tags).toEqual([100, 101, 102, 103, 200]);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(1));
+    expect(sentPatches()[0]).toEqual({ tags: [100, 101, 102, 103, 200] });
   });
 
   it('sends an edit made during a save once that save settles, merged with later edits', async () => {
-    type Opts = { onSuccess?: (doc: LibraryDocument) => void; onSettled?: () => void };
-    const calls: { args: { id: number; patch: object }; opts?: Opts }[] = [];
-    const mutate = vi.fn((args: { id: number; patch: object }, opts?: Opts) => {
-      calls.push({ args, ...(opts ? { opts } : {}) });
-    });
-    renderScreen({ role: 'member', mutate });
+    const first = deferred<LibraryDocument>();
+    mockPatchDocument.mockReturnValueOnce(first.promise);
+    renderScreen({ role: 'member' });
 
-    fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
-    const input = screen.getByDisplayValue('eBay Payslip 05/2026');
-    fireEvent.change(input, { target: { value: 'Renamed' } });
-    fireEvent.blur(input);
-    expect(mutate).toHaveBeenCalledTimes(1);
+    renameTitle('Renamed');
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(1));
 
     // Two edits while the title save is in flight; the second correspondent wins.
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.click(screen.getByText('Revenue.ie'));
     fireEvent.click(screen.getByRole('button', { name: 'Payslip' }));
     fireEvent.click(screen.getByText('Invoice'));
-    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mockPatchDocument).toHaveBeenCalledTimes(1);
 
-    act(() => {
-      calls[0]?.opts?.onSuccess?.({ ...DOC, title: 'Renamed' });
-      calls[0]?.opts?.onSettled?.();
-    });
-    expect(mutate).toHaveBeenCalledTimes(2);
-    expect(calls[1]?.args).toEqual({ id: 934, patch: { correspondent_id: 2, document_type_id: 11 } });
+    first.resolve(DOC);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ correspondent_id: 2, document_type_id: 11 });
   });
 
-  it('a tag edit made while another tag save is in flight keeps the first edit', () => {
-    type Opts = { onSuccess?: (doc: LibraryDocument) => void; onSettled?: () => void };
-    const calls: { args: { id: number; patch: { tags?: number[] } }; opts?: Opts }[] = [];
-    const mutate = vi.fn((args: { id: number; patch: { tags?: number[] } }, opts?: Opts) => {
-      calls.push({ args, ...(opts ? { opts } : {}) });
-    });
-    renderScreen({ role: 'member', mutate });
+  it('a tag edit made while another tag save is in flight keeps the first edit', async () => {
+    const first = deferred<LibraryDocument>();
+    mockPatchDocument.mockReturnValueOnce(first.promise);
+    renderScreen({ role: 'member' });
 
     fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
     fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
     fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
-    expect(mutate).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(1));
 
-    act(() => {
-      calls[0]?.opts?.onSuccess?.({ ...DOC, tags: [...DOC.tags, 'new-tag'] });
-      calls[0]?.opts?.onSettled?.();
-    });
-    expect(calls[1]?.args.patch.tags).toEqual([100, 102, 103]);
+    first.resolve(DOC);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 102, 103] });
   });
 
-  it('retry button re-fires the last attempted PATCH with the same args', async () => {
-    const mutate = vi.fn();
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
+  it('a tag edit after a save keeps the tag that save added, though the index still has the old tags', async () => {
+    renderScreen({ role: 'member', live: true });
 
-    const { rerender } = render(
-      <QueryClientProvider client={makeQueryClient()}>
-        <MemoryRouter>
-          <DocumentScreen document={DOC} parent="library" parentSearch="" role="member" />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    expect(await screen.findByText(/^saved$/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
-    const input = screen.getByDisplayValue('eBay Payslip 05/2026');
-    fireEvent.change(input, { target: { value: 'Renamed' } });
-    fireEvent.blur(input);
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 102, 103] });
+  });
 
-    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
-    const firstCallArgs = mutate.mock.calls[0]![0] as { id: number; patch: object };
-    expect(firstCallArgs).toMatchObject({ id: 934, patch: { title: 'Renamed' } });
+  it('keeps showing a saved title while the index still has the old one', async () => {
+    renderScreen({ role: 'member', live: true });
+    renameTitle('Renamed');
+    expect(await screen.findByText(/^saved$/i)).toBeInTheDocument();
+    await waitFor(() => expect(mockGetDocument).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Edit title: Renamed' })).toBeInTheDocument();
+  });
 
-    // Re-render in the error state so the retry button appears.
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate, isError: true, isIdle: false, status: 'error' }));
-    rerender(
-      <QueryClientProvider client={makeQueryClient()}>
-        <MemoryRouter>
-          <DocumentScreen document={DOC} parent="library" parentSearch="" role="member" />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+  it('retry button re-sends the failed PATCH', async () => {
+    mockPatchDocument.mockRejectedValueOnce(new Error('network down'));
+    renderScreen({ role: 'member' });
 
-    const retryBtn = screen.getByRole('button', { name: /couldn't save/i });
-    fireEvent.click(retryBtn);
+    renameTitle('Renamed');
+    fireEvent.click(await screen.findByRole('button', { name: /couldn't save/i }));
 
-    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
-    const secondCallArgs = mutate.mock.calls[1]![0] as { id: number; patch: object };
-    expect(secondCallArgs).toEqual(firstCallArgs);
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ title: 'Renamed' });
   });
 });
