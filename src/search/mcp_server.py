@@ -12,9 +12,8 @@ import dataclasses
 import importlib.metadata
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-import httpx
 import structlog
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -69,25 +68,6 @@ _in_flight: set[asyncio.Task[str]] = set()
 def _log_orphaned_failure(work: asyncio.Task[str]) -> None:
     if not work.cancelled() and (exc := work.exception()) is not None:
         log.error("mcp.tool_failed_after_cancel", exc_info=exc)
-
-
-# The index stores ids as SQLite INTEGER; a larger one can name no document.
-_MAX_DOCUMENT_ID = 2**63 - 1
-
-
-class _BoundedIdClient:
-    """Answer 404 for an id no document can have, as Paperless itself does."""
-
-    def __init__(self, client: PaperlessClient) -> None:
-        self._client = client
-
-    def get_document(self, doc_id: int) -> dict[str, Any]:
-        if doc_id > _MAX_DOCUMENT_ID:
-            request = httpx.Request("GET", "http://paperless.invalid/")
-            raise httpx.HTTPStatusError(
-                "404", request=request, response=httpx.Response(404, request=request)
-            )
-        return self._client.get_document(doc_id)
 
 
 class _BearerAuthMiddleware:
@@ -591,9 +571,7 @@ def _register_search_tools(
         def _build(core: SearchCore) -> str:
             client = paperless_factory(core.settings)
             try:
-                docs = core.fetch_documents(
-                    ids, cast("PaperlessClient", _BoundedIdClient(client))
-                )
+                docs = core.fetch_documents(ids, client)
             finally:
                 client.close()
             return json.dumps({"documents": [dataclasses.asdict(doc) for doc in docs]})

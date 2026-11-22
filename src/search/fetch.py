@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# The index stores ids as SQLite INTEGER; a larger one can name no document.
+_MAX_DOCUMENT_ID = 2**63 - 1
+
 
 def assemble_fetched(
     ids: list[int],
@@ -38,6 +41,9 @@ def assemble_fetched(
     results: list[FetchedDocument] = []
     for doc_id in ids:
         url = _paperless_url(paperless_public_url, doc_id)
+        if doc_id > _MAX_DOCUMENT_ID:
+            results.append(_error(doc_id, url, "not found"))
+            continue
         try:
             doc = paperless_client.get_document(doc_id)
         except httpx.HTTPStatusError as exc:
