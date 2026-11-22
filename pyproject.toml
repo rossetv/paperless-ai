@@ -8,15 +8,15 @@ version = "1.0.0"
 requires-python = ">=3.11"
 dependencies = [
     "httpx~=0.28",
-    "openai~=1.35",
+    "openai~=2.54",
     "Pillow~=13.0",
     "pdf2image~=1.17",
-    "structlog~=24.2",
+    "structlog~=26.1",
     "sqlite-vec~=0.1",
     "fastapi~=0.136",
     "uvicorn[standard]~=0.47",
     "mcp~=1.28",
-    "argon2-cffi~=23.1",
+    "argon2-cffi~=25.1",
 ]
 
 [project.scripts]
@@ -44,3 +44,8 @@ markers = [
     "anyio: Async test run on the anyio event loop (search API and MCP tests)",
 ]
 addopts = "-q --tb=short"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff.lint]
+# The pycodestyle (E4, E7, E9) and pyflakes (F) rules, the same set ruff applied before it stopped defaulting to them.
+select = ["E4", "E7", "E9", "F"]

@@ -497,11 +497,11 @@ def test_cookie_auth_refreshes_last_seen_at() -> None:
     settings = _make_settings()
     asgi_app = build_mcp_app(core, settings, path)
     client = TestClient(asgi_app, raise_server_exceptions=False)
+    client.cookies.set(SESSION_COOKIE_NAME, issued.token)
 
     # This request should pass auth and refresh last_seen_at.
     client.post(
         "/mcp",
-        cookies={SESSION_COOKIE_NAME: issued.token},
         json={
             "jsonrpc": "2.0",
             "method": "initialize",

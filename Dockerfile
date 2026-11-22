@@ -4,8 +4,8 @@
 # Runs on $BUILDPLATFORM: the output is architecture-neutral, so building under
 # QEMU for arm64 would only slow multi-arch builds down.
 # Manifest-list digest (amd64 and arm64), from
-# `docker buildx imagetools inspect node:22-slim` on 2026-06-12.
-FROM --platform=$BUILDPLATFORM node:22-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752 AS frontend-builder
+# `docker buildx imagetools inspect node:22-slim` on 2026-11-22.
+FROM --platform=$BUILDPLATFORM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS frontend-builder
 
 WORKDIR /web
 
@@ -23,8 +23,8 @@ RUN npm run build
 # are built here, where a compiler exists, so the final stage never needs one,
 # even for an arm64 dependency with no prebuilt wheel.
 # Manifest-list digest (amd64 and arm64), from
-# `docker buildx imagetools inspect python:3.11-slim` on 2026-06-12.
-FROM python:3.11-slim@sha256:f9fa7f851e38bfb19c9de3afbc4b86ae7176ea7aaf94535c31df5458d5849457 AS builder
+# `docker buildx imagetools inspect python:3.11-slim` on 2026-11-22.
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -64,7 +64,7 @@ RUN if [ "$RUN_TESTS" = "1" ]; then \
 
 # Stage 3: runtime image with no build toolchain; dependencies are installed
 # offline from the wheelhouse.
-FROM python:3.11-slim@sha256:f9fa7f851e38bfb19c9de3afbc4b86ae7176ea7aaf94535c31df5458d5849457
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
@@ -73,24 +73,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Create both directories owned by appuser and install as appuser, so no
-# recursive `chown -R` over the venv is needed (that cost ~40s on arm64 CI).
+# Venv and code are installed as root and stay read-only to appuser, so the
+# running app cannot rewrite its own code. Only /data is writable by it.
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-RUN mkdir -p /app "$VIRTUAL_ENV" \
-    && chown appuser:appgroup /app "$VIRTUAL_ENV"
 WORKDIR /app
-USER appuser
 
-RUN python3 -m venv "$VIRTUAL_ENV"
+RUN python3 -m venv "$VIRTUAL_ENV" \
+    && pip install --no-cache-dir --upgrade pip
 
-RUN pip install --no-cache-dir --upgrade pip
+# --no-index: nothing comes from PyPI and no source build can run.
+RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels \
+    pip install --no-cache-dir --no-index --find-links=/wheels paperless-ai
 
-# --no-index: nothing comes from PyPI and no source build can run. The wheels
-# sit under the appuser-owned /app so they can be removed without root.
-COPY --from=builder --chown=appuser:appgroup /wheels /app/wheels
-RUN pip install --no-cache-dir --no-index --find-links=/app/wheels paperless-ai \
-    && rm -rf /app/wheels
+# Where INDEX_DB_PATH and APP_DB_PATH point by default; a new volume mounted
+# here inherits this ownership.
+RUN mkdir /data && chown appuser:appgroup /data
 
 # Installed as a package, the server's relative-path fallback would resolve
 # inside site-packages, not /app.
@@ -102,7 +100,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # long-lived threaded daemons; two keeps steady-state RSS down.
 ENV MALLOC_ARENA_MAX=2
 
-COPY --from=frontend-builder --chown=appuser:appgroup /web/dist ./web/dist
+COPY --from=frontend-builder /web/dist ./web/dist
+
+USER appuser
 
 # The OCR daemon by default; the same image runs the other daemons by command.
 CMD ["paperless-ai"]

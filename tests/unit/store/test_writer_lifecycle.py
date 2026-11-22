@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 
+import pytest
+import structlog.testing
+
+from store.migrations import StoreError
 from store.models import TaxonomyEntry
 from store.schema import connect
 from tests.helpers.factories import make_chunks, make_document_meta
@@ -58,7 +63,91 @@ class TestIndexState:
         assert ids == {1, 2}
 
 
+def _full_reembed_logs(captured: list) -> list:
+    return [e for e in captured if e["event"] == "store.full_reembed_projected"]
+
+
+class TestBulkDelete:
+    def test_delete_more_ids_than_the_variable_limit_allows(self, db_path: str) -> None:
+        writer = open_writer(db_path)
+        count = 1100
+        for doc_id in range(1, count + 1):
+            writer.upsert_document(make_document_meta(id=doc_id), make_chunks(2))
+        writer._conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 600)
+        writer.delete_documents(range(1, count + 1))
+        conn = writer._conn
+        remaining = [
+            conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+            for t in ("documents", "chunks", "chunks_fts")
+        ]
+        writer.close()
+        assert remaining == [0, 0, 0]
+
+    def test_failed_delete_names_the_count_and_first_ten_ids_and_rolls_back(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path)
+        for doc_id in range(1, 13):
+            writer.upsert_document(make_document_meta(id=doc_id), make_chunks(1))
+        writer._conn.execute(
+            "CREATE TRIGGER block_delete BEFORE DELETE ON documents "
+            "WHEN OLD.id = 12 BEGIN SELECT RAISE(ABORT, 'blocked'); END"
+        )
+        with pytest.raises(StoreError) as excinfo:
+            writer.delete_documents(range(1, 13))
+        remaining = writer._conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+        fts_rows = writer._conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
+        writer.close()
+        assert str(excinfo.value) == (
+            "failed to delete 12 documents (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ...)"
+        )
+        assert remaining == 12
+        assert fts_rows == 12
+
+
 class TestCheckEmbeddingModel:
+    def test_first_run_on_an_empty_index_logs_no_full_reembed_warning(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path, model="model-a", dimensions=4)
+        with structlog.testing.capture_logs() as captured:
+            writer.check_embedding_model()
+        stored = writer.read_meta("embedding_model")
+        writer.close()
+        assert _full_reembed_logs(captured) == []
+        assert stored == "model-a"
+
+    def test_model_change_on_an_index_with_chunks_logs_full_reembed(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path, model="model-a", dimensions=4)
+        writer.check_embedding_model()
+        writer.upsert_document(make_document_meta(id=1), make_chunks(2))
+        writer.close()
+
+        writer2 = open_writer(db_path, model="model-b", dimensions=4)
+        with structlog.testing.capture_logs() as captured:
+            writer2.check_embedding_model()
+        writer2.close()
+        logs = _full_reembed_logs(captured)
+        assert len(logs) == 1
+        assert logs[0]["current_chunk_count"] == 2
+
+    def test_model_change_on_an_index_without_chunks_logs_no_full_reembed(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path, model="model-a", dimensions=4)
+        writer.check_embedding_model()
+        writer.close()
+
+        writer2 = open_writer(db_path, model="model-b", dimensions=4)
+        with structlog.testing.capture_logs() as captured:
+            writer2.check_embedding_model()
+        stored = writer2.read_meta("embedding_model")
+        writer2.close()
+        assert _full_reembed_logs(captured) == []
+        assert stored == "model-b"
+
     def test_returns_true_on_first_run(self, db_path: str) -> None:
         """With no stored model, a rebuild is needed and the model is recorded."""
         writer = open_writer(db_path, model="model-a", dimensions=4)

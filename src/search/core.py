@@ -393,10 +393,13 @@ class SearchCore:
             )
         chunks = filtered
 
+        max_refinements = self._settings.SEARCH_MAX_REFINEMENTS
+        # With no refinement allowed nothing could act on a needs-more outcome,
+        # so the only synthesis must answer.
         outcome = self._synthesise(
             query,
             chunks,
-            mode="exploratory",
+            mode="final" if max_refinements <= 0 else "exploratory",
             budget=budget,
             asker=asker,
             tele=tele,
@@ -406,7 +409,6 @@ class SearchCore:
         # Intermediate passes stay "exploratory" (may ask for more); the last
         # allowed pass runs in "final" mode (must answer or say not found), so
         # the loop always ends with an Answered outcome.
-        max_refinements = self._settings.SEARCH_MAX_REFINEMENTS
         refinements = 0
         while isinstance(outcome, NeedsMore) and refinements < max_refinements:
             is_last = refinements + 1 >= max_refinements

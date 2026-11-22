@@ -79,6 +79,8 @@ class TestConnectionRequest(BaseModel):
     sends an empty token when the masked one was not replaced.
     """
 
+    __test__ = False  # not a pytest class, despite the name
+
     service: Literal["paperless", "openai", "ollama"] = "paperless"
     paperless_url: str = Field(default="", max_length=MAX_PAPERLESS_URL_LENGTH)
     paperless_token: str = Field(default="", max_length=MAX_SETTINGS_VALUE_LENGTH)
@@ -129,6 +131,8 @@ class TestConnectionResponse(BaseModel):
 
     ``document_count`` is set only by a successful Paperless probe, else 0.
     """
+
+    __test__ = False  # not a pytest class, despite the name
 
     ok: bool
     document_count: int
