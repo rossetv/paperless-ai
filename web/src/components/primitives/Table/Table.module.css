@@ -8,6 +8,11 @@
   border-radius: var(--radius-large);
   overflow: hidden;
   overflow-x: auto;
+
+  /* A focused control scrolls clear of the edge fade; the extra 4px is its focus ring. */
+  scroll-padding-inline:
+    calc(var(--table-fade-start, 0px) + var(--spacing-2))
+    calc(var(--table-fade-end, 0px) + var(--spacing-2));
 }
 
 /*

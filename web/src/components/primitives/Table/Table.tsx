@@ -38,6 +38,15 @@ export interface TableProps<Row> {
 }
 
 /**
+ * The browser leaves a control that is only partly clipped where it is, so its
+ * focus ring is cut off or sits under the edge fade. The wrapper's
+ * scroll-padding holds the fade clear.
+ */
+function revealFocused(event: React.FocusEvent<HTMLElement>): void {
+  event.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
+
+/**
  * Column-configured semantic `<table>`. When `rows` is empty a single
  * `emptyMessage` row is shown instead.
  */
@@ -81,6 +90,7 @@ export function Table<Row>({
       className={styles['wrapper']}
       data-fade-start={edges.start ? 'true' : undefined}
       data-fade-end={edges.end ? 'true' : undefined}
+      onFocus={revealFocused}
     >
       <table ref={tableRef} className={cn(styles['table'], className)}>
         <thead className={styles['head']}>

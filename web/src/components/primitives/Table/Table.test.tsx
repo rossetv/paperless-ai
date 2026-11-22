@@ -124,6 +124,28 @@ describe('Table', () => {
       expect(wrapper.dataset['fadeEnd']).toBeUndefined();
     });
 
+    it('scrolls a focused control into view so an edge-clipped one is not left cut off', () => {
+      const scrollIntoView = vi.fn();
+      Object.defineProperty(Element.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: scrollIntoView,
+      });
+      try {
+        const cols: Column<Row>[] = [
+          ...COLUMNS,
+          { key: 'actions', header: '', render: () => <button>Edit</button> },
+        ];
+        render(<Table columns={cols} rows={ROWS} getRowKey={(r) => r.id} />);
+        const [button] = screen.getAllByRole('button', { name: 'Edit' }) as [HTMLElement];
+        act(() => button.focus());
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+        expect(scrollIntoView.mock.contexts[0]).toBe(button);
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+      } finally {
+        delete (Element.prototype as unknown as Record<string, unknown>)['scrollIntoView'];
+      }
+    });
+
     it('re-measures when the wrapper or table is resized, without a scroll', () => {
       let notify: () => void = () => undefined;
       const observed: Element[] = [];
