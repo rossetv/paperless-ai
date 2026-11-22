@@ -87,16 +87,13 @@ export function SearchPage(): React.ReactElement {
     }
   }, [query, state.query, state.status, state.error, queryClient]);
 
-  // Each screen has its own search field, so a submit unmounts the one the
-  // person typed in; focus goes back to the new screen's own field, never to
-  // another search input such as the filter panel's tag search.
+  // Each screen has its own search field, and a submit, chip or recent search
+  // unmounts what had focus; focus goes back to the new screen's own field, never
+  // to another search input such as the filter panel's tag search.
   const refocusField = React.useRef(false);
 
   function runSearch(submitted: string): void {
-    const active = document.activeElement;
-    refocusField.current =
-      active instanceof HTMLElement &&
-      (active.matches('input[type="search"]') || active.getAttribute('aria-label') === 'Search');
+    refocusField.current = true;
     setQuery(submitted.trim());
     setHighlightedIndex(undefined);
   }

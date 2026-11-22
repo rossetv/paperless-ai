@@ -119,13 +119,29 @@ describe('SearchPage focus', () => {
     expect(screen.getByRole('button', { name: 'Account' })).toHaveFocus();
   });
 
-  it('does not take focus when the search was started from outside the field', async () => {
-    streamState = { status: 'streaming', query: 'bills', phaseRecords: [], activePhase: null, result: null, error: null };
+  it('returns focus to the search field when the search was started from a chip', async () => {
+    streamState = { status: 'streaming', query: 'pill', phaseRecords: [], activePhase: null, result: null, error: null };
     const { rerender } = render(tree());
     await userEvent.click(screen.getByRole('button', { name: 'pill' }));
+    expect(document.body).toHaveFocus();
+
     streamState = { ...streamState, status: 'done', result: RESULT };
     rerender(tree());
 
-    expect(screen.getByRole('searchbox', { name: 'What do you want to know?' })).not.toHaveFocus();
+    expect(screen.getByRole('searchbox', { name: 'What do you want to know?' })).toHaveFocus();
+  });
+
+  it('leaves focus where the person put it after starting a search from a chip', async () => {
+    streamState = { status: 'streaming', query: 'pill', phaseRecords: [], activePhase: null, result: null, error: null };
+    const { rerender } = render(tree());
+    await userEvent.click(screen.getByRole('button', { name: 'pill' }));
+    await userEvent.tab();
+    expect(document.body).not.toHaveFocus();
+    const moved = document.activeElement;
+
+    streamState = { ...streamState, status: 'done', result: RESULT };
+    rerender(tree());
+
+    expect(document.activeElement).toBe(moved);
   });
 });
