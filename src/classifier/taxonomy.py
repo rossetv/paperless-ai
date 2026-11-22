@@ -43,18 +43,25 @@ def _index_items(
     return mapping
 
 
+def _index_words(mapping: dict[str, PaperlessItem]) -> dict[str, str]:
+    """Build a ``{key: name_words}`` lookup so a miss need not re-fold every name."""
+    return {key: name_words(str(item.get("name", ""))) for key, item in mapping.items()}
+
+
 def _match_item(
     name: str,
     mapping: dict[str, PaperlessItem],
     normaliser: Callable[[str], str],
     allow_substring: bool,
+    words: dict[str, str] | None = None,
 ) -> PaperlessItem | None:
     """Find a Paperless item by normalised name, optionally allowing substrings.
 
     Substring matching lets a *"Neon"* correspondent find *"Neon Energy"*; it
     compares whole words only, so *"Eon"* does not. Words are compared both
     with punctuation removed (*"E.ON"* is *"eon"*) and with punctuation as a
-    word break (*"Amazon.co.uk"* holds *"amazon"*).
+    word break (*"Amazon.co.uk"* holds *"amazon"*). *words* holds each key's
+    stored word form; without it the forms are computed per call.
     """
     normalised = normaliser(name)
     if not normalised:
@@ -70,7 +77,12 @@ def _match_item(
     if allow_substring:
         wanted = {normalised, name_words(name)}
         for key, item in mapping.items():
-            have = {key, name_words(str(item.get("name", "")))}
+            folded = (
+                words[key]
+                if words is not None and key in words
+                else name_words(str(item.get("name", "")))
+            )
+            have = {key, folded}
             if any(_contains_words(a, b) for a in wanted for b in have if a and b):
                 return item
     return None
@@ -138,6 +150,7 @@ class _TaxonomyKind(NamedTuple):
 
     items: list[PaperlessItem]
     mapping: dict[str, PaperlessItem]
+    words: dict[str, str]
     normaliser: Callable[[str], str]
     allow_substring: bool
     creator: Callable[[str], PaperlessItem]
@@ -157,6 +170,9 @@ class TaxonomyCache:
         self._correspondent_map: dict[str, PaperlessItem] = {}
         self._document_type_map: dict[str, PaperlessItem] = {}
         self._tag_map: dict[str, PaperlessItem] = {}
+        self._correspondent_words: dict[str, str] = {}
+        self._document_type_words: dict[str, str] = {}
+        self._tag_words: dict[str, str] = {}
         self._cached_correspondent_names: list[str] = []
         self._cached_document_type_names: list[str] = []
         self._cached_tag_names: list[str] = []
@@ -172,6 +188,9 @@ class TaxonomyCache:
                 self._document_types, normalise_simple
             )
             self._tag_map = _index_items(self._tags, normalise_simple)
+            self._correspondent_words = _index_words(self._correspondent_map)
+            self._document_type_words = {}
+            self._tag_words = {}
             self._cached_correspondent_names = _top_names(
                 self._correspondents, self._taxonomy_limit
             )
@@ -193,6 +212,7 @@ class TaxonomyCache:
         return _TaxonomyKind(
             self._correspondents,
             self._correspondent_map,
+            self._correspondent_words,
             normalise_name,
             True,
             self._client.create_correspondent,
@@ -203,6 +223,7 @@ class TaxonomyCache:
         return _TaxonomyKind(
             self._document_types,
             self._document_type_map,
+            self._document_type_words,
             normalise_simple,
             False,
             self._client.create_document_type,
@@ -218,6 +239,7 @@ class TaxonomyCache:
         return _TaxonomyKind(
             self._tags,
             self._tag_map,
+            self._tag_words,
             normalise_simple,
             False,
             create_tag,
@@ -247,7 +269,11 @@ class TaxonomyCache:
         with self._lock:
             kind = kind_factory()
             matched = _match_item(
-                name, kind.mapping, kind.normaliser, kind.allow_substring
+                name,
+                kind.mapping,
+                kind.normaliser,
+                kind.allow_substring,
+                kind.words,
             )
             if matched:
                 return self._extract_id(matched)
@@ -274,6 +300,7 @@ class TaxonomyCache:
                     kind.mapping,
                     kind.normaliser,
                     kind.allow_substring,
+                    kind.words,
                 )
                 if matched:
                     return self._extract_id(matched)
@@ -282,7 +309,11 @@ class TaxonomyCache:
         with self._lock:
             kind = kind_factory()
             matched = _match_item(
-                name, kind.mapping, kind.normaliser, kind.allow_substring
+                name,
+                kind.mapping,
+                kind.normaliser,
+                kind.allow_substring,
+                kind.words,
             )
             if matched:
                 # Another thread created it first; discard ours.
@@ -294,6 +325,8 @@ class TaxonomyCache:
                 key = created_name.strip().lower()
             if key:
                 kind.mapping[key] = created
+                if kind.allow_substring:
+                    kind.words[key] = name_words(str(created.get("name", "")))
             kind.items.append(created)
             return self._extract_id(created)
 
