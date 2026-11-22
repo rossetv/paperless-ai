@@ -19,6 +19,7 @@ from common.tags import (
     clean_pipeline_tags,
     extract_tags,
     finalise_document_with_error,
+    pipeline_tag_ids,
     release_processing_tag,
 )
 from .content_prep import (
@@ -362,8 +363,19 @@ class ClassificationProcessor:
     def _resolve_taxonomy_ids(
         self, result: ClassificationResult, tag_names: list[str]
     ) -> _ResolvedTaxonomyIds:
-        """Resolve tag names and classification fields to Paperless IDs."""
-        tag_ids = self.taxonomy_cache.get_or_create_tag_ids(tag_names)
+        """Resolve tag names and classification fields to Paperless IDs.
+
+        Pipeline and born-digital tag ids are dropped: the names come from the
+        LLM and the document text, and only the pipeline itself may set those.
+        """
+        blocked = pipeline_tag_ids(self.settings)
+        if self.settings.OCR_BORN_DIGITAL_TAG_ID is not None:
+            blocked.add(self.settings.OCR_BORN_DIGITAL_TAG_ID)
+        tag_ids = [
+            tag_id
+            for tag_id in self.taxonomy_cache.get_or_create_tag_ids(tag_names)
+            if tag_id not in blocked
+        ]
         correspondent_id = (
             self.taxonomy_cache.get_or_create_correspondent_id(result.correspondent)
             if result.correspondent

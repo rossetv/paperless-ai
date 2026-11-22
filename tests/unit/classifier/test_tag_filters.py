@@ -214,6 +214,17 @@ class TestEnrichTags:
         )
         assert "gpt-5.4-mini" in result
 
+    def test_model_tags_from_text_pass_the_blacklist(self):
+        text = "Content\n\nTranscribed by model: gpt-5.4-mini, Error, new"
+        result = enrich_tags(
+            tags=[],
+            text=text,
+            document_date="2024-01-01",
+            default_country_tag="",
+            tag_limit=10,
+        )
+        assert result == ["gpt-5.4-mini", "2024"]
+
     def test_enforces_tag_limit_on_non_required(self):
         result = enrich_tags(
             tags=["a", "b", "c", "d", "e"],

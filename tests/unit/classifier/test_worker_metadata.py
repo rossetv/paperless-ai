@@ -209,3 +209,46 @@ class TestBornDigitalTag:
 
         update_call = proc.paperless_client.update_document_metadata.call_args
         assert 1080 in update_call.kwargs["tags"]
+
+
+class TestPipelineTagsNeverAdded:
+    """Resolved tags never add a pipeline or born-digital tag to the document."""
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_pipeline_tag_ids_stripped_from_resolved_tags(
+        self, mock_release, mock_claim
+    ):
+        doc = make_doc_with_content("text\n\nTranscribed by model: gpt-5.4-mini")
+        proc = make_processor(
+            doc=doc,
+            settings_overrides={"CLASSIFY_POST_TAG_ID": 555},
+        )
+        proc.paperless_client.get_document.return_value = doc
+        proc.taxonomy_cache.get_or_create_tag_ids.return_value = [301, 443, 444, 552]
+
+        proc.process()
+
+        final_tags = proc.paperless_client.update_document_metadata.call_args.kwargs[
+            "tags"
+        ]
+        assert final_tags == {301, 555}
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_born_digital_tag_id_not_added(self, mock_release, mock_claim):
+        doc = make_doc_with_content("text")
+        proc = make_processor(
+            doc=doc, settings_overrides={"OCR_BORN_DIGITAL_TAG_ID": 1080}
+        )
+        proc.paperless_client.get_document.return_value = doc
+        proc.taxonomy_cache.tag_name.return_value = "born-digital"
+        proc.taxonomy_cache.get_or_create_tag_ids.return_value = [301, 1080]
+
+        proc.process()
+
+        final_tags = proc.paperless_client.update_document_metadata.call_args.kwargs[
+            "tags"
+        ]
+        assert 1080 not in final_tags
+        assert 301 in final_tags
