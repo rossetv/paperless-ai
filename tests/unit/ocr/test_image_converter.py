@@ -791,6 +791,26 @@ class TestImageMaxSide:
         assert page.size == expected.size == (20, 30)
         assert page.convert("L").tobytes() == expected.convert("L").tobytes()
 
+    def test_a_multi_picture_phone_jpeg_gives_one_upright_page(self):
+        stored = Image.new("RGB", (30, 20), "white")
+        stored.paste("red", (0, 0, 10, 10))
+        preview = Image.new("L", (15, 10)).convert("RGB")
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        buf = BytesIO()
+        stored.save(
+            buf, format="MPO", save_all=True, append_images=[preview], exif=exif
+        )
+        assert Image.open(BytesIO(buf.getvalue())).n_frames == 2
+
+        with open_page_source(buf.getvalue(), "image/jpeg", max_side=100) as source:
+            assert len(source) == 1
+            page = source.load_page(0)
+
+        assert page.size == (20, 30)
+        assert page.getpixel((17, 2))[0] > 200
+        assert page.getpixel((17, 2))[1] < 80
+
     def test_a_damaged_exif_tag_does_not_stop_a_rotated_jpeg_opening(self):
         # Orientation 6 plus tag 0x0115 typed ASCII: rewriting this EXIF raises.
         blob = (

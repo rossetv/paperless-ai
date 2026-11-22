@@ -189,7 +189,8 @@ def open_page_source(
     try:
         img = Image.open(BytesIO(content))
         _check_pixel_cap(img)
-        if getattr(img, "n_frames", 1) > 1:
+        # An MPO's extra frames are previews or depth maps of its one picture.
+        if getattr(img, "n_frames", 1) > 1 and img.format != "MPO":
             # Stream frames like PDF pages: decoding all of a 100-page 300-DPI
             # TIFF at once is ~2.6 GB.
             img.close()
