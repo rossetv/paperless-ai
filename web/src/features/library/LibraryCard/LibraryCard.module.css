@@ -124,6 +124,9 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+
+  /* Lets a long chip shrink and ellipsize instead of widening the card. */
+  min-width: 0;
   gap: var(--spacing-6);
   padding: var(--spacing-12);
 }
