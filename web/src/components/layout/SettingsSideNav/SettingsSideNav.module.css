@@ -120,9 +120,6 @@
     margin-bottom: var(--spacing-6);
     background-color: var(--colour-nav-bg);
     backdrop-filter: var(--backdrop-nav);
-
-    /* stylelint-disable-next-line property-no-vendor-prefix */
-    -webkit-backdrop-filter: var(--backdrop-nav);
     border-bottom: var(--spacing-1) solid var(--colour-border);
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;

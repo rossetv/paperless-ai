@@ -11,8 +11,6 @@
   padding-bottom: env(safe-area-inset-bottom, 0%);
   background-color: var(--colour-nav-bg);
   backdrop-filter: var(--backdrop-nav);
-  /* stylelint-disable-next-line property-no-vendor-prefix */
-  -webkit-backdrop-filter: var(--backdrop-nav);
   border-top: var(--spacing-1) solid var(--colour-border);
   align-items: stretch;
   justify-content: space-around;
