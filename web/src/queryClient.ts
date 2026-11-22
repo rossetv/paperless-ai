@@ -1,9 +1,9 @@
 import { QueryClient } from '@tanstack/react-query';
-import { ApiError } from './api/client';
+import { ApiError, Unauthenticated } from './api/client';
 
-/** One retry for network errors and 5xx; a 4xx would only fail the same way again. */
+/** One retry for network errors and 5xx; a 4xx or 401 would only fail the same way again. */
 export function shouldRetry(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiError && error.status < 500) {
+  if (error instanceof Unauthenticated || (error instanceof ApiError && error.status < 500)) {
     return false;
   }
   return failureCount < 1;

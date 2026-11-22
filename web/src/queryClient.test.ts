@@ -1,11 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { ApiError } from './api/client';
+import { describe, it, expect, vi } from 'vitest';
+import { ApiError, Unauthenticated } from './api/client';
 import { createQueryClient, shouldRetry } from './queryClient';
 
 describe('shouldRetry', () => {
   it('does not retry a 4xx ApiError', () => {
     expect(shouldRetry(0, new ApiError(400))).toBe(false);
     expect(shouldRetry(0, new ApiError(422))).toBe(false);
+  });
+
+  it('does not retry a 401', () => {
+    expect(shouldRetry(0, new Unauthenticated())).toBe(false);
   });
 
   it('retries a 5xx ApiError and a network error once', () => {
@@ -16,7 +20,10 @@ describe('shouldRetry', () => {
 });
 
 describe('createQueryClient', () => {
-  it('wires shouldRetry into the query defaults', () => {
-    expect(createQueryClient().getDefaultOptions().queries?.retry).toBe(shouldRetry);
+  it('does not re-run a query that failed with a 404', async () => {
+    const queryFn = vi.fn().mockRejectedValue(new ApiError(404));
+    const client = createQueryClient();
+    await client.fetchQuery({ queryKey: ['missing'], queryFn }).catch(() => undefined);
+    expect(queryFn).toHaveBeenCalledTimes(1);
   });
 });
