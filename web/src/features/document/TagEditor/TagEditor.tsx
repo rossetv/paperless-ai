@@ -37,6 +37,8 @@ export function TagEditor({
     const index = removedIndex.current;
     if (index === null) return;
     removedIndex.current = null;
+    // Focus that moved on its own, e.g. into an open Add tag list, stays there.
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
     // Buttons are the remove buttons in chip order, then the Add tag trigger.
     const buttons = wrapRef.current?.querySelectorAll('button');
     if (buttons === undefined || buttons.length === 0) return;
