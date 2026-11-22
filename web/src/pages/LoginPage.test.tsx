@@ -12,4 +12,9 @@ describe('LoginPage', () => {
     render(<LoginPage />);
     expect(screen.getByTestId('login-screen')).toBeInTheDocument();
   });
+
+  it('holds the screen in the one main landmark', () => {
+    render(<LoginPage />);
+    expect(screen.getByRole('main')).toContainElement(screen.getByTestId('login-screen'));
+  });
 });

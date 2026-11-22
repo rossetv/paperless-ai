@@ -125,6 +125,9 @@
     -webkit-overflow-scrolling: touch;
     scroll-padding-inline: var(--spacing-16);
 
+    /* Over the light page the glass bar is a lighter grey, so the dimmed chips need more opacity for 4.5:1. */
+    --dim: var(--opacity-disabled);
+
     /*
      * Edge fade cues the off-screen chips. The left fade is narrow (equal to the
      * padding) because the leftmost chip is nearly always visible.
@@ -144,6 +147,10 @@
       #000 calc(100% - var(--spacing-16)),
       transparent 100%
     );
+  }
+
+  [data-theme="light"] .nav {
+    --dim: var(--opacity-inactive);
   }
 
   .nav::-webkit-scrollbar {
@@ -174,7 +181,7 @@
     justify-content: center;
     scroll-snap-align: center;
     color: var(--colour-text-on-dark);
-    opacity: var(--opacity-disabled);
+    opacity: var(--dim);
   }
 
   .link:hover {

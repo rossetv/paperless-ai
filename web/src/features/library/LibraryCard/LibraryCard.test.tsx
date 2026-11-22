@@ -76,6 +76,14 @@ describe('LibraryCard', () => {
     ).toBeInTheDocument();
   });
 
+  it('names the button with all of its visible text', () => {
+    render(<LibraryCard document={makeDoc()} onOpen={vi.fn()} />);
+    const button = screen.getByRole('button');
+    for (const visible of ['Npower Energy', '12 Jan 2025', 'Annual energy statement — 2024', 'Statement', '#Energy']) {
+      expect(button).toHaveAccessibleName(expect.stringContaining(visible));
+    }
+  });
+
   it('renders a real thumbnail <img> by default', () => {
     const { container } = render(<LibraryCard document={makeDoc()} onOpen={vi.fn()} />);
     // alt="" gives the image role="presentation"; query by tag name.

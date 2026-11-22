@@ -6,8 +6,7 @@ import { LibraryScreen } from '../features/library/LibraryScreen/LibraryScreen';
 /** The `/library` route page: `AppNavBar` above `LibraryScreen`. */
 export function LibraryPage(): React.ReactElement {
   return (
-    <Page>
-      <AppNavBar />
+    <Page nav={<AppNavBar />}>
       <LibraryScreen />
     </Page>
   );

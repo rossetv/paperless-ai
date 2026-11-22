@@ -1,21 +1,58 @@
 /* Column widths and alignment are per-column data, applied inline by the component. */
 
 .wrapper {
+  /* Anchors visually-hidden header text so it cannot widen the page. */
+  position: relative;
   background-color: var(--colour-surface);
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-large);
   overflow: hidden;
+  overflow-x: auto;
+
+  /* A focused control scrolls clear of the edge fade; the extra 4px is its focus ring. */
+  scroll-padding-inline:
+    calc(var(--table-fade-start, 0px) + var(--spacing-2))
+    calc(var(--table-fade-end, 0px) + var(--spacing-2));
 }
 
 /*
- * Narrow viewports: the fixed-width columns exceed the container, so the wrapper
- * scrolls horizontally and the table keeps a legible min-width.
+ * The table can be wider than its container at any viewport (fixed-width
+ * columns), so the wrapper scrolls whenever it overflows. The edge fade cues
+ * the columns scrolled out of view; the Table sets the data attributes only
+ * for edges that have more content beyond them.
  */
-@media (width <= 699.98px) {
-  .wrapper {
-    overflow-x: auto;
-  }
+.wrapper[data-fade-start='true'],
+.wrapper[data-fade-end='true'] {
+  --table-fade-start: 0px;
+  --table-fade-end: 0px;
 
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--table-fade-start),
+    #000 calc(100% - var(--table-fade-end)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--table-fade-start),
+    #000 calc(100% - var(--table-fade-end)),
+    transparent 100%
+  );
+}
+
+.wrapper[data-fade-start='true'] {
+  --table-fade-start: var(--spacing-16);
+}
+
+.wrapper[data-fade-end='true'] {
+  --table-fade-end: var(--spacing-16);
+}
+
+/* Narrow viewports: the table keeps a legible min-width and long words wrap. */
+@media (width <= 699.98px) {
   .table {
     /* Widest caller (API Keys): fixed columns sum to ≈530 px; the extra width
        leaves the flex Name column room to read a key name without clipping. */
@@ -25,40 +62,6 @@
   /* Words move to the next line first; only one wider than its cell breaks. */
   .cell {
     overflow-wrap: break-word;
-  }
-
-  /*
-   * Edge fade cues the columns scrolled out of view; the Table sets the data
-   * attributes only for edges that have more content beyond them.
-   */
-  .wrapper[data-fade-start='true'],
-  .wrapper[data-fade-end='true'] {
-    --table-fade-start: 0px;
-    --table-fade-end: 0px;
-
-    /* stylelint-disable-next-line property-no-vendor-prefix */
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--table-fade-start),
-      #000 calc(100% - var(--table-fade-end)),
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--table-fade-start),
-      #000 calc(100% - var(--table-fade-end)),
-      transparent 100%
-    );
-  }
-
-  .wrapper[data-fade-start='true'] {
-    --table-fade-start: var(--spacing-16);
-  }
-
-  .wrapper[data-fade-end='true'] {
-    --table-fade-end: var(--spacing-16);
   }
 }
 
@@ -96,16 +99,22 @@
   border-bottom: none;
 }
 
-/* Muted rows — suspended users, expired keys: dimmed but legible. */
-.row[data-muted='true'] {
-  opacity: var(--opacity-disabled);
-}
-
 .cell {
   padding: var(--spacing-10) var(--spacing-14);
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
   vertical-align: middle;
+}
+
+/* A row focused below the fold keeps its focus ring clear of the viewport edge. */
+.cell :focus-visible {
+  scroll-margin-block: var(--spacing-6);
+}
+
+/* Muted rows — suspended users, expired keys: plain text steps down a tone;
+   badges, state labels and buttons keep their own full-strength colours. */
+.row[data-muted='true'] .cell {
+  color: var(--colour-text-tertiary);
 }
 
 .cell-end {

@@ -54,6 +54,21 @@ describe('MetadataCard', () => {
     expect(screen.getByText('Payslip')).toBeInTheDocument();
   });
 
+  it('heads the card with a level-2 heading', () => {
+    render(
+      <MetadataCard
+        document={DOC}
+        correspondents={CORRESPONDENTS}
+        documentTypes={DOC_TYPES}
+        canEdit={false}
+        onPatch={vi.fn()}
+        onCreateCorrespondent={vi.fn()}
+        onCreateDocumentType={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Details', level: 2 })).toBeInTheDocument();
+  });
+
   it('renders the formatted document date', () => {
     render(
       <MetadataCard

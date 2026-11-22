@@ -12,6 +12,10 @@
   color: var(--colour-text-primary);
 }
 
+[data-muted='true'] .key-name {
+  color: var(--colour-text-tertiary);
+}
+
 .key-meta {
   display: flex;
   align-items: center;

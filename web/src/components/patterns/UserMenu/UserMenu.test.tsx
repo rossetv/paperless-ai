@@ -13,6 +13,11 @@ describe('UserMenu', () => {
     expect(screen.getByRole('button', { name: /account menu/i })).toBeInTheDocument();
   });
 
+  it('the trigger name contains the initials it shows', () => {
+    render(<UserMenu initials="AM" displayName="Alex Morgan" email="alex@home.lan" onSignOut={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /^AM\b.*account menu/i })).toBeInTheDocument();
+  });
+
   it('the dropdown is closed initially', () => {
     render(<UserMenu initials="AM" displayName="Alex Morgan" email="alex@home.lan" onSignOut={vi.fn()} />);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();

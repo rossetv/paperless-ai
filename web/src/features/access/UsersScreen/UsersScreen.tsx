@@ -101,7 +101,7 @@ export function UsersScreen(): React.ReactElement {
     },
     {
       key: 'actions',
-      header: '',
+      header: <span className="visually-hidden">Actions</span>,
       width: 'var(--width-col-actions-narrow)',
       align: 'end',
       render: (u) => (

@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { Button } from '../../primitives/Button/Button';
 import styles from './ErrorBoundary.module.css';
 
 interface Props {
@@ -17,7 +18,7 @@ interface State {
   error: Error | null;
 }
 
-/** Catches render-time throws in its subtree and shows a fallback with a reload button. */
+/** Catches render-time throws in its subtree and shows a full-screen fallback with a heading and a reload button. */
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -55,16 +56,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render(): React.ReactNode {
     if (this.state.hasError) {
       return (
-        <div className={styles['boundary']} role="alert" aria-live="assertive">
-          <p className={styles['message']}>Something went wrong — reload?</p>
-          <button
-            className={styles['reload']}
-            type="button"
-            onClick={() => window.location.reload()}
-          >
-            Reload page
-          </button>
-        </div>
+        <main className={styles['boundary']}>
+          <div role="alert" aria-live="assertive">
+            <h1 className={styles['heading']}>Something went wrong</h1>
+          </div>
+          <Button onClick={() => window.location.reload()}>Reload page</Button>
+        </main>
       );
     }
 

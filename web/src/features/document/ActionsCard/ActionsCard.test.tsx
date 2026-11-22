@@ -24,6 +24,20 @@ describe('ActionsCard', () => {
     expect(screen.queryByRole('button', { name: /^delete/i })).not.toBeInTheDocument();
   });
 
+  it('titles the card with a level-two heading like its sibling cards', () => {
+    render(
+      <ActionsCard
+        documentId={42}
+        role="member"
+        title="Doc"
+        onReclassify={noop}
+        onRetranscribe={noop}
+        onDelete={noopDelete}
+      />,
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Actions' })).toBeInTheDocument();
+  });
+
   it('adds Delete for an admin', () => {
     render(
       <ActionsCard

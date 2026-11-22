@@ -124,6 +124,62 @@ describe('Table', () => {
       expect(wrapper.dataset['fadeEnd']).toBeUndefined();
     });
 
+    it('leaves the end edge unmarked when only the last cell\'s padding is out of view', () => {
+      vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+        paddingRight: '24px',
+      } as CSSStyleDeclaration);
+      try {
+        render(<Table columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />);
+        const wrapper = screen.getByRole('table').parentElement as HTMLElement;
+        sizeWrapper(wrapper, 707, 680);
+        fireEvent.scroll(wrapper);
+        expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+        sizeWrapper(wrapper, 779, 748);
+        fireEvent.scroll(wrapper);
+        expect(wrapper.dataset['fadeEnd']).toBe('true');
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    describe('focused control', () => {
+      const cols: Column<Row>[] = [
+        ...COLUMNS,
+        { key: 'actions', header: '', render: () => <button>Edit</button> },
+      ];
+      const scrollIntoView = vi.fn();
+
+      beforeEach(() => {
+        scrollIntoView.mockClear();
+        Object.defineProperty(Element.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: scrollIntoView,
+        });
+      });
+
+      afterEach(() => {
+        delete (Element.prototype as unknown as Record<string, unknown>)['scrollIntoView'];
+      });
+
+      it('is scrolled into view on keyboard focus so an edge-clipped one is not left cut off', () => {
+        render(<Table columns={cols} rows={ROWS} getRowKey={(r) => r.id} />);
+        const [button] = screen.getAllByRole('button', { name: 'Edit' }) as [HTMLElement];
+        act(() => button.focus());
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+        expect(scrollIntoView.mock.contexts[0]).toBe(button);
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+      });
+
+      it('stays put on pointer focus so the click is not lost under a moving button', () => {
+        render(<Table columns={cols} rows={ROWS} getRowKey={(r) => r.id} />);
+        const [button] = screen.getAllByRole('button', { name: 'Edit' }) as [HTMLElement];
+        // jsdom treats every focus as keyboard focus; a mouse or touch focus is not :focus-visible.
+        vi.spyOn(button, 'matches').mockImplementation((selector) => selector !== ':focus-visible');
+        act(() => button.focus());
+        expect(scrollIntoView).not.toHaveBeenCalled();
+      });
+    });
+
     it('re-measures when the wrapper or table is resized, without a scroll', () => {
       let notify: () => void = () => undefined;
       const observed: Element[] = [];

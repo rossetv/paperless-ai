@@ -6,8 +6,7 @@ import { UsersScreen } from '../features/access/UsersScreen/UsersScreen';
 /** Full-page user-management view at `/settings/users`; admin-gated in `routes.tsx`. */
 export function UsersPage(): React.ReactElement {
   return (
-    <Page>
-      <AppNavBar />
+    <Page nav={<AppNavBar />}>
       <UsersScreen />
     </Page>
   );

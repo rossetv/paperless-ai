@@ -12,6 +12,13 @@ describe('DocumentErrorScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('heads each variant with a level-one heading holding the message', () => {
+    const { rerender } = render(<DocumentErrorScreen notFound={true} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Document not found' })).toBeInTheDocument();
+    rerender(<DocumentErrorScreen notFound={false} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Could not load document' })).toBeInTheDocument();
+  });
+
   it('renders the generic-error variant when notFound is false', () => {
     render(<DocumentErrorScreen notFound={false} />);
     expect(screen.getByText('Could not load document')).toBeInTheDocument();

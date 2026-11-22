@@ -101,3 +101,15 @@
   color: var(--colour-dark-text-secondary);
   text-align: center;
 }
+
+/* Below the card's own 560px width the 96px padding leaves ~150px for the
+   fields, so the card and its screen gutter tighten. */
+@media (width <= 607.98px) {
+  .screen {
+    padding: var(--spacing-13);
+  }
+
+  .card {
+    padding: var(--spacing-14);
+  }
+}

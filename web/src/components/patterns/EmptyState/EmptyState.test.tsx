@@ -10,6 +10,17 @@ describe('EmptyState', () => {
     expect(screen.getByText('No documents found')).toBeInTheDocument();
   });
 
+  it('renders the message as a paragraph by default', () => {
+    render(<EmptyState icon="document" message="No documents found" />);
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+    expect(screen.getByText('No documents found').tagName).toBe('P');
+  });
+
+  it('renders the message as a level-one heading when asked', () => {
+    render(<EmptyState icon="document" message="No documents found" messageAs="h1" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'No documents found' })).toBeInTheDocument();
+  });
+
   it('renders the icon', () => {
     render(<EmptyState icon="search" message="Nothing to show" />);
     // The Icon renders a Font Awesome <i class="fa-solid fa-magnifying-glass">.

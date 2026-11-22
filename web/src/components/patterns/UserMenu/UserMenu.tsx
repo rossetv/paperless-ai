@@ -111,7 +111,7 @@ export function UserMenu({
         ref={triggerRef}
         type="button"
         className={styles['trigger']}
-        aria-label="Account menu"
+        aria-label={`${initials} account menu`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}

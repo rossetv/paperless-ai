@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
 import { IndexScreen } from './IndexScreen';
 
 /** Storybook stubs no backend, so the queries settle into their empty/error states. */
@@ -11,11 +10,9 @@ const meta = {
   decorators: [
     (Story) => (
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter>
-          <div style={{ background: 'var(--colour-bg)', minHeight: '100vh' }}>
-            <Story />
-          </div>
-        </MemoryRouter>
+        <div style={{ background: 'var(--colour-bg)', minHeight: '100vh' }}>
+          <Story />
+        </div>
       </QueryClientProvider>
     ),
   ],

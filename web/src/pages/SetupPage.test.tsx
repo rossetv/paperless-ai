@@ -12,4 +12,9 @@ describe('SetupPage', () => {
     render(<SetupPage />);
     expect(screen.getByTestId('setup-screen')).toBeInTheDocument();
   });
+
+  it('holds the screen in the one main landmark', () => {
+    render(<SetupPage />);
+    expect(screen.getByRole('main')).toContainElement(screen.getByTestId('setup-screen'));
+  });
 });

@@ -35,8 +35,7 @@ export function DocumentPage(): React.ReactElement {
     const notFound =
       docQuery.error instanceof ApiError && docQuery.error.status === 404;
     return (
-      <Page>
-        <AppNavBar />
+      <Page nav={<AppNavBar />}>
         <DocumentErrorScreen notFound={notFound} />
       </Page>
     );
@@ -45,8 +44,7 @@ export function DocumentPage(): React.ReactElement {
   const parent: 'library' | 'search' = searchParams.has('q') ? 'search' : 'library';
   const parentSearchString = parent === 'search' ? searchParams.toString() : '';
   return (
-    <Page>
-      <AppNavBar />
+    <Page nav={<AppNavBar />}>
       <DocumentScreen
         key={docQuery.data.id}
         document={docQuery.data}

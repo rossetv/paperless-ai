@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { DocumentTitle } from './DocumentTitle';
 
 describe('DocumentTitle', () => {
@@ -23,6 +24,20 @@ describe('DocumentTitle', () => {
     render(<DocumentTitle title="An invoice" canEdit={false} onChange={() => {}} />);
     expect(screen.getByRole('heading', { name: 'An invoice' })).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('keeps the editable title a level-1 heading that holds a button', () => {
+    render(<DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />);
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).not.toHaveAttribute('role');
+    expect(within(heading).getByRole('button', { name: /an invoice/i })).toBeInTheDocument();
+  });
+
+  it('starts editing when Enter is pressed on the title button', async () => {
+    render(<DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />);
+    screen.getByRole('button', { name: /an invoice/i }).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByDisplayValue('An invoice')).toBeInTheDocument();
   });
 
   it('switches to input on click when canEdit=true', () => {

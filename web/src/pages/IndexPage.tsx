@@ -9,8 +9,7 @@ import { IndexScreen } from '../features/index/IndexScreen/IndexScreen';
  */
 export function IndexPage(): React.ReactElement {
   return (
-    <Page>
-      <AppNavBar />
+    <Page nav={<AppNavBar />}>
       <IndexScreen />
     </Page>
   );

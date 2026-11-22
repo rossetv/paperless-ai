@@ -235,8 +235,7 @@ export function SearchPage(): React.ReactElement {
   }
 
   return (
-    <Page>
-      <AppNavBar />
+    <Page nav={<AppNavBar />}>
       {!showsIdleHero && <h1 className="visually-hidden">Search</h1>}
       {renderScreen()}
     </Page>

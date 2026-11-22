@@ -3,5 +3,9 @@ import { FirstRunSetupScreen } from '../features/auth/FirstRunSetupScreen/FirstR
 
 /** Full-page first-run setup view at `/setup`; the screen owns its own layout. */
 export function SetupPage(): React.ReactElement {
-  return <FirstRunSetupScreen />;
+  return (
+    <main>
+      <FirstRunSetupScreen />
+    </main>
+  );
 }

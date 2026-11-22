@@ -50,7 +50,7 @@ export function ActionsCard({
 
   return (
     <Card>
-      <h3 className={styles['heading']}>Actions</h3>
+      <h2 className={styles['heading']}>Actions</h2>
       <div className={styles['actions']}>
         <Button
           variant="secondary"

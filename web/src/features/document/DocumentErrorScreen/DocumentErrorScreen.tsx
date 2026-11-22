@@ -13,6 +13,7 @@ export function DocumentErrorScreen({
   return (
     <EmptyState
       icon={notFound ? 'search' : 'warning'}
+      messageAs="h1"
       message={notFound ? 'Document not found' : 'Could not load document'}
       description={
         notFound
