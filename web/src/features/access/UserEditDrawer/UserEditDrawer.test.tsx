@@ -191,8 +191,10 @@ describe('UserEditDrawer — edit mode', () => {
   it('explains why delete and suspend are disabled for one\'s own account', () => {
     render(<UserEditDrawer user={SAMPLE_USER} isSelf onClose={vi.fn()} />);
     const help = screen.getByText(/can't suspend or delete your own account/i);
-    expect(screen.getByRole('group', { name: /account actions/i })).toHaveAccessibleDescription(
-      help.textContent ?? '',
+    const description = help.textContent ?? '';
+    expect(screen.getByRole('button', { name: /suspend/i })).toHaveAccessibleDescription(description);
+    expect(screen.getByRole('button', { name: /delete account/i })).toHaveAccessibleDescription(
+      description,
     );
   });
 

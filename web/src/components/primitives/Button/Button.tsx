@@ -25,6 +25,8 @@ export interface ButtonProps {
   className?: string;
   /** Accessible label override for icon-only or contextually unique buttons. */
   'aria-label'?: string;
+  /** Id of the element that describes this button (e.g. why it is disabled). */
+  'aria-describedby'?: string | undefined;
 }
 
 /** Generic button rendered as a native `<button>`. */
@@ -37,6 +39,7 @@ export function Button({
   children,
   className,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
 }: ButtonProps): React.ReactElement {
   const variantClass =
     variant === 'primary' ? styles['primary']
@@ -58,6 +61,7 @@ export function Button({
       onClick={onClick}
       className={classes}
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
     >
       {children}
     </button>

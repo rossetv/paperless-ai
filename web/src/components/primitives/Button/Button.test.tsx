@@ -20,6 +20,18 @@ describe('Button', () => {
     expect(btn.className).toMatch(/secondary/);
   });
 
+  it('describes the button by the element aria-describedby points at', () => {
+    render(
+      <>
+        <Button aria-describedby="why">Delete</Button>
+        <p id="why">Not allowed here.</p>
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveAccessibleDescription(
+      'Not allowed here.',
+    );
+  });
+
   it('fires onClick when clicked', async () => {
     const handleClick = vi.fn();
     render(<Button onClick={handleClick}>Click me</Button>);

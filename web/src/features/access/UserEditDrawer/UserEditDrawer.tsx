@@ -187,6 +187,7 @@ export function UserEditDrawer({
     : `Edit profile · ${user.display_name ?? user.username}`;
   const busy =
     createUser.isPending || updateUser.isPending || deleteUser.isPending;
+  const selfHelpId = isSelf && !isCreate ? 'user-self-help' : undefined;
   const suspendLabel = user?.status === 'suspended' ? 'Reactivate' : 'Suspend';
 
   return (
@@ -250,50 +251,54 @@ export function UserEditDrawer({
         )}
 
         <div className={styles['footer']}>
-          <div
-            className={styles['destructive']}
-            role={isCreate ? undefined : 'group'}
-            aria-label={isCreate ? undefined : 'Account actions'}
-            aria-describedby={isSelf && !isCreate ? 'user-self-help' : undefined}
-            {...confirmDelete.armedProps}
-          >
-            {!isCreate && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  type="button"
-                  disabled={isSelf || busy}
-                  onClick={() => void handleToggleStatus()}
-                >
-                  {suspendLabel}
-                </Button>
-                <span className={styles['destructive-separator']} aria-hidden="true" />
-                {confirmDelete.armed === true ? (
+          <div className={styles['actions']} {...confirmDelete.armedProps}>
+            <div className={styles['destructive']}>
+              {!isCreate && (
+                <>
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="small"
                     type="button"
-                    aria-label={`Confirm delete ${user.username}`}
+                    aria-describedby={selfHelpId}
                     disabled={isSelf || busy}
-                    onClick={() => {
-                      if (confirmDelete.canConfirm()) void handleDelete();
-                    }}
+                    onClick={() => void handleToggleStatus()}
                   >
-                    Confirm delete
+                    {suspendLabel}
                   </Button>
-                ) : (
-                  <Button
-                    variant="destructive"
-                    size="small"
-                    type="button"
-                    disabled={isSelf || busy}
-                    onClick={() => confirmDelete.arm(true)}
-                  >
-                    Delete account
-                  </Button>
-                )}
-              </>
+                  <span className={styles['destructive-separator']} aria-hidden="true" />
+                  {confirmDelete.armed === true ? (
+                    <Button
+                      variant="destructive"
+                      size="small"
+                      type="button"
+                      aria-label={`Confirm delete ${user.username}`}
+                      aria-describedby={selfHelpId}
+                      disabled={isSelf || busy}
+                      onClick={() => {
+                        if (confirmDelete.canConfirm()) void handleDelete();
+                      }}
+                    >
+                      Confirm delete
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="destructive"
+                      size="small"
+                      type="button"
+                      aria-describedby={selfHelpId}
+                      disabled={isSelf || busy}
+                      onClick={() => confirmDelete.arm(true)}
+                    >
+                      Delete account
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+            {isSelf && !isCreate && (
+              <p id="user-self-help" className={styles['self-help']}>
+                You can't suspend or delete your own account.
+              </p>
             )}
           </div>
           <div className={styles['primary']}>
@@ -304,11 +309,6 @@ export function UserEditDrawer({
               {isCreate ? 'Create user' : 'Save'}
             </Button>
           </div>
-          {isSelf && !isCreate && (
-            <p id="user-self-help" className={styles['self-help']}>
-              You can't suspend or delete your own account.
-            </p>
-          )}
         </div>
       </form>
     </Modal>

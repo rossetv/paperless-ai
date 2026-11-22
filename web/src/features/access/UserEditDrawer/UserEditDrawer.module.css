@@ -37,6 +37,12 @@
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
 /* Reversible (Suspend) left, permanent (Delete) right, spaced apart so one
    cannot be misclicked for the other. */
 .destructive {
@@ -60,9 +66,7 @@
   gap: var(--spacing-8);
 }
 
-
 .self-help {
-  flex-basis: 100%;
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   line-height: var(--line-height-caption);
