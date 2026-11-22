@@ -13,10 +13,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 MAX_BODY_BYTES = 2 * 1024 * 1024
 
-_TOO_LARGE = JSONResponse(
-    status_code=413,
-    content={"detail": "Request body too large"},
-)
+
+def _too_large() -> JSONResponse:
+    # Built per refusal: middleware further out appends to a response's raw headers in place.
+    return JSONResponse(status_code=413, content={"detail": "Request body too large"})
 
 
 class BodyLimitMiddleware:
@@ -43,7 +43,7 @@ class BodyLimitMiddleware:
                 except ValueError:
                     break  # the server rejects a malformed length itself
                 if declared > self._max_bytes:
-                    await _TOO_LARGE(scope, receive, send)
+                    await _too_large()(scope, receive, send)
                     return
                 break
 
@@ -63,7 +63,7 @@ class BodyLimitMiddleware:
                     refused = True
                     if not response_started:
                         answered = True
-                        await _TOO_LARGE(scope, receive, send)
+                        await _too_large()(scope, receive, send)
                     return {"type": "http.disconnect"}
             return message
 

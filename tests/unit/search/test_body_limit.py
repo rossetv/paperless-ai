@@ -76,6 +76,31 @@ def test_streamed_body_without_a_length_is_cut_off_with_413() -> None:
     assert len(seen) == 1  # reading stopped at the chunk that crossed the limit
 
 
+def test_consecutive_413s_carry_identical_headers_without_duplicates() -> None:
+    def refused_headers() -> list[tuple[bytes, bytes]]:
+        sent: list[dict] = []
+
+        async def send(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                message["headers"].append((b"x-frame-options", b"DENY"))
+            sent.append(message)
+
+        async def receive() -> dict:
+            return {"type": "http.disconnect"}
+
+        scope = {"type": "http", "headers": [(b"content-length", b"11")]}
+
+        async def run() -> None:
+            await BodyLimitMiddleware(None, max_bytes=10)(scope, receive, send)  # type: ignore[arg-type]
+
+        asyncio.run(run())
+        return sent[0]["headers"]
+
+    first, second = refused_headers(), refused_headers()
+    assert first == second
+    assert len(second) == len(set(second))
+
+
 def test_streamed_body_within_the_limit_passes_through() -> None:
     sent, _ = asyncio.run(_drive([b"12345", b"12345"]))
     assert sent[0]["status"] == 200
