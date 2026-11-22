@@ -3,6 +3,8 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { Link } from '../../../components/primitives/Link/Link';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
+import { Toast } from '../../../components/patterns/Toast/Toast';
+import { errorDetail } from '../../../api/client';
 import { useAuth } from '../../../hooks/useAuth';
 import {
   useIndexStatus,
@@ -96,7 +98,7 @@ export function IndexScreen(): React.ReactElement {
         </div>
       )}
 
-      {statusQuery.isError && (
+      {statusQuery.isError && statusQuery.data === undefined && (
         <div className={styles['state-box']} role="alert">
           <EmptyState
             icon="warning"
@@ -108,6 +110,11 @@ export function IndexScreen(): React.ReactElement {
 
       {statusQuery.data !== undefined && (
         <div className={styles['body']}>
+          {statusQuery.isError && (
+            <p className={styles['section-hint']} role="status">
+              Could not refresh the index status — showing the last data received.
+            </p>
+          )}
           <IndexHealthHero health={statusQuery.data.health} />
 
           {stats !== undefined && (
@@ -202,6 +209,14 @@ export function IndexScreen(): React.ReactElement {
 
           {role === 'admin' && <RebuildIndexCard />}
         </div>
+      )}
+
+      {reconcile.isError && (
+        <Toast
+          message={errorDetail(reconcile.error, 'Could not start a reconcile. Try again.')}
+          variant="error"
+          onDismiss={reconcile.reset}
+        />
       )}
 
       {previewDocumentId !== null && (() => {

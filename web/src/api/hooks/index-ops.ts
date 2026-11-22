@@ -58,7 +58,7 @@ export function useFailedDocuments(): UseQueryResult<IndexFailedResponse, Error>
 /**
  * Rebuild the index from scratch — POST /api/index/rebuild. Destructive, admin-only.
  *
- * Invalidates status and activity so the dashboard shows the rebuilding state at once.
+ * Invalidates status, activity and failed documents so the dashboard shows the rebuilding state at once.
  */
 export function useRebuildIndex(): UseMutationResult<RebuildResponse, Error, void> {
   const queryClient = useQueryClient();
@@ -67,11 +67,12 @@ export function useRebuildIndex(): UseMutationResult<RebuildResponse, Error, voi
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.indexActivity() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.failedDocuments() });
     },
   });
 }
 
-/** Trigger an immediate reconcile cycle — POST /api/reconcile; refreshes status and activity. */
+/** Trigger an immediate reconcile cycle — POST /api/reconcile; refreshes status, activity and failed documents. */
 export function useReconcile(): UseMutationResult<void, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -79,6 +80,7 @@ export function useReconcile(): UseMutationResult<void, Error, void> {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.indexActivity() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.failedDocuments() });
     },
   });
 }

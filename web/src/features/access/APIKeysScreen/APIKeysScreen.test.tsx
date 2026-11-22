@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
 import type { ApiKeysResponse, ApiKey } from '../../../api/types';
+import { ApiError } from '../../../api/client';
 import { APIKeysScreen } from './APIKeysScreen';
 
 vi.mock('../../../api/hooks', () => ({
@@ -195,6 +196,20 @@ describe('APIKeysScreen', () => {
     await userEvent.click(within(activeRow).getByRole('button', { name: /revoke/i }));
     await userEvent.click(within(activeRow).getByRole('button', { name: /confirm/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith(1));
+  });
+
+  it('shows the server error when a revoke fails and resets the confirm button', async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(new ApiError(409, undefined, 'Key is in use'));
+    mockDelete.mockReturnValue(stubDelete(mutateAsync));
+    mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
+    renderScreen();
+    const activeRow = screen
+      .getByText('Claude · MCP integration')
+      .closest('tr') as HTMLElement;
+    await userEvent.click(within(activeRow).getByRole('button', { name: /revoke/i }));
+    await userEvent.click(within(activeRow).getByRole('button', { name: /confirm/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Key is in use');
+    expect(within(activeRow).getByRole('button', { name: /revoke/i })).toBeInTheDocument();
   });
 
   it('offers Delete (not Revoke) for an already-expired key', () => {
