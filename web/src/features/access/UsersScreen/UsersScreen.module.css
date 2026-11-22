@@ -72,6 +72,7 @@
   font-family: var(--font-text);
   font-size: var(--font-size-nano);
   font-weight: var(--font-weight-micro-bold);
+  white-space: nowrap;
 }
 
 .row-actions {

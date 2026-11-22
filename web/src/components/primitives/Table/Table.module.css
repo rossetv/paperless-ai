@@ -22,8 +22,9 @@
     min-width: calc(var(--width-table-min-scroll) + var(--width-col-date));
   }
 
+  /* Words move to the next line first; only one wider than its cell breaks. */
   .cell {
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
 
   /*
