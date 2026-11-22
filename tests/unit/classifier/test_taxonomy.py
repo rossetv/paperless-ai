@@ -145,6 +145,14 @@ class TestGetOrCreateCorrespondentId:
 
         assert cache.get_or_create_correspondent_id("Neon") == 7
 
+    def test_non_latin_words_are_not_dropped_before_matching(self):
+        cache = _make_cache(correspondents=[_corr(7, "Deutsche Bank")])
+        cache.refresh()
+        cache._client.create_correspondent.side_effect = None
+        cache._client.create_correspondent.return_value = {"id": 99, "name": "x"}
+
+        assert cache.get_or_create_correspondent_id("東京 Bank") == 99
+
     def test_creates_when_not_found(self):
         cache = _make_cache(correspondents=[])
         cache.refresh()

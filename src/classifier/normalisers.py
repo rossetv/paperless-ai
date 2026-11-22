@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import re
-
-_STRIP_NON_ALNUM_RE: re.Pattern[str] = re.compile(r"[^a-z0-9\s]")
+import unicodedata
 
 # Corporate suffixes stripped when comparing organisation names.
 COMPANY_SUFFIXES: frozenset[str] = frozenset(
@@ -45,13 +43,21 @@ def normalise_name(value: str) -> str:
     """
     Normalise an organisation name for fuzzy matching.
 
-    Strips punctuation, lowercases, and removes trailing corporate suffixes
-    so that *"Revolut Ltd."* and *"Revolut"* compare as equal.
+    Strips punctuation and accents, lowercases, and removes trailing
+    corporate suffixes so that *"Revolut Ltd."* and *"Revolut"* compare as
+    equal. Letters of any script are kept.
 
     >>> normalise_name("Revolut Ltd.")
     'revolut'
+    >>> normalise_name("Müller GmbH")
+    'muller'
     """
-    cleaned = _STRIP_NON_ALNUM_RE.sub("", value.lower())
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    cleaned = "".join(
+        ch
+        for ch in decomposed
+        if (ch.isalnum() or ch.isspace()) and not unicodedata.combining(ch)
+    )
     parts = cleaned.split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
         parts.pop()

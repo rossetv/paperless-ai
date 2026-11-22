@@ -67,6 +67,12 @@ class TestNormaliseName:
     def test_all_suffixes_result_in_empty(self):
         assert normalise_name("Ltd Inc") == ""
 
+    def test_folds_accents_to_base_letters(self):
+        assert normalise_name("Müller GmbH") == "muller"
+
+    def test_keeps_non_latin_letters(self):
+        assert normalise_name("東京電力 Co") == "東京電力"
+
 
 class TestCompanySuffixes:
     def test_is_frozenset(self):
