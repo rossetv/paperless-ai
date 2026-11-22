@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { AppNavBar } from './AppNavBar';
 
 /** Storybook does not wire TanStack Query or a router, so this is a visual reference only. */

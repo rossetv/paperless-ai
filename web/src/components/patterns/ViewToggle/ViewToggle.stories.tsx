@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { ViewToggle } from './ViewToggle';
 import type { LibraryView } from './ViewToggle';
 

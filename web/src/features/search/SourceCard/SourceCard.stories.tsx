@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { SourceDocument } from '../../../api/types';
 import { SourceCard } from './SourceCard';
 

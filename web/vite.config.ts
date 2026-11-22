@@ -10,14 +10,10 @@ export default defineConfig({
     // allow symbolicated traces in a private error tracker.
     sourcemap: false,
     // Matches tsconfig and the single modern browser it runs in, so Vite emits
-    // no down-level helpers.
+    // no down-level helpers. It is also the CSS target: the minifier adds the
+    // -webkit- prefixes it needs, and drops a standard declaration that a
+    // hand-written prefixed one follows.
     target: 'es2022',
-  },
-  optimizeDeps: {
-    // Vite's default pre-bundle targets include safari14, where the overridden
-    // esbuild (package.json "overrides") cannot lower destructuring and the dev
-    // server fails to start.
-    esbuildOptions: { target: 'es2022' },
   },
   server: {
     port: 3000,

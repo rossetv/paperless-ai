@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Preview } from '@storybook/react';
+import type { Preview } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 

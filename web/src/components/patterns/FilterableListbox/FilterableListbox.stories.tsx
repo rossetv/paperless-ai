@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { FilterableListbox, type FilterableItem } from './FilterableListbox';
 
 const CORRESPONDENTS: FilterableItem<number>[] = [

@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { FirstRunSetupScreen } from './FirstRunSetupScreen';
 
 /** Storybook does not wire TanStack Query, so this is a visual reference only. */

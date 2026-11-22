@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { LibraryCard } from './LibraryCard';
 import type { LibraryDocument } from '../../../api/types';
 

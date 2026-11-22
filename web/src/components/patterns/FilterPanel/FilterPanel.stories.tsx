@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Chip } from '../../primitives/Chip/Chip';
 import { Stack } from '../../layout/Stack/Stack';
 import { FilterPanel } from './FilterPanel';
