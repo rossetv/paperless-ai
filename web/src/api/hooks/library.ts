@@ -65,6 +65,8 @@ export function useUpdateDocument(): UseMutationResult<
       void qc.invalidateQueries({ queryKey: queryKeys.document(vars.id) });
       void qc.invalidateQueries({ queryKey: ['documents'] });
       void qc.invalidateQueries({ queryKey: ['search'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.facets() });
+      void qc.invalidateQueries({ queryKey: queryKeys.stats() });
     },
   });
 }
@@ -101,6 +103,8 @@ export function useDeleteDocument(): UseMutationResult<void, Error, number> {
       qc.removeQueries({ queryKey: ['document', id] });
       void qc.invalidateQueries({ queryKey: ['documents'] });
       void qc.invalidateQueries({ queryKey: ['search'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.facets() });
+      void qc.invalidateQueries({ queryKey: queryKeys.stats() });
     },
   });
 }
