@@ -43,7 +43,7 @@
 /* Four-column rows for the stat tiles and the daemon cards. */
 .quad-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--spacing-10);
 }
 
@@ -114,7 +114,7 @@
   display: flex;
   gap: var(--spacing-8);
   align-items: center;
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .activity-panel-head {
@@ -134,7 +134,7 @@
 
 @media (width <= 834px) {
   .quad-row {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .split-row {
