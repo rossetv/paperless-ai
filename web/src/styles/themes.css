@@ -56,8 +56,14 @@
   /* Strong hairline */
   --colour-hairline-strong: rgb(255 255 255 / 12%);
 
-  /* The light theme's near-black neutral ink is illegible on dark; the
-     coloured status tones stay legible and need no override. */
+  /* The light theme's status foregrounds are dark shades chosen for a pale
+     page; on black or the dark surface they fall below 4.5:1, so each tone
+     gets a lighter shade of its hue (tints are unchanged). */
+  --colour-status-ok-fg:      #4ade80;
+  --colour-status-warn-fg:    #fbbf24;
+  --colour-status-danger-fg:  #ff8a80;
+  --colour-status-info-fg:    #5ab0ff;
+  --colour-status-violet-fg:  #a5a3ff;
   --colour-status-neutral-bg: rgb(255 255 255 / 10%);
   --colour-status-neutral-fg: rgb(255 255 255 / 70%);
 }
