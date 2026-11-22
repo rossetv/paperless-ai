@@ -1,4 +1,4 @@
-// ESLint 9 flat config, including the layer-boundary rules for src/.
+// ESLint flat config, including the layer-boundary rules for src/.
 import js from '@eslint/js';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
