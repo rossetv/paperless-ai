@@ -39,9 +39,13 @@ log = structlog.get_logger(__name__)
 _RRF_K = 60
 
 
-# Accent marks are dropped only on these scripts. In others (Indic, Thai,
-# Arabic, ...) the marks carry vowels, so dropping them splits or merges words.
-_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC")
+# Marks are dropped only on these scripts. In others (Indic, Thai, ...) they
+# carry vowels, so dropping them splits or merges words. Arabic harakat and Hebrew
+# niqqud are optional in writing, so they are dropped too.
+_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC", "ARABIC", "HEBREW")
+
+# Letters by category, but written as apostrophes: they fold like "'" and "’".
+_MODIFIER_APOSTROPHES = "\u02bc\u02bb"
 
 
 def _fold(text: str) -> str:
@@ -57,7 +61,7 @@ def _fold(text: str) -> str:
                 out.append(ch)
             continue
         base_is_accentable = unicodedata.name(ch, "").startswith(_ACCENT_SCRIPTS)
-        out.append(ch if ch.isalnum() else " ")
+        out.append(ch if ch.isalnum() and ch not in _MODIFIER_APOSTROPHES else " ")
     return "".join(out)
 
 
