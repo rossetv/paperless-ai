@@ -242,9 +242,67 @@ describe('FilterableListbox keyboard and semantics', () => {
     const onClear = vi.fn();
     const onSelect = vi.fn();
     await openIt(<SingleHarness initial={1} onClear={onClear} onSelect={onSelect} />);
-    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard('apple{Enter}');
     expect(onClear).not.toHaveBeenCalled();
     expect(onSelect).toHaveBeenCalledWith(1);
+  });
+
+  it('Enter right after opening, with no text and nothing highlighted, picks nothing', async () => {
+    const onSelect = vi.fn();
+    await openIt(<SingleHarness onSelect={onSelect} />);
+    await userEvent.keyboard('{Enter}');
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('Enter with nothing highlighted does not pick over an offered Create row', async () => {
+    const onSelect = vi.fn();
+    const onCreate = vi.fn();
+    await openIt(<SingleHarness onSelect={onSelect} onCreate={onCreate} />);
+    await userEvent.keyboard('Ap{Enter}');
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it('Enter with nothing highlighted still picks the first item when the text matches exactly', async () => {
+    const onSelect = vi.fn();
+    await openIt(<SingleHarness onSelect={onSelect} onCreate={vi.fn()} />);
+    await userEvent.keyboard('apple{Enter}');
+    expect(onSelect).toHaveBeenCalledWith(1);
+  });
+
+  it('keeps the list out of the Tab order', async () => {
+    await openIt();
+    expect(screen.getByRole('listbox')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('a resting pointer entering a row under a keyboard scroll does not move the highlight', async () => {
+    const input = await openIt();
+    await userEvent.keyboard('{ArrowDown}');
+    const before = input.getAttribute('aria-activedescendant');
+    fireEvent.mouseEnter(screen.getByRole('option', { name: /Cherry/ }));
+    fireEvent.mouseOver(screen.getByRole('option', { name: /Cherry/ }));
+    expect(input.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
+  it('clicking the "No matches" text leaves the list open', async () => {
+    const input = await openIt();
+    await userEvent.keyboard('zzz');
+    await userEvent.click(screen.getByText('No matches'));
+    expect(screen.getByRole('combobox')).toBe(input);
+    expect(input).toHaveFocus();
+  });
+
+  it('Escape returns focus to the trigger', async () => {
+    await openIt();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('button')).toHaveFocus();
+  });
+
+  it('a single-select pick returns focus to the trigger', async () => {
+    await openIt();
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    expect(screen.getByRole('button')).toHaveFocus();
   });
 
   it('Tab away closes the list without picking', async () => {

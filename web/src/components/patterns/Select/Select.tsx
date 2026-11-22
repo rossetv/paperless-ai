@@ -218,6 +218,8 @@ export function Select<T extends string = string>({
           role="listbox"
           aria-labelledby={label !== undefined ? `${id}-label` : undefined}
           className={styles['listbox']}
+          // A scrolling box is a Tab stop in browsers; focus must stay on the trigger.
+          tabIndex={-1}
           // Keeps focus on the trigger so clicking an option or the scrollbar is not a blur.
           onMouseDown={(e) => e.preventDefault()}
         >
@@ -236,7 +238,9 @@ export function Select<T extends string = string>({
                   isHighlighted ? styles['highlighted'] : undefined,
                 )}
                 onClick={() => selectOption(option.value)}
-                onMouseEnter={() => {
+                // Not mouseenter: a keyboard scroll moves rows under a resting pointer.
+                onMouseMove={() => {
+                  if (index === highlightedIndex) return;
                   pointerMoved.current = true;
                   setHighlightedIndex(index);
                 }}

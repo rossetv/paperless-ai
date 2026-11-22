@@ -348,6 +348,22 @@ describe('Select keyboard and semantics', () => {
     }
   });
 
+  it('keeps the list out of the Tab order', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    expect(screen.getByRole('listbox')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('a resting pointer entering a row under a keyboard scroll does not move the highlight', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    const before = trigger.getAttribute('aria-activedescendant');
+    fireEvent.mouseEnter(screen.getByRole('option', { name: 'Cherry' }));
+    fireEvent.mouseOver(screen.getByRole('option', { name: 'Cherry' }));
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
   it('scrolls to the selected option when reopened after hovering it', async () => {
     const scroll = vi.fn();
     Element.prototype.scrollIntoView = scroll;
