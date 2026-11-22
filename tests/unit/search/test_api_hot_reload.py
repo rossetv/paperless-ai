@@ -235,3 +235,91 @@ def test_current_settings_cache_key_matches_get_all_snapshot(tmp_path) -> None:
             "Settings cached under a version higher than the data they were "
             "built from — the race window is open."
         )
+
+
+def test_document_routes_use_paperless_settings_saved_after_startup(
+    tmp_path,
+) -> None:
+    """A saved Paperless URL or token reaches the document, Library and taxonomy
+    routes on the next request, without a restart."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from fastapi.testclient import TestClient
+
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from appdb.users import create as create_user
+    from common.config import _SETTINGS_CACHE
+    from search.api import _reset_core_cache_for_test, create_app
+    from store.models import DocumentPage, DocumentSummary
+    from tests.helpers.factories import make_search_settings
+    from tests.helpers.search import mint_api_key
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    user = create_user(conn, username="m", password_hash="h", role="member")
+    raw_key = mint_api_key(conn, owner_user_id=user.id, scopes="api")
+    conn.close()
+    env = {
+        "APP_DB_PATH": app_db,
+        "INDEX_DB_PATH": str(tmp_path / "index.db"),
+        "PAPERLESS_URL": "https://old.example",
+        "PAPERLESS_TOKEN": "old-token",
+        "OPENAI_API_KEY": "k",
+    }
+    startup_settings = make_search_settings(
+        APP_DB_PATH=app_db, PAPERLESS_PUBLIC_URL="https://old.example"
+    )
+    summary = DocumentSummary(
+        id=42,
+        title="Invoice",
+        correspondent=None,
+        document_type=None,
+        tags=(),
+        created=None,
+        page_count=None,
+    )
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = summary
+    store_reader.list_documents.return_value = DocumentPage(
+        documents=(summary,), total=1, offset=0, limit=24
+    )
+    paperless_class = MagicMock()
+    paperless_class.return_value.list_tags.return_value = []
+
+    with (
+        patch.dict(os.environ, env, clear=True),
+        patch(
+            "search.api._resolve_components",
+            side_effect=lambda s, c, r: (c or SimpleNamespace(settings=s), r),
+        ),
+        patch("search.api.setup_libraries"),
+        patch("search.api.llm_limiter"),
+        patch("search.document_routes.PaperlessClient", paperless_class),
+    ):
+        _SETTINGS_CACHE.pop(app_db, None)
+        _reset_core_cache_for_test()
+        app = create_app(
+            startup_settings,
+            core=MagicMock(settings=startup_settings),
+            store_reader=store_reader,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        client.headers["Authorization"] = f"Bearer {raw_key}"
+
+        c = connect(app_db)
+        config_store.set_value(c, "PAPERLESS_PUBLIC_URL", "https://new.example")
+        config_store.set_value(c, "PAPERLESS_TOKEN", "new-token")
+        c.close()
+
+        document = client.get("/api/documents/42").json()
+        library = client.get("/api/documents").json()
+        assert client.get("/api/tags").status_code == 200
+
+    assert document["paperless_url"].startswith("https://new.example/")
+    assert library["documents"][0]["paperless_url"].startswith("https://new.example/")
+    used_settings = paperless_class.call_args.args[0]
+    assert used_settings.PAPERLESS_TOKEN == "new-token"

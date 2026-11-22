@@ -59,7 +59,7 @@ _THUMB_RESPONSE_HEADERS = {
 
 def register_proxy_routes(
     router: APIRouter,
-    settings: Settings,
+    current_settings: Callable[[], Settings],
     *,
     paperless_factory: Callable[[Settings], PaperlessClient],
 ) -> None:
@@ -77,6 +77,7 @@ def register_proxy_routes(
 
         404 for an unknown document; 502 when Paperless is unreachable or errors.
         """
+        settings = await run_blocking(current_settings)
         return await _stream_document_pdf(document_id, settings, paperless_factory)
 
     @router.get(
@@ -90,6 +91,7 @@ def register_proxy_routes(
         404 for an unknown document; 502 when Paperless is unreachable, errors,
         or returns a content type outside the image allowlist.
         """
+        settings = await run_blocking(current_settings)
         return await _stream_document_thumb(document_id, settings, paperless_factory)
 
 

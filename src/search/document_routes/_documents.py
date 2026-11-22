@@ -50,7 +50,7 @@ log = structlog.get_logger(__name__)
 
 def register_document_routes(
     router: APIRouter,
-    settings: Settings,
+    current_settings: Callable[[], Settings],
     *,
     store_reader: StoreReader,
     paperless_factory: Callable[[Settings], PaperlessClient],
@@ -72,6 +72,7 @@ def register_document_routes(
         )
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
+        settings = await run_blocking(current_settings)
         paperless_url = (
             f"{settings.PAPERLESS_PUBLIC_URL.rstrip('/')}/documents/{document_id}/"
         )
@@ -100,7 +101,11 @@ def register_document_routes(
         frontend hides this with an optimistic update.
         """
         return await _patch_document(
-            document_id, body, settings, store_reader, paperless_factory
+            document_id,
+            body,
+            await run_blocking(current_settings),
+            store_reader,
+            paperless_factory,
         )
 
     @router.post(
@@ -110,6 +115,7 @@ def register_document_routes(
     )
     async def reclassify_document(document_id: int) -> Response:
         """Re-queue this document for classification (Member or above)."""
+        settings = await run_blocking(current_settings)
         await _swap_pipeline_tag(
             document_id,
             settings,
@@ -130,6 +136,7 @@ def register_document_routes(
         OCR usually triggers classification too, so this re-runs the full
         pipeline.
         """
+        settings = await run_blocking(current_settings)
         await _swap_pipeline_tag(
             document_id,
             settings,
@@ -149,7 +156,7 @@ def register_document_routes(
 
         The search index drops it on the next reconcile.
         """
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             await run_blocking(lambda: paperless.delete_document(document_id))
         finally:

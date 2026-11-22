@@ -305,14 +305,16 @@ def build_api_router(
         tag_ids: list[int] = Query(default_factory=list, max_length=64),
         date_from: str | None = Query(default=None),
         date_to: str | None = Query(default=None),
+        state: AppState = Depends(get_app_state),
     ) -> DocumentListResponse:
         """List indexed documents for the Library, paginated.
 
         ``query`` is a case-insensitive match over title, correspondent and
         document type; ``added`` sorts by date indexed.
         """
+        core = await run_blocking(lambda: resolve_core(state.app_db_path))
         return await _documents(
-            settings,
+            core.settings,
             store_reader,
             page=page,
             page_size=page_size,

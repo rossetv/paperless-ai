@@ -61,7 +61,7 @@ def _build_app(
         settings = MagicMock()
     app.include_router(
         build_document_router(
-            settings,
+            lambda: settings,
             paperless_factory=lambda _s: paperless_client,
             store_reader=store_reader if store_reader is not None else MagicMock(),
         )
@@ -250,7 +250,7 @@ class TestRecentSearchesRoute:
         settings = MagicMock()
         app.include_router(
             build_document_router(
-                settings,
+                lambda: settings,
                 paperless_factory=lambda _s: MagicMock(),
                 store_reader=MagicMock(),
             )
@@ -355,7 +355,7 @@ def _build_app_with_paperless_url(
     )
     app.include_router(
         build_document_router(
-            settings,
+            lambda: settings,
             paperless_factory=lambda _s: paperless_client,
             store_reader=store_reader if store_reader is not None else MagicMock(),
         )

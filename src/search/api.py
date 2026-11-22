@@ -367,7 +367,12 @@ def create_app(
     app.include_router(build_account_router(settings, store_reader))
     app.include_router(build_settings_router(settings))
     app.include_router(build_api_key_router())
-    app.include_router(build_document_router(settings, store_reader=store_reader))
+    app.include_router(
+        build_document_router(
+            lambda: _resolve_search_core(app_db_path).settings,
+            store_reader=store_reader,
+        )
+    )
     app.include_router(build_index_router(settings, store_reader))
     app.include_router(
         build_api_router(
