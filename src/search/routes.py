@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -404,6 +405,15 @@ async def _search(
     return to_search_response(result)
 
 
+def _release_slot(slot: AbstractAsyncContextManager[None]) -> None:
+    """Free a slot from :meth:`LazySemaphore.acquire` without awaiting.
+
+    The unbounded no-op slot holds nothing to free.
+    """
+    if isinstance(slot, asyncio.Semaphore):
+        slot.release()
+
+
 async def _search_stream(
     body: SearchRequest,
     core: SearchCore,
@@ -508,9 +518,7 @@ async def _search_stream(
             else:
                 raise
             return
-        worker.add_done_callback(
-            lambda _: asyncio.ensure_future(slot.__aexit__(None, None, None))
-        )
+        worker.add_done_callback(lambda _: _release_slot(slot))
         seq = 0
         while True:
             try:
