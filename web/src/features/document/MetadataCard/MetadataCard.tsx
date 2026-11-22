@@ -57,7 +57,7 @@ export function MetadataCard({
 
   return (
     <Card>
-      <h3 className={styles['card-h']}>Details</h3>
+      <h2 className={styles['card-h']}>Details</h2>
 
       <TaxonomyCombobox
         label="Correspondent"

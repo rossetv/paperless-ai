@@ -462,7 +462,7 @@ export function DocumentScreen({
           />
 
           <Card>
-            <h3 className={styles['card-h']}>Tags</h3>
+            <h2 className={styles['card-h']}>Tags</h2>
             <TagEditor
               selectedIds={shownTagIds}
               availableTags={tags.data ?? []}

@@ -239,6 +239,13 @@ describe('DocumentScreen', () => {
     expect(screen.getByTitle(/ebay payslip 05\/2026 pdf/i)).toBeInTheDocument();
   });
 
+  it('puts the card headings one level below the title', () => {
+    renderScreen({ role: 'readonly' });
+    expect(screen.getByRole('heading', { name: 'eBay Payslip 05/2026', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Details', level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tags', level: 2 })).toBeInTheDocument();
+  });
+
   it('leaves the main landmark to the shared layout', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.queryByRole('main')).not.toBeInTheDocument();
