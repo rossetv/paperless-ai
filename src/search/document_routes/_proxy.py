@@ -118,6 +118,9 @@ async def _stream_document_pdf(
         if status == 404:
             log.info("api.document_pdf_not_found", document_id=document_id)
             raise HTTPException(status_code=404, detail="Document not found") from exc
+        if status in (401, 403):
+            # The app's Paperless handler names a rejected token or a denial.
+            raise
         # Any other upstream status is nothing the browser can act on.
         log.warning(
             "api.document_pdf_upstream_error",
@@ -168,6 +171,9 @@ async def _stream_document_thumb(
         if status == 404:
             log.info("api.document_thumb_not_found", document_id=document_id)
             raise HTTPException(status_code=404, detail="Document not found") from exc
+        if status in (401, 403):
+            # The app's Paperless handler names a rejected token or a denial.
+            raise
         log.warning(
             "api.document_thumb_upstream_error",
             document_id=document_id,

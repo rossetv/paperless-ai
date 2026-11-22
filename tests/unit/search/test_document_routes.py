@@ -199,6 +199,46 @@ def test_pdf_proxy_404_for_an_unknown_document(app_db_path, conn) -> None:
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("upstream_status", "detail", "event"),
+    [
+        (401, "rejected the server's API token", "paperless.token_rejected"),
+        (
+            403,
+            "denied the server's API token permission",
+            "paperless.permission_denied",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("suffix", "method"), [("pdf", "download_stream"), ("thumb", "thumb_stream")]
+)
+def test_proxy_names_a_rejected_or_unpermitted_server_token(
+    app_db_path, conn, suffix, method, upstream_status, detail, event
+) -> None:
+    """A Paperless 401/403 says the server's token was refused, as the other
+    proxied routes do, instead of a generic store outage."""
+    import structlog.testing
+
+    request = httpx.Request("GET", "https://paperless.example/x")
+    paperless = MagicMock()
+    getattr(paperless, method).side_effect = httpx.HTTPStatusError(
+        "refused",
+        request=request,
+        response=httpx.Response(upstream_status, request=request),
+    )
+    client = _client(app_db_path, paperless)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    with structlog.testing.capture_logs() as logs:
+        response = client.get(f"/api/documents/100/{suffix}")
+
+    assert response.status_code == 502
+    assert detail in response.json()["detail"]
+    assert event in [e["event"] for e in logs]
+    paperless.close.assert_called_once()
+
+
 def test_pdf_proxy_502_when_paperless_is_unreachable(app_db_path, conn) -> None:
     """A Paperless network error maps to a 502 Bad Gateway."""
     paperless = MagicMock()
