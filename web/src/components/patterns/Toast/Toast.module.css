@@ -21,6 +21,9 @@
   color: var(--colour-text-primary);
   max-width: min(var(--width-toast-max), calc(100vw - 2 * var(--spacing-14)));
   min-width: var(--width-toast-min);
+
+  /* left: 50% would otherwise cap shrink-to-fit at half the viewport. */
+  width: max-content;
   box-sizing: border-box;
 }
 
