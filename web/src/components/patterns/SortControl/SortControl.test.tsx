@@ -100,6 +100,20 @@ describe('SortControl', () => {
       expect(screen.getByRole('menuitemradio', { name: 'Correspondent' })).toHaveFocus();
     });
 
+    it.each([
+      ['{ArrowDown}', 'Date added'],
+      ['{Home}', 'Date added'],
+      ['{ArrowUp}', 'Correspondent'],
+      ['{End}', 'Correspondent'],
+    ])('%s moves into the menu after a click on its padding', async (key, name) => {
+      setup();
+      await userEvent.click(screen.getByRole('button'));
+      await userEvent.click(screen.getByRole('menu'));
+      expect(screen.getByRole('menu')).toHaveFocus();
+      await userEvent.keyboard(key);
+      expect(screen.getByRole('menuitemradio', { name })).toHaveFocus();
+    });
+
     it('Home and End jump to the first and last item', async () => {
       setup();
       await userEvent.click(screen.getByRole('button'));

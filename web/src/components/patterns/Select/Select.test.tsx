@@ -337,7 +337,9 @@ describe('Select keyboard and semantics', () => {
     try {
       const { trigger } = setup();
       await userEvent.click(trigger);
-      await userEvent.hover(screen.getByRole('option', { name: 'Cherry' }));
+      const cherry = screen.getByRole('option', { name: 'Cherry' });
+      fireEvent.mouseMove(cherry, { clientX: 1, clientY: 1 });
+      fireEvent.mouseMove(cherry, { clientX: 2, clientY: 1 });
       expect(trigger.getAttribute('aria-activedescendant')).toBe(
         screen.getByRole('option', { name: 'Cherry' }).id,
       );
@@ -362,6 +364,32 @@ describe('Select keyboard and semantics', () => {
     fireEvent.mouseEnter(screen.getByRole('option', { name: 'Cherry' }));
     fireEvent.mouseOver(screen.getByRole('option', { name: 'Cherry' }));
     expect(trigger.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
+  it('the first mousemove after opening does not take the highlight, the next at new coordinates does', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{End}');
+    const cherry = screen.getByRole('option', { name: 'Cherry' });
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(apple.id);
+  });
+
+  it('a mousemove at the same coordinates after a keyboard move keeps the keyboard highlight', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    await userEvent.keyboard('{End}');
+    const cherry = screen.getByRole('option', { name: 'Cherry' });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(apple.id);
   });
 
   it('scrolls to the selected option when reopened after hovering it', async () => {

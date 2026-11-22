@@ -11,7 +11,7 @@ const meta = {
   decorators: [
     // The toast is position: fixed; a transform gives each story its own containing block.
     (Story) => (
-      <div style={{ transform: 'translateZ(0)', minHeight: '8rem', width: '100%' }}>
+      <div style={{ transform: 'translateZ(0)', minHeight: '20rem', width: '100%' }}>
         <Story />
       </div>
     ),

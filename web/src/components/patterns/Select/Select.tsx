@@ -54,6 +54,8 @@ export function Select<T extends string = string>({
   const triggerRef = useRef<HTMLButtonElement>(null);
   // Set when the pointer moved the highlight, so the list is not scrolled under it.
   const pointerMoved = useRef(false);
+  // Last pointer position seen over the list; a scroll under a resting pointer repeats it.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
 
   // Close on outside pointer-down (bound only while open).
   // This also ensures a second dropdown opening dismisses this one, because
@@ -88,6 +90,7 @@ export function Select<T extends string = string>({
   function open(initialHighlight?: number): void {
     if (disabled) return;
     pointerMoved.current = false;
+    lastPointer.current = null;
     setIsOpen(true);
     // Pre-highlight the currently selected option so arrow keys start from there.
     // If an initial highlight index is supplied (e.g. ArrowDown → first item),
@@ -239,7 +242,10 @@ export function Select<T extends string = string>({
                 )}
                 onClick={() => selectOption(option.value)}
                 // Not mouseenter: a keyboard scroll moves rows under a resting pointer.
-                onMouseMove={() => {
+                onMouseMove={(event) => {
+                  const last = lastPointer.current;
+                  lastPointer.current = { x: event.clientX, y: event.clientY };
+                  if (!last || (last.x === event.clientX && last.y === event.clientY)) return;
                   if (index === highlightedIndex) return;
                   pointerMoved.current = true;
                   setHighlightedIndex(index);

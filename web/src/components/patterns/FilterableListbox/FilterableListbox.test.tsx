@@ -285,6 +285,30 @@ describe('FilterableListbox keyboard and semantics', () => {
     expect(input.getAttribute('aria-activedescendant')).toBe(before);
   });
 
+  it('the first mousemove after opening does not take the highlight, the next at new coordinates does', async () => {
+    const input = await openIt();
+    await userEvent.keyboard('{End}');
+    const last = input.getAttribute('aria-activedescendant');
+    const apple = screen.getByRole('option', { name: /Apple/ });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(input.getAttribute('aria-activedescendant')).toBe(last);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(input.getAttribute('aria-activedescendant')).toBe(apple.id);
+  });
+
+  it('a mousemove at the same coordinates after a keyboard move keeps the keyboard highlight', async () => {
+    const input = await openIt();
+    const apple = screen.getByRole('option', { name: /Apple/ });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    await userEvent.keyboard('{End}');
+    const last = input.getAttribute('aria-activedescendant');
+    expect(last).not.toBe(apple.id);
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(input.getAttribute('aria-activedescendant')).toBe(last);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(input.getAttribute('aria-activedescendant')).toBe(apple.id);
+  });
+
   it('clicking the "No matches" text leaves the list open', async () => {
     const input = await openIt();
     await userEvent.keyboard('zzz');
@@ -350,7 +374,9 @@ describe('FilterableListbox keyboard and semantics', () => {
     Element.prototype.scrollIntoView = scroll;
     try {
       const input = await openIt();
-      await userEvent.hover(screen.getByRole('option', { name: /Cherry/ }));
+      const cherry = screen.getByRole('option', { name: /Cherry/ });
+      fireEvent.mouseMove(cherry, { clientX: 1, clientY: 1 });
+      fireEvent.mouseMove(cherry, { clientX: 2, clientY: 1 });
       expect(input.getAttribute('aria-activedescendant')).toBe(
         screen.getByRole('option', { name: /Cherry/ }).id,
       );
