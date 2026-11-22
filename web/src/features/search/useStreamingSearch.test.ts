@@ -181,6 +181,21 @@ describe('useStreamingSearch', () => {
     expect(result.current.state.phaseRecords).toHaveLength(1);
   });
 
+  it('invalidates the recent searches when a result arrives', async () => {
+    mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+    mockParseNdjson.mockReturnValue(
+      eventsGen([{ type: 'result', seq: 1, result: makeResponse('ok') }]),
+    );
+    client.setQueryData(['recent-searches'], { searches: [] });
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
+    await act(async () => {
+      result.current.run('q', EMPTY_FILTERS);
+    });
+
+    await waitFor(() => expect(result.current.state.status).toBe('done'));
+    expect(client.getQueryState(['recent-searches'])?.isInvalidated).toBe(true);
+  });
+
   it('maps an in-stream index_not_ready frame to the 503 status', async () => {
     mockStreamSearch.mockResolvedValue({ body: {} } as Response);
     mockParseNdjson.mockReturnValue(
