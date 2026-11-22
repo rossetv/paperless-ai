@@ -13,12 +13,6 @@ export default defineConfig({
     // no down-level helpers.
     target: 'es2022',
   },
-  optimizeDeps: {
-    // Vite's default pre-bundle targets include safari14, where the overridden
-    // esbuild (package.json "overrides") cannot lower destructuring and the dev
-    // server fails to start.
-    esbuildOptions: { target: 'es2022' },
-  },
   server: {
     port: 3000,
     proxy: {

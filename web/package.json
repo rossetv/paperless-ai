@@ -41,7 +41,7 @@
     "@types/react-dom": "^19.3.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
-    "@vitejs/plugin-react": "^4.4.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "@vitest/coverage-v8": "^5.1.1",
     "eslint": "^10.15.0",
     "eslint-import-resolver-typescript": "^4.4.4",
@@ -53,7 +53,7 @@
     "stylelint": "^18.1.0",
     "stylelint-config-standard": "^41.1.0",
     "typescript": "~6.0.3",
-    "vite": "6.4.5",
+    "vite": "8.3.8",
     "vitest": "^5.1.1"
   }
 }
