@@ -20,9 +20,6 @@
     "js-yaml": "^4.3.2",
     "@joshwooding/vite-plugin-react-docgen-typescript": {
       "glob": "^14.0.2"
-    },
-    "eslint-plugin-react": {
-      "eslint": "$eslint"
     }
   },
   "dependencies": {
@@ -54,7 +51,6 @@
     "eslint": "^10.15.0",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-boundaries": "^7.4.4",
-    "eslint-plugin-react": "^7.37.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",
     "prettier": "^3.10.1",

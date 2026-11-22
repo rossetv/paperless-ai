@@ -3,7 +3,6 @@ import js from '@eslint/js';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import boundaries from 'eslint-plugin-boundaries';
-import reactPlugin from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 /** @type {import('eslint').Linter.Config[]} */
@@ -27,7 +26,6 @@ export default [
     plugins: {
       '@typescript-eslint': tsPlugin,
       boundaries,
-      react: reactPlugin,
       'react-hooks': reactHooks,
     },
     settings: {
@@ -68,7 +66,6 @@ export default [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
 
-      'react/react-in-jsx-scope': 'off',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
 
