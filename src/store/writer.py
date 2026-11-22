@@ -21,6 +21,9 @@ from store.schema import connect, ensure_schema
 
 log = structlog.get_logger(__name__)
 
+# Ids bound per statement; SQLite caps bound variables per statement.
+_DELETE_SLICE = 500
+
 
 class StoreWriter:
     """Write API for the SQLite search index.
@@ -212,19 +215,21 @@ class StoreWriter:
         try:
             with self._write_lock:
                 with self._conn:
-                    document_marks = placeholders(len(document_ids))
-                    chunk_ids = [
-                        row[0]
-                        for row in self._conn.execute(
-                            f"SELECT id FROM chunks WHERE document_id IN ({document_marks})",  # nosec B608 - document_marks is `?,?,?` from placeholders(); ids bound via ?
-                            document_ids,
-                        ).fetchall()
-                    ]
-                    self._delete_fts_rows(chunk_ids)
-                    self._conn.execute(
-                        f"DELETE FROM documents WHERE id IN ({document_marks})",  # nosec B608 - document_marks is `?,?,?` from placeholders(); ids bound via ?
-                        document_ids,
-                    )
+                    for start in range(0, len(document_ids), _DELETE_SLICE):
+                        batch = document_ids[start : start + _DELETE_SLICE]
+                        marks = placeholders(len(batch))
+                        chunk_ids = [
+                            row[0]
+                            for row in self._conn.execute(
+                                f"SELECT id FROM chunks WHERE document_id IN ({marks})",  # nosec B608 - marks is `?,?,?` from placeholders(); ids bound via ?
+                                batch,
+                            ).fetchall()
+                        ]
+                        self._delete_fts_rows(chunk_ids)
+                        self._conn.execute(
+                            f"DELETE FROM documents WHERE id IN ({marks})",  # nosec B608 - marks is `?,?,?` from placeholders(); ids bound via ?
+                            batch,
+                        )
         except sqlite3.Error as exc:
             raise StoreError(f"failed to delete documents {document_ids}") from exc
 
@@ -387,12 +392,12 @@ class StoreWriter:
 
         Caller must hold the write lock and be inside a transaction.
         """
-        if not chunk_ids:
-            return
-        self._conn.execute(
-            f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
-            chunk_ids,
-        )
+        for start in range(0, len(chunk_ids), _DELETE_SLICE):
+            batch = chunk_ids[start : start + _DELETE_SLICE]
+            self._conn.execute(
+                f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(batch))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
+                batch,
+            )
 
     def _delete_chunks_for_document(self, document_id: int) -> None:
         """Delete chunks and chunks_fts rows for *document_id*.

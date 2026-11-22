@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 
 from store.models import TaxonomyEntry
@@ -56,6 +57,23 @@ class TestIndexState:
         ids = writer.get_all_document_ids()
         writer.close()
         assert ids == {1, 2}
+
+
+class TestBulkDelete:
+    def test_delete_more_ids_than_the_variable_limit_allows(self, db_path: str) -> None:
+        writer = open_writer(db_path)
+        count = 1100
+        for doc_id in range(1, count + 1):
+            writer.upsert_document(make_document_meta(id=doc_id), make_chunks(1))
+        writer._conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 600)
+        writer.delete_documents(range(1, count + 1))
+        conn = writer._conn
+        remaining = [
+            conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+            for t in ("documents", "chunks", "chunks_fts")
+        ]
+        writer.close()
+        assert remaining == [0, 0, 0]
 
 
 class TestCheckEmbeddingModel:
