@@ -502,9 +502,12 @@
   --width-col-date-wide:        160px;  /* wider date column (last sign-in) */
   --width-col-expiry:           170px;  /* expiry / revoke-action column */
 
+  /* The destructive button's fill carries white text, so it stays this red in both themes. */
+  --colour-button-destructive-bg: #c0382e;
+
   /* Semantic status colours for RoleBadge, StatusBadge and ScopePill: a
-   * translucent tint plus a readable foreground. Identical in both themes
-   * (only the neutral tone is overridden in themes.css). */
+   * translucent tint plus a readable foreground; themes.css lightens the
+   * foregrounds and the neutral tint for dark mode. */
 
   /* Positive / active — green */
   --colour-status-ok-bg:        rgb(52 199 89 / 12%);
