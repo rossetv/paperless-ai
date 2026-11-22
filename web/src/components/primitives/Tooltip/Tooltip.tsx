@@ -1,6 +1,14 @@
 import React, { useState, useId, useCallback } from 'react';
 import styles from './Tooltip.module.css';
 
+type TriggerProps = {
+  onMouseEnter?: React.MouseEventHandler;
+  onMouseLeave?: React.MouseEventHandler;
+  onFocus?: React.FocusEventHandler;
+  onBlur?: React.FocusEventHandler;
+  onKeyDown?: React.KeyboardEventHandler;
+};
+
 export interface TooltipProps {
   /**
    * The label text to display in the tooltip.
@@ -12,7 +20,7 @@ export interface TooltipProps {
    * Must be a single interactive or focusable element so aria-describedby
    * can be wired correctly.
    */
-  children: React.ReactElement;
+  children: React.ReactElement<TriggerProps>;
 }
 
 /**
