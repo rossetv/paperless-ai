@@ -1,0 +1,19 @@
+/* Doubled selector outranks Row's own rule whatever the stylesheet order. Below 700 px the
+   label column and control no longer fit side by side, so the control drops under the label. */
+@media (width <= 699.98px) {
+  .field.field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-8);
+  }
+
+  /* A long env-var name has no break point of its own. */
+  .field > :first-child {
+    overflow-wrap: anywhere;
+  }
+
+  /* A segmented control wider than the card wraps its options instead of spilling out. */
+  .field [role='radiogroup'] {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+}
