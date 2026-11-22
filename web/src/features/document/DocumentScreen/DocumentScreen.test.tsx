@@ -462,6 +462,22 @@ describe('DocumentScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/tag/i);
   });
 
+  it.each([
+    { kind: 'tag', opener: /add tag/i, hook: () => mockUseCreateTag },
+    { kind: 'correspondent', opener: 'eBay', hook: () => mockUseCreateCorrespondent },
+    { kind: 'document type', opener: 'Payslip', hook: () => mockUseCreateDocumentType },
+  ])('creates no second $kind while the first create runs', ({ opener, hook }) => {
+    const create = vi.fn();
+    hook().mockReturnValue(
+      createMutationStub({ mutate: create as unknown as UseMutateFunction<TaxonomyItem, Error, string>, isPending: true }),
+    );
+    renderScreen({ role: 'member' });
+    fireEvent.click(screen.getByRole('button', { name: opener }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Brand new' } });
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('renders MatchCard at the top of the sidebar when parent is search', () => {
     mockUseSearch.mockReturnValue(queryOk({
       answer: '…',

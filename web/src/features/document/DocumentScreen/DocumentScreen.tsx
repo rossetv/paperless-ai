@@ -289,7 +289,9 @@ export function DocumentScreen({
     changeTags((ids) => ids.filter((t) => t !== id));
   }
 
+  // A create already running ignores another press, so a double press makes one.
   function createTagThenAdd(name: string): void {
+    if (createTag.isPending) return;
     createTag.mutate(name, {
       onSuccess: (created) => {
         notify(`Created tag “${created.name}”.`);
@@ -362,6 +364,7 @@ export function DocumentScreen({
             canEdit={canEdit}
             onPatch={save}
             onCreateCorrespondent={(name) =>
+              !createCorrespondent.isPending &&
               createCorrespondent.mutate(name, {
                 onSuccess: (created) => {
                   notify(`Created correspondent “${created.name}”.`);
@@ -371,6 +374,7 @@ export function DocumentScreen({
               })
             }
             onCreateDocumentType={(name) =>
+              !createDocumentType.isPending &&
               createDocumentType.mutate(name, {
                 onSuccess: (created) => {
                   notify(`Created document type “${created.name}”.`);
