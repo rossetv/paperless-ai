@@ -127,4 +127,37 @@ describe('Tabs', () => {
       'true',
     );
   });
+
+  it('Home and End jump to the first and last tab and activate it', async () => {
+    const user = userEvent.setup();
+    render(<Tabs tabs={TABS} />);
+    screen.getByRole('tab', { name: 'Results' }).focus();
+    await user.keyboard('{End}');
+    expect(screen.getByRole('tab', { name: 'Query plan' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Query plan' })).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('tab', { name: 'Results' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Results' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('gives each instance its own ids and points aria-controls only at the rendered panel', () => {
+    render(
+      <>
+        <Tabs tabs={TABS} />
+        <Tabs tabs={TABS} />
+      </>,
+    );
+    const ids = screen.getAllByRole('tab').map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const tab of screen.getAllByRole('tab')) {
+      const target = tab.getAttribute('aria-controls');
+      if (tab.getAttribute('aria-selected') === 'true') {
+        expect(document.getElementById(target ?? '')).toHaveAttribute('role', 'tabpanel');
+      } else {
+        expect(target).toBeNull();
+      }
+    }
+    const panelIds = screen.getAllByRole('tabpanel').map((p) => p.id);
+    expect(new Set(panelIds).size).toBe(2);
+  });
 });
