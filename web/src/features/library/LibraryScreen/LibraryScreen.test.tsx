@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation, useNavigationType } from 'react-router-dom';
 import { LibraryScreen } from './LibraryScreen';
 import type {
   DocumentsResponse,
@@ -67,6 +67,11 @@ function LocationProbe({ testId = 'location-probe' }: { testId?: string }) {
   );
 }
 
+/** Renders how the last navigation happened (POP, PUSH or REPLACE). */
+function NavTypeProbe() {
+  return <span data-testid="nav-type">{useNavigationType()}</span>;
+}
+
 function renderScreen(initialEntry = '/library') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -74,6 +79,7 @@ function renderScreen(initialEntry = '/library') {
         <Route path="*" element={<LibraryScreen />} />
       </Routes>
       <LocationProbe />
+      <NavTypeProbe />
     </MemoryRouter>,
   );
 }
@@ -205,6 +211,37 @@ describe('LibraryScreen', () => {
     );
     renderScreen('/library?page=99');
     expect(screen.getByTestId('location-probe').textContent).toBe('/library?page=3');
+    expect(screen.getByTestId('nav-type').textContent).toBe('REPLACE');
+  });
+
+  it('does not redirect on the previous query\'s total while new data loads', () => {
+    mockUseDocuments.mockReturnValue({
+      ...documentsResult({ documents: [], total: 5, page: 1, page_size: 24 }),
+      isPlaceholderData: true,
+    });
+    renderScreen('/library?page=3');
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library?page=3');
+  });
+
+  it('keeps focus in the search box after a submit', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [makeDoc(1, 'Doc one')], total: 1, page: 1, page_size: 24 }),
+    );
+    renderScreen();
+    const box = screen.getByRole('searchbox');
+    await userEvent.type(box, 'gas{Enter}');
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library?q=gas');
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+  });
+
+  it('shows the URL\'s query in the search box when it changes elsewhere', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [makeDoc(1, 'Doc one')], total: 1, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?q=gas');
+    expect(screen.getByRole('searchbox')).toHaveValue('gas');
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    expect(screen.getByRole('searchbox')).toHaveValue('');
   });
 
   it('goes to page 1 when a past-the-end page has no results at all', () => {

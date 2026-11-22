@@ -79,6 +79,11 @@ export function LibraryScreen(): React.ReactElement {
   // the fold. Read once at mount: it only concerns the initial layout.
   const [railDefaultExpanded] = React.useState(() => !isNarrowViewport());
 
+  // The field follows the URL's query (Back, Forward, Clear all) but stays editable.
+  const urlText = query.query ?? '';
+  const [searchText, setSearchText] = React.useState(urlText);
+  useEffect(() => setSearchText(urlText), [urlText]);
+
   function submitSearch(text: string): void {
     setQuery({ ...query, query: text.trim() === '' ? null : text.trim(), page: 1 });
   }
@@ -195,7 +200,11 @@ export function LibraryScreen(): React.ReactElement {
   const isLastPage = query.page >= pageCount;
 
   // Past the last page there is nothing to show: land on the last one without a history entry.
-  const pastEnd = documents.data !== undefined && query.page > pageCount;
+  // Placeholder data is the previous query's, so its total says nothing about this page.
+  const pastEnd =
+    documents.data !== undefined &&
+    !documents.isPlaceholderData &&
+    query.page > pageCount;
   useEffect(() => {
     if (pastEnd) {
       setQuery({ ...query, page: pageCount }, { replace: true });
@@ -244,9 +253,9 @@ export function LibraryScreen(): React.ReactElement {
       <div className={styles['screen']}>
         {/* In-library search */}
         <SearchField
-          key={query.query ?? ''}
           id="library-search"
-          defaultValue={query.query ?? ''}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
           allowEmpty
           placeholder="Filter library… (try title, correspondent, or document type)"
           onSubmit={submitSearch}
