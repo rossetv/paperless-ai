@@ -30,6 +30,7 @@
   box-shadow: var(--shadow-card);
   padding: var(--spacing-4);
   overflow: hidden;
+  outline: none;
 }
 
 .header {

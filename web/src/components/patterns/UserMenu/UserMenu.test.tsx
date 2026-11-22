@@ -104,6 +104,14 @@ describe('UserMenu', () => {
       expect(event.defaultPrevented).toBe(true);
     });
 
+    it('Escape still closes the menu after a click on its non-focusable header', async () => {
+      const { trigger } = await open();
+      await userEvent.click(screen.getByText('Alex Morgan'));
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
     it('Enter on the item signs out and returns focus to the trigger', async () => {
       const { trigger, onSignOut } = await open();
       await userEvent.keyboard('{Enter}');

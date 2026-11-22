@@ -119,6 +119,15 @@ describe('SortControl', () => {
       expect(event.defaultPrevented).toBe(true);
     });
 
+    it('Escape still closes the menu after a click on the menu padding', async () => {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      await userEvent.click(screen.getByRole('menu'));
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
     it('picking with Enter calls onChange and returns focus to the trigger', async () => {
       const { trigger, onChange } = setup();
       await userEvent.click(trigger);

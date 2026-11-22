@@ -148,7 +148,14 @@ export function SortControl<T extends string = string>({
       </button>
 
       {isOpen && (
-        <ul ref={menuRef} id={menuId} role="menu" aria-label={label} className={styles['menu']}>
+        <ul
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label={label}
+          tabIndex={-1}
+          className={styles['menu']}
+        >
           {options.map((option) => {
             const isSelected = option.value === value;
             return (

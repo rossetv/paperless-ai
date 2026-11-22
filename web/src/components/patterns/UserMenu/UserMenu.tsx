@@ -119,7 +119,7 @@ export function UserMenu({
       </button>
 
       {open && (
-        <div ref={menuRef} className={styles['dropdown']} role="menu">
+        <div ref={menuRef} className={styles['dropdown']} role="menu" tabIndex={-1}>
           <div className={styles['header']}>
             <span className={styles['name']}>{headerName}</span>
             {email !== null && email !== '' && (
