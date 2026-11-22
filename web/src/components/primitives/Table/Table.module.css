@@ -1,6 +1,8 @@
 /* Column widths and alignment are per-column data, applied inline by the component. */
 
 .wrapper {
+  /* Anchors visually-hidden header text so it cannot widen the page. */
+  position: relative;
   background-color: var(--colour-surface);
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-large);
