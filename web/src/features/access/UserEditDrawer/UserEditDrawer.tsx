@@ -8,6 +8,7 @@ import {
   useUpdateUser,
   useDeleteUser,
 } from '../../../api/hooks';
+import { cn } from '../../../lib/cn';
 import { errorDetail } from '../../../api/client';
 import { validatePassword, validateUsername } from '../../../lib/credentials';
 import type { User, UpdateUserRequest } from '../../../api/types';
@@ -250,7 +251,7 @@ export function UserEditDrawer({
           </p>
         )}
 
-        <div className={styles['footer']}>
+        <div className={cn(styles['footer'], selfHelpId && styles['footer-self'])}>
           <div className={styles['actions']} {...confirmDelete.armedProps}>
             <div className={styles['destructive']}>
               {!isCreate && (

@@ -51,6 +51,19 @@
   gap: var(--spacing-8);
 }
 
+/* Self account: helper text sits under the destructive row. Top-aligned, so it
+   cannot pull Cancel / Save down; the row is as tall as the default-size
+   Cancel / Save buttons, so the two rows still share a centre. */
+.footer-self {
+  align-items: flex-start;
+}
+
+.footer-self .destructive {
+  min-height: calc(
+    var(--font-size-button) * var(--line-height-button) + 2 * (var(--spacing-6) + var(--spacing-1))
+  );
+}
+
 .destructive-separator {
   display: block;
   width: var(--spacing-1);
