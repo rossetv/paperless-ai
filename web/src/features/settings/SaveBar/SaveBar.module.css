@@ -122,6 +122,13 @@
   }
 }
 
+/* Phone layout shows the fixed bottom tab bar; sit above it so both stay reachable. */
+@media (width <= 699.98px) {
+  .bar {
+    bottom: calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* Rebuild warning when a reindex key is dirty. */
 .caption-reindex {
   color: var(--colour-status-warn-fg);
