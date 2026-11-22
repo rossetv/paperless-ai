@@ -125,6 +125,12 @@
   border-top: var(--spacing-1) solid var(--colour-border-button);
 }
 
+/* The accent blue is 3.2:1 on the dark surface; the dark link blue clears 4.5:1. */
+[data-theme="dark"] .option.selected .option-label,
+[data-theme="dark"] .create {
+  color: var(--colour-link);
+}
+
 .create.highlighted {
   background-color: var(--colour-accent-wash);
 }
