@@ -83,6 +83,16 @@ class TestCacheHit:
         second = core.answer("a query")
         assert second.answer == first.answer
 
+    def test_only_a_cache_hit_reports_itself(self) -> None:
+        reset_search_result_cache()
+        core = _core(_store_reader(), _answered_client())
+        hits: list[str] = []
+
+        core.answer("a query", on_cache_hit=lambda: hits.append("first"))
+        core.answer("a query", on_cache_hit=lambda: hits.append("second"))
+
+        assert hits == ["second"]
+
 
 class TestCacheDisabled:
     def test_ttl_zero_always_recomputes(self) -> None:
