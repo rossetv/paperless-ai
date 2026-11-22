@@ -8,9 +8,11 @@ import {
   useUpdateUser,
   useDeleteUser,
 } from '../../../api/hooks';
+import { cn } from '../../../lib/cn';
 import { errorDetail } from '../../../api/client';
 import { validatePassword, validateUsername } from '../../../lib/credentials';
 import type { User, UpdateUserRequest } from '../../../api/types';
+import { useArmedConfirm } from '../useArmedConfirm';
 import styles from './UserEditDrawer.module.css';
 
 const ROLE_OPTIONS = [
@@ -68,7 +70,7 @@ export function UserEditDrawer({
   const [form, setForm] = React.useState<FormState>(() => initialState(user));
   const [fieldError, setFieldError] = React.useState<Partial<Record<keyof FormState, string>>>({});
   const [serverError, setServerError] = React.useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const confirmDelete = useArmedConfirm<true>();
 
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
@@ -177,7 +179,7 @@ export function UserEditDrawer({
           'Could not delete the account. The last admin cannot be removed.',
         ),
       );
-      setConfirmingDelete(false);
+      confirmDelete.disarm();
     }
   }
 
@@ -186,6 +188,7 @@ export function UserEditDrawer({
     : `Edit profile · ${user.display_name ?? user.username}`;
   const busy =
     createUser.isPending || updateUser.isPending || deleteUser.isPending;
+  const selfHelpId = isSelf && !isCreate ? 'user-self-help' : undefined;
   const suspendLabel = user?.status === 'suspended' ? 'Reactivate' : 'Suspend';
 
   return (
@@ -248,42 +251,55 @@ export function UserEditDrawer({
           </p>
         )}
 
-        <div className={styles['footer']}>
-          <div className={styles['destructive']}>
-            {!isCreate && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  type="button"
-                  disabled={isSelf || busy}
-                  onClick={() => void handleToggleStatus()}
-                >
-                  {suspendLabel}
-                </Button>
-                <span className={styles['destructive-separator']} aria-hidden="true" />
-                {confirmingDelete ? (
+        <div className={cn(styles['footer'], selfHelpId && styles['footer-self'])}>
+          <div className={styles['actions']} {...confirmDelete.armedProps}>
+            <div className={styles['destructive']}>
+              {!isCreate && (
+                <>
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="small"
                     type="button"
+                    aria-describedby={selfHelpId}
                     disabled={isSelf || busy}
-                    onClick={() => void handleDelete()}
+                    onClick={() => void handleToggleStatus()}
                   >
-                    Confirm delete
+                    {suspendLabel}
                   </Button>
-                ) : (
-                  <Button
-                    variant="destructive"
-                    size="small"
-                    type="button"
-                    disabled={isSelf || busy}
-                    onClick={() => setConfirmingDelete(true)}
-                  >
-                    Delete account
-                  </Button>
-                )}
-              </>
+                  <span className={styles['destructive-separator']} aria-hidden="true" />
+                  {confirmDelete.armed === true ? (
+                    <Button
+                      variant="destructive"
+                      size="small"
+                      type="button"
+                      aria-label={`Confirm delete ${user.username}`}
+                      aria-describedby={selfHelpId}
+                      disabled={isSelf || busy}
+                      onClick={() => {
+                        if (confirmDelete.canConfirm()) void handleDelete();
+                      }}
+                    >
+                      Confirm delete
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="destructive"
+                      size="small"
+                      type="button"
+                      aria-describedby={selfHelpId}
+                      disabled={isSelf || busy}
+                      onClick={() => confirmDelete.arm(true)}
+                    >
+                      Delete account
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+            {isSelf && !isCreate && (
+              <p id="user-self-help" className={styles['self-help']}>
+                You can't suspend or delete your own account.
+              </p>
             )}
           </div>
           <div className={styles['primary']}>

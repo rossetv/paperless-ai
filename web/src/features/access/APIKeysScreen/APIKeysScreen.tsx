@@ -14,6 +14,7 @@ import type { ApiKey } from '../../../api/types';
 import { APIKeyCreatePanel } from '../APIKeyCreatePanel/APIKeyCreatePanel';
 import { APIKeyEditPanel } from '../APIKeyEditPanel/APIKeyEditPanel';
 import { formatShortDate } from '../../../lib/formatDate';
+import { useArmedConfirm } from '../useArmedConfirm';
 import styles from './APIKeysScreen.module.css';
 
 type KeyState = 'active' | 'expired' | 'revoked';
@@ -70,7 +71,7 @@ export function APIKeysScreen(): React.ReactElement {
   const { user: me } = useAuth();
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [editingKey, setEditingKey] = React.useState<ApiKey | null>(null);
-  const [confirmingId, setConfirmingId] = React.useState<number | null>(null);
+  const confirm = useArmedConfirm<number>();
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   const keys = keysQuery.data?.keys ?? [];
@@ -82,7 +83,7 @@ export function APIKeysScreen(): React.ReactElement {
     } catch (error) {
       setDeleteError(errorDetail(error, 'Could not revoke the key. Try again.'));
     } finally {
-      setConfirmingId(null);
+      confirm.disarm();
     }
   }
 
@@ -104,7 +105,7 @@ export function APIKeysScreen(): React.ReactElement {
               )}
             </span>
             <span className={styles['key-meta']}>
-              <span>{k.key_prefix}••••••••••</span>
+              <span className={styles['key-prefix']}>{k.key_prefix}••••••••••</span>
               <span className={styles['key-count']}>
                 {k.request_count.toLocaleString()} requests · created{' '}
                 {formatShortDate(k.created_at)}
@@ -149,7 +150,7 @@ export function APIKeysScreen(): React.ReactElement {
         // Editing is owner-only; the server enforces this too.
         const canEdit = state === 'active' && k.owner_id === me?.id;
         return (
-          <div className={styles['row-actions']}>
+          <div className={styles['row-actions']} {...confirm.armedProps}>
             {canEdit && (
               <Button
                 variant="ghost"
@@ -159,12 +160,15 @@ export function APIKeysScreen(): React.ReactElement {
                 Edit
               </Button>
             )}
-            {confirmingId === k.id ? (
+            {confirm.armed === k.id ? (
               <Button
                 variant="destructive"
                 size="small"
+                aria-label={`Confirm ${actionLabel.toLowerCase()} ${k.name}`}
                 disabled={deleteKey.isPending}
-                onClick={() => void handleDelete(k.id)}
+                onClick={() => {
+                  if (confirm.canConfirm()) void handleDelete(k.id);
+                }}
               >
                 Confirm
               </Button>
@@ -172,7 +176,7 @@ export function APIKeysScreen(): React.ReactElement {
               <Button
                 variant="destructive"
                 size="small"
-                onClick={() => setConfirmingId(k.id)}
+                onClick={() => confirm.arm(k.id)}
               >
                 {actionLabel}
               </Button>

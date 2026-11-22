@@ -28,6 +28,16 @@ import styles from './IndexScreen.module.css';
 /** Number of activity rows to show before the "View full log" link appears. */
 const ACTIVITY_ROW_LIMIT = 5;
 
+/** Model names get a soft break after each separator so a narrow tile wraps between parts, not inside one. */
+function breakableName(name: string): React.ReactNode {
+  return name.split(/(?<=[/\-.:_])/).map((part, i) => (
+    <React.Fragment key={i}>
+      {i > 0 && <wbr />}
+      {part}
+    </React.Fragment>
+  ));
+}
+
 /**
  * The Index operations dashboard.
  *
@@ -142,7 +152,7 @@ export function IndexScreen(): React.ReactElement {
               />
               {/* No dimension sub-line: GET /api/stats does not expose it, and a
                   hard-coded figure is wrong for any non-default model. */}
-              <StatTile value={stats.embedding_model ?? '—'} label="Embedding model" />
+              <StatTile value={breakableName(stats.embedding_model ?? '—')} label="Embedding model" />
               <StatTile
                 value={
                   stats.last_reconcile_at !== null

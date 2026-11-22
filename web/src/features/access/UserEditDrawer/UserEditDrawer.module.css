@@ -8,6 +8,12 @@
   grid-column: 1 / -1;
 }
 
+@media (width <= 699.98px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .error {
   margin-top: var(--spacing-10);
   padding: var(--spacing-8) var(--spacing-10);
@@ -31,12 +37,31 @@
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
 /* Reversible (Suspend) left, permanent (Delete) right, spaced apart so one
    cannot be misclicked for the other. */
 .destructive {
   display: flex;
   align-items: center;
   gap: var(--spacing-8);
+}
+
+/* Self account: helper text sits under the destructive row. Top-aligned, so it
+   cannot pull Cancel / Save down; the row is as tall as the default-size
+   Cancel / Save buttons, so the two rows still share a centre. */
+.footer-self {
+  align-items: flex-start;
+}
+
+.footer-self .destructive {
+  min-height: calc(
+    var(--font-size-button) * var(--line-height-button) + 2 * (var(--spacing-6) + var(--spacing-1))
+  );
 }
 
 .destructive-separator {
@@ -54,3 +79,9 @@
   gap: var(--spacing-8);
 }
 
+.self-help {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-tertiary);
+}

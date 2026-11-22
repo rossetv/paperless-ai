@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import type { SettingsSection } from '../fieldModel/types';
 import { SETTINGS_SECTIONS } from '../fieldModel/sections';
+import { ApiError } from '../../../api/client';
 
 const CONNECTIONS_SECTION = SETTINGS_SECTIONS.find(
   (s) => s.id === 'connections',
@@ -135,6 +136,14 @@ describe('ConnectionsPanel', () => {
     await waitFor(() => {
       const errorLabels = screen.getAllByText('Error');
       expect(errorLabels.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows the server detail when the probe request is rejected', async () => {
+    mockMutateAsync.mockRejectedValue(new ApiError(403, undefined, 'Admin only'));
+    renderPanel(DRAFT_OPENAI);
+    await waitFor(() => {
+      expect(screen.getAllByText('Admin only').length).toBeGreaterThan(0);
     });
   });
 

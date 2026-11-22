@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { UserResponse } from '../../../api/types';
@@ -54,6 +54,10 @@ function stubMutation<TData, TVars>(
 }
 
 const okUser: UserResponse = { user: SAMPLE_USER };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   mockCreate.mockReturnValue(stubMutation(async () => okUser));
@@ -166,11 +170,13 @@ describe('UserEditDrawer — edit mode', () => {
   });
 
   it('calls deleteUser when delete is confirmed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const mutateAsync = vi.fn().mockResolvedValue(undefined);
     mockDelete.mockReturnValue(stubMutation(mutateAsync));
     const onClose = vi.fn();
     render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={onClose} />);
     await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
     // a confirm step appears — confirm it
     await userEvent.click(screen.getByRole('button', { name: /^confirm delete/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith(2));
@@ -180,6 +186,21 @@ describe('UserEditDrawer — edit mode', () => {
     render(<UserEditDrawer user={SAMPLE_USER} isSelf onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: /delete account/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /suspend/i })).toBeDisabled();
+  });
+
+  it('explains why delete and suspend are disabled for one\'s own account', () => {
+    render(<UserEditDrawer user={SAMPLE_USER} isSelf onClose={vi.fn()} />);
+    const help = screen.getByText(/can't suspend or delete your own account/i);
+    const description = help.textContent ?? '';
+    expect(screen.getByRole('button', { name: /suspend/i })).toHaveAccessibleDescription(description);
+    expect(screen.getByRole('button', { name: /delete account/i })).toHaveAccessibleDescription(
+      description,
+    );
+  });
+
+  it('shows no such explanation for another account', () => {
+    render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    expect(screen.queryByText(/your own account/i)).not.toBeInTheDocument();
   });
 
   it('surfaces a server error message when the mutation rejects', async () => {
@@ -213,6 +234,7 @@ describe('UserEditDrawer — edit mode', () => {
   });
 
   it('shows the server message when a delete is refused and keeps the fallback otherwise', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     mockDelete.mockReturnValue(
       stubMutation(async () => {
         throw new ApiError(409, undefined, 'The last admin cannot be deleted.');
@@ -222,6 +244,7 @@ describe('UserEditDrawer — edit mode', () => {
       <UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />,
     );
     await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
     await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('The last admin cannot be deleted.'),
@@ -235,9 +258,55 @@ describe('UserEditDrawer — edit mode', () => {
     );
     render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
     await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
     await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(/could not delete/i),
     );
+  });
+
+  describe('arming delete', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    it('names the account on the armed button', async () => {
+      render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+      await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+      expect(screen.getByRole('button', { name: 'Confirm delete sam.patel' })).toBeInTheDocument();
+    });
+
+    it('ignores a confirm tap that follows the arming tap immediately', async () => {
+      // Only Date is frozen, so the guard does not depend on how fast the test runs.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      mockDelete.mockReturnValue(stubMutation(mutateAsync));
+      render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+      await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+      await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
+      expect(mutateAsync).not.toHaveBeenCalled();
+      vi.setSystemTime(Date.now() + 700);
+      await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
+      expect(mutateAsync).toHaveBeenCalledWith(2);
+    });
+
+    it('closes the drawer only on the second Escape while delete is armed', async () => {
+      const onClose = vi.fn();
+      render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={onClose} />);
+      await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+      await userEvent.keyboard('{Escape}');
+      expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Escape}');
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('disarms after a few seconds', async () => {
+      render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+      await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+      await act(() => vi.advanceTimersByTimeAsync(5000));
+      expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument();
+    });
   });
 });

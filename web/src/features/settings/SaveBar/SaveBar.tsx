@@ -46,44 +46,32 @@ export function SaveBar({
   }, [isHidden]);
 
   return (
-    <div
-      ref={barRef}
-      className={cn(styles['bar'], isHidden && styles['bar-hidden'])}
-      aria-live="polite"
-      aria-atomic="true"
-    >
-      <div className={styles['inner']}>
-        <span className={styles['dot']} aria-hidden="true" />
-        <span className={styles['message']}>
-          {dirtyCount} unsaved {dirtyCount === 1 ? 'change' : 'changes'}
-        </span>
-        <span
-          className={cn(
-            styles['caption'],
-            reindexPending && styles['caption-reindex'],
-          )}
-        >
-          {reindexPending
-            ? 'Saving rebuilds the search index — every document will be re-embedded.'
-            : 'Daemons hot-load saved settings — no restart needed'}
-        </span>
-        <Button
-          variant="secondary"
-          size="small"
-          disabled={isPending}
-          onClick={onDiscard}
-        >
-          Discard
-        </Button>
-        <Button
-          variant="primary"
-          size="small"
-          disabled={isPending}
-          onClick={onSave}
-        >
-          {isPending ? 'Saving…' : 'Save changes'}
-        </Button>
+    <>
+      <div
+        ref={barRef}
+        className={cn(styles['bar'], isHidden && styles['bar-hidden'])}
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <div className={styles['inner']}>
+          <span className={styles['dot']} aria-hidden="true" />
+          <span className={styles['message']}>
+            {dirtyCount} unsaved {dirtyCount === 1 ? 'change' : 'changes'}
+          </span>
+          <span className={cn(styles['caption'], reindexPending && styles['caption-reindex'])}>
+            {reindexPending
+              ? 'Saving rebuilds the search index — every document will be re-embedded.'
+              : 'Daemons hot-load saved settings — no restart needed'}
+          </span>
+          <Button variant="secondary" size="small" disabled={isPending} onClick={onDiscard}>
+            Discard
+          </Button>
+          <Button variant="primary" size="small" disabled={isPending} onClick={onSave}>
+            {isPending ? 'Saving…' : 'Save changes'}
+          </Button>
+        </div>
       </div>
-    </div>
+      <div className={cn(styles['spacer'], isHidden && styles['spacer-hidden'])} aria-hidden="true" />
+    </>
   );
 }

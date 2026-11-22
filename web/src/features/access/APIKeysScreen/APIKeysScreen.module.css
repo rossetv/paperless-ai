@@ -22,6 +22,21 @@
   color: var(--colour-text-tertiary);
 }
 
+/* Phones: the request count drops under the key prefix and the expired label stays whole. */
+@media (width <= 699.98px) {
+  .key-meta {
+    flex-wrap: wrap;
+  }
+
+  .key-prefix {
+    white-space: nowrap;
+  }
+
+  .expiry-expired {
+    white-space: nowrap;
+  }
+}
+
 .key-count {
   font-family: var(--font-text);
   color: var(--colour-text-tertiary);

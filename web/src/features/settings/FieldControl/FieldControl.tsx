@@ -66,15 +66,19 @@ export function FieldControl({
         />
       );
 
-    case 'segmented':
+    case 'segmented': {
+      // The environment may spell an option in another case; select it without rewriting the value.
+      const current = typeof value === 'string' ? value : '';
+      const match = control.options.find((o) => o.value.toLowerCase() === current.toLowerCase());
       return (
         <Segmented
           label={field.label}
           options={control.options}
-          value={typeof value === 'string' ? value : ''}
+          value={match?.value ?? current}
           onChange={(next) => onChange(field.key, next)}
         />
       );
+    }
 
     case 'select': {
       // Destructured so TS narrows them without `!`: both are present exactly when there is a

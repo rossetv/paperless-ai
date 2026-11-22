@@ -1,4 +1,4 @@
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { act, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
@@ -113,6 +113,10 @@ function renderScreen() {
   );
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
   mockDelete.mockReturnValue(stubDelete());
   // The signed-in caller owns both keys in KEYS (owner_id 1) by default.
@@ -186,6 +190,7 @@ describe('APIKeysScreen', () => {
   });
 
   it('revokes an active key after confirming', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const mutateAsync = vi.fn().mockResolvedValue(undefined);
     mockDelete.mockReturnValue(stubDelete(mutateAsync));
     mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
@@ -194,11 +199,13 @@ describe('APIKeysScreen', () => {
       .getByText('Claude · MCP integration')
       .closest('tr') as HTMLElement;
     await userEvent.click(within(activeRow).getByRole('button', { name: /revoke/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
     await userEvent.click(within(activeRow).getByRole('button', { name: /confirm/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith(1));
   });
 
   it('shows the server error when a revoke fails and resets the confirm button', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const mutateAsync = vi.fn().mockRejectedValue(new ApiError(409, undefined, 'Key is in use'));
     mockDelete.mockReturnValue(stubDelete(mutateAsync));
     mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
@@ -207,6 +214,7 @@ describe('APIKeysScreen', () => {
       .getByText('Claude · MCP integration')
       .closest('tr') as HTMLElement;
     await userEvent.click(within(activeRow).getByRole('button', { name: /revoke/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
     await userEvent.click(within(activeRow).getByRole('button', { name: /confirm/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Key is in use');
     expect(within(activeRow).getByRole('button', { name: /revoke/i })).toBeInTheDocument();
@@ -280,5 +288,62 @@ describe('APIKeysScreen', () => {
     mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: [] } }));
     renderScreen();
     expect(screen.getByText(/no api keys/i)).toBeInTheDocument();
+  });
+
+  describe('arming a destructive action', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    function armRevoke(): { row: HTMLElement; mutateAsync: ReturnType<typeof vi.fn> } {
+      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      mockDelete.mockReturnValue(stubDelete(mutateAsync));
+      mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
+      renderScreen();
+      const row = screen.getByText('Claude · MCP integration').closest('tr') as HTMLElement;
+      return { row, mutateAsync };
+    }
+
+    it('names the key on the armed button', async () => {
+      const { row } = armRevoke();
+      await userEvent.click(within(row).getByRole('button', { name: /revoke/i }));
+      expect(
+        within(row).getByRole('button', { name: 'Confirm revoke Claude · MCP integration' }),
+      ).toBeInTheDocument();
+    });
+
+    it('ignores a confirm tap that follows the arming tap immediately', async () => {
+      // Only Date is frozen, so the guard does not depend on how fast the test runs.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const { row, mutateAsync } = armRevoke();
+      await userEvent.click(within(row).getByRole('button', { name: /revoke/i }));
+      await userEvent.click(within(row).getByRole('button', { name: /confirm/i }));
+      expect(mutateAsync).not.toHaveBeenCalled();
+      vi.setSystemTime(Date.now() + 700);
+      await userEvent.click(within(row).getByRole('button', { name: /confirm/i }));
+      expect(mutateAsync).toHaveBeenCalledWith(1);
+    });
+
+    it('disarms on Escape', async () => {
+      const { row } = armRevoke();
+      await userEvent.click(within(row).getByRole('button', { name: /revoke/i }));
+      await userEvent.keyboard('{Escape}');
+      expect(within(row).getByRole('button', { name: /^revoke/i })).toBeInTheDocument();
+    });
+
+    it('disarms when focus leaves the row', async () => {
+      const { row } = armRevoke();
+      await userEvent.click(within(row).getByRole('button', { name: /revoke/i }));
+      await userEvent.click(document.body);
+      expect(within(row).getByRole('button', { name: /^revoke/i })).toBeInTheDocument();
+    });
+
+    it('disarms by itself after a few seconds', async () => {
+      const { row } = armRevoke();
+      await userEvent.click(within(row).getByRole('button', { name: /revoke/i }));
+      await act(() => vi.advanceTimersByTimeAsync(5000));
+      expect(within(row).getByRole('button', { name: /^revoke/i })).toBeInTheDocument();
+    });
   });
 });

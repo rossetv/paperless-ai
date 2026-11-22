@@ -49,9 +49,40 @@ export function Table<Row>({
   emptyMessage = 'Nothing to show.',
   className,
 }: TableProps<Row>): React.ReactElement {
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const tableRef = React.useRef<HTMLTableElement>(null);
+  const [edges, setEdges] = React.useState({ start: false, end: false });
+
+  // Track which edges have more content beyond them so CSS can fade those edges.
+  React.useEffect(() => {
+    const el = wrapperRef.current;
+    if (el === null) return undefined;
+    const update = (): void => {
+      const start = el.scrollLeft > 1;
+      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    // The container and the table change width independently; ResizeObserver is
+    // absent in jsdom / SSR, where the one-shot measure above still runs.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(el);
+    if (tableRef.current !== null) observer?.observe(tableRef.current);
+    return () => {
+      el.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, []);
+
   return (
-    <div className={styles['wrapper']}>
-      <table className={cn(styles['table'], className)}>
+    <div
+      ref={wrapperRef}
+      className={styles['wrapper']}
+      data-fade-start={edges.start ? 'true' : undefined}
+      data-fade-end={edges.end ? 'true' : undefined}
+    >
+      <table ref={tableRef} className={cn(styles['table'], className)}>
         <thead className={styles['head']}>
           <tr>
             {columns.map((col) => (

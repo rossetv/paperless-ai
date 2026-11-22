@@ -4,17 +4,23 @@ import { SaveBar } from './SaveBar';
 
 function renderBar(props: Partial<Parameters<typeof SaveBar>[0]> = {}) {
   return render(
-    <SaveBar
-      dirtyCount={0}
-      isPending={false}
-      onDiscard={() => {}}
-      onSave={() => {}}
-      {...props}
-    />,
+    <SaveBar dirtyCount={0} isPending={false} onDiscard={() => {}} onSave={() => {}} {...props} />,
   );
 }
 
 describe('SaveBar', () => {
+  it('keeps its page spacer mounted so it can collapse with the bar instead of vanishing', () => {
+    const { container, rerender } = renderBar({ dirtyCount: 2 });
+    const spacer = container.lastElementChild as HTMLElement;
+    expect(container.children).toHaveLength(2);
+    expect(spacer).toHaveAttribute('aria-hidden', 'true');
+    expect(spacer.className).not.toMatch(/spacer-hidden/);
+
+    rerender(<SaveBar dirtyCount={0} isPending={false} onDiscard={() => {}} onSave={() => {}} />);
+    expect(container.lastElementChild).toBe(spacer);
+    expect(spacer.className).toMatch(/spacer-hidden/);
+  });
+
   it('is visually hidden when dirtyCount is zero', () => {
     const { container } = renderBar({ dirtyCount: 0 });
     const bar = container.firstElementChild as HTMLElement;
