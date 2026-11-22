@@ -52,3 +52,14 @@ export const AutoDismiss: Story = {
     },
   },
 };
+
+export const LongUnbrokenText: Story = {
+  args: {
+    message:
+      'Request failed: https://paperless.example.com/api/documents/12345/download/?original=true&token=abcdefghijklmnopqrstuvwxyz0123456789',
+    variant: 'error',
+    onDismiss: () => {
+      /* story — noop */
+    },
+  },
+};

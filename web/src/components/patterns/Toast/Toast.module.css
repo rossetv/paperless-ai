@@ -1,4 +1,10 @@
 .toast {
+  /* Clears the save bar (about 74px) and the mobile tab bar plus the home-indicator inset. */
+  position: fixed;
+  bottom: calc(var(--height-mobile-tab-bar) + var(--spacing-16) + env(safe-area-inset-bottom, 0%));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-6);
@@ -13,7 +19,7 @@
   line-height: var(--line-height-body);
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-primary);
-  max-width: var(--width-toast-max);
+  max-width: min(var(--width-toast-max), calc(100vw - 2 * var(--spacing-14)));
   min-width: var(--width-toast-min);
   box-sizing: border-box;
 }
@@ -43,6 +49,8 @@
 
 .message {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .dismiss-button {

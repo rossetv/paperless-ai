@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
 import { cn } from '../../../lib/cn';
@@ -28,8 +28,9 @@ const VARIANT_ICON: Record<ToastVariant, React.ReactElement> = {
 };
 
 /**
- * Transient notification toast. Auto-dismisses after `dismissAfterMs` when both
- * that and `onDismiss` are provided.
+ * Transient notification toast, fixed at the bottom centre above the save bar
+ * and the mobile tab bar. Auto-dismisses after `dismissAfterMs` when both that
+ * and `onDismiss` are provided; the countdown pauses while hovered or focused.
  */
 export function Toast({
   message,
@@ -38,12 +39,33 @@ export function Toast({
   dismissAfterMs,
   className,
 }: ToastProps): React.ReactElement {
+  const onDismissRef = useRef(onDismiss);
   useEffect(() => {
-    if (dismissAfterMs === undefined || onDismiss === undefined) return undefined;
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
-    const timer = window.setTimeout(onDismiss, dismissAfterMs);
-    return () => window.clearTimeout(timer);
-  }, [dismissAfterMs, onDismiss]);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = hovered || focused;
+  const canAutoDismiss = dismissAfterMs !== undefined && onDismiss !== undefined;
+
+  const remainingRef = useRef(dismissAfterMs ?? 0);
+  useEffect(() => {
+    remainingRef.current = dismissAfterMs ?? 0;
+  }, [dismissAfterMs]);
+
+  // Runs while not paused; on pause or unmount the elapsed time is taken off
+  // what is left, so a resume carries on instead of starting over.
+  useEffect(() => {
+    if (!canAutoDismiss || paused) return undefined;
+
+    const startedAt = Date.now();
+    const timer = window.setTimeout(() => onDismissRef.current?.(), remainingRef.current);
+    return () => {
+      window.clearTimeout(timer);
+      remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startedAt));
+    };
+  }, [canAutoDismiss, paused, dismissAfterMs]);
 
   const role = variant === 'error' ? 'alert' : 'status';
 
@@ -54,7 +76,16 @@ export function Toast({
   );
 
   return (
-    <div role={role} className={rootClasses}>
+    <div
+      role={role}
+      className={rootClasses}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
+    >
       <span className={styles['icon']} aria-hidden="true">
         {VARIANT_ICON[variant]}
       </span>
