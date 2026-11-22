@@ -1,5 +1,5 @@
-/* Centred in whatever space the boundary occupies: the full viewport at the
-   root, or a widget-sized area. */
+/* A screen of its own: the boundary stands in for the whole page, so it fills
+   the viewport on the page background. */
 
 .boundary {
   display: flex;
@@ -7,34 +7,16 @@
   align-items: center;
   justify-content: center;
   gap: var(--spacing-10);
+  min-height: 100dvh;
   padding: var(--spacing-14);
+  background-color: var(--colour-bg);
+  color: var(--colour-text-primary);
+  font-family: var(--font-text);
   text-align: center;
 }
 
-.message {
+.heading {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--colour-text-secondary);
-  line-height: var(--line-height-body);
-}
-
-.reload {
-  appearance: none;
-  background-color: var(--colour-button-light-bg);
-  border: var(--spacing-1) solid var(--colour-border-button);
-  border-radius: var(--radius-pill);
-  padding: var(--spacing-6) var(--spacing-13);
-  font-size: var(--font-size-body);
-  color: var(--colour-accent);
-  cursor: pointer;
-  transition: background-color var(--duration-standard) var(--easing-standard);
-}
-
-.reload:hover {
-  background-color: var(--colour-button-active-bg);
-}
-
-.reload:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
+  font-size: var(--font-size-section-title);
+  font-weight: var(--font-weight-section-title);
 }

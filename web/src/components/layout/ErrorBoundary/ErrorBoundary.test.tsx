@@ -43,6 +43,16 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
   });
 
+  it('shows a heading and a Reload button on a screen of its own', () => {
+    render(
+      <ErrorBoundary>
+        <Bomb />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Something went wrong' })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toContainElement(screen.getByRole('button', { name: /reload/i }));
+  });
+
   it('does not render the throwing child when a child throws', () => {
     // The child never renders its own content — only the fallback is visible.
     render(
