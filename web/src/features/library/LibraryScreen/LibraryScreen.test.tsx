@@ -474,7 +474,7 @@ describe('LibraryScreen', () => {
     );
     renderScreen('/library?tag=12');
 
-    await userEvent.click(screen.getByRole('button', { name: /open document: invoice april/i }));
+    await userEvent.click(screen.getByRole('button', { name: /invoice april/i }));
 
     const probe = screen.getByTestId('location-probe');
     expect(probe.textContent).toMatch(/\/library\/document\/42/);
@@ -500,7 +500,7 @@ describe('LibraryScreen', () => {
       mockUseDocuments.mockReturnValue(loaded);
       Object.defineProperty(window, 'scrollY', { value: 1806, configurable: true });
       const first = renderScreen();
-      await userEvent.click(screen.getByRole('button', { name: /open document/i }));
+      await userEvent.click(screen.getByRole('button', { name: /invoice april/i }));
       first.unmount();
       scrollTo.mockReset();
 

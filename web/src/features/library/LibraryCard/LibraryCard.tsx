@@ -29,7 +29,8 @@ const MAX_VISIBLE_TAGS = 3;
 /**
  * A document card for the Library grid or list: the real first-page thumbnail
  * (DocThumb while it loads or if it fails), then correspondent, date, title
- * and chips. The whole card is one button that calls `onOpen`.
+ * and chips. The whole card is one button that calls `onOpen`; its name is
+ * its visible text, so it needs no aria-label.
  */
 function LibraryCardInner({
   document,
@@ -50,7 +51,6 @@ function LibraryCardInner({
     <button
       type="button"
       className={cn(styles['card'], view === 'list' && styles['card-list'], className)}
-      aria-label={`Open document: ${title}`}
       onClick={() => onOpen(document.id)}
     >
       <div className={styles['preview']}>
