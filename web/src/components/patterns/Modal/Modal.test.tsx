@@ -99,14 +99,15 @@ describe('Modal', () => {
         <button type="button">Second</button>
       </Modal>,
     );
-    // The dialog contains: [close button, First, Second].  The focus trap
-    // moves focus to the first focusable element (the close button) on the
-    // next animation frame after opening — wait for that to settle before
-    // driving the keyboard, otherwise it can fire mid-interaction and clobber
-    // the wrapped focus.
+    // The dialog contains: [close button, First, Second].  Initial focus
+    // lands on the first content element on the next animation frame — wait
+    // for that to settle before driving the keyboard, otherwise it can fire
+    // mid-interaction and clobber the wrapped focus.
     const closeButton = screen.getByRole('button', { name: /close/i });
     await waitFor(() => {
-      expect(document.activeElement).toBe(closeButton);
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'First' }),
+      );
     });
 
     // Manually focus the last focusable element (Second) and fire a Tab
@@ -164,5 +165,95 @@ describe('Modal', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(trigger);
     });
+  });
+
+  it('focuses the first content element, not the Close button, when it opens', async () => {
+    render(
+      <Modal isOpen title="First focus" onClose={vi.fn()}>
+        <input aria-label="Name" />
+      </Modal>,
+    );
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText('Name'));
+    });
+  });
+
+  it('focuses the element marked data-autofocus instead', async () => {
+    render(
+      <Modal isOpen title="Marked" onClose={vi.fn()}>
+        <input aria-label="Name" />
+        <input aria-label="Email" data-autofocus="" />
+      </Modal>,
+    );
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText('Email'));
+    });
+  });
+
+  it('focuses the Close button when the content has nothing focusable', async () => {
+    render(
+      <Modal isOpen title="Plain" onClose={vi.fn()}>
+        <p>Text only</p>
+      </Modal>,
+    );
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: /close/i }),
+      );
+    });
+  });
+
+  it('does not close on an Escape that a nested widget handled', async () => {
+    const handleClose = vi.fn();
+    render(
+      <Modal isOpen title="Nested" onClose={handleClose}>
+        <input
+          aria-label="Widget"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') e.preventDefault();
+          }}
+        />
+        <input aria-label="Plain" />
+      </Modal>,
+    );
+    screen.getByLabelText('Widget').focus();
+    await userEvent.keyboard('{Escape}');
+    expect(handleClose).not.toHaveBeenCalled();
+
+    screen.getByLabelText('Plain').focus();
+    await userEvent.keyboard('{Escape}');
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('locks body scroll while open and restores the previous value', () => {
+    document.body.style.overflow = 'scroll';
+    const { rerender } = render(
+      <Modal isOpen title="Lock" onClose={vi.fn()}>
+        <p>Body</p>
+      </Modal>,
+    );
+    expect(document.body.style.overflow).toBe('hidden');
+    rerender(
+      <Modal isOpen={false} title="Lock" onClose={vi.fn()}>
+        <p>Body</p>
+      </Modal>,
+    );
+    expect(document.body.style.overflow).toBe('scroll');
+    document.body.style.overflow = '';
+  });
+
+  it('keeps the lock until the last of two open modals closes', () => {
+    const modal = (open: boolean): React.ReactElement => (
+      <Modal isOpen={open} title="Inner" onClose={vi.fn()}>
+        <p>Inner</p>
+      </Modal>
+    );
+    const outer = render(modal(true));
+    const inner = render(modal(true));
+    expect(document.body.style.overflow).toBe('hidden');
+    inner.unmount();
+    expect(document.body.style.overflow).toBe('hidden');
+    outer.unmount();
+    expect(document.body.style.overflow).toBe('');
   });
 });

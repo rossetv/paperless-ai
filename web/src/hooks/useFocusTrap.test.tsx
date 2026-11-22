@@ -44,6 +44,48 @@ describe('useFocusTrap', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores an Escape that a child already prevented, but not a plain one', async () => {
+    const onClose = vi.fn();
+    function Harness(): React.ReactElement {
+      const dialogRef = useRef<HTMLDivElement>(null);
+      useFocusTrap(dialogRef, true, onClose);
+      return (
+        <div ref={dialogRef} role="dialog" tabIndex={-1}>
+          <input
+            aria-label="handled"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') e.preventDefault();
+            }}
+          />
+          <input aria-label="plain" />
+        </div>
+      );
+    }
+    render(<Harness />);
+    screen.getByLabelText('handled').focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    screen.getByLabelText('plain').focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps focus on a child that took it on mount', async () => {
+    function Harness(): React.ReactElement {
+      const dialogRef = useRef<HTMLDivElement>(null);
+      useFocusTrap(dialogRef, true, vi.fn());
+      return (
+        <div ref={dialogRef} role="dialog" tabIndex={-1}>
+          <button type="button">first</button>
+          <input aria-label="self" autoFocus />
+        </div>
+      );
+    }
+    render(<Harness />);
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(document.activeElement).toBe(screen.getByLabelText('self'));
+  });
+
   it('wraps focus to the first element when Tab is pressed on the last', async () => {
     render(<TrapHarness isOpen onClose={vi.fn()} />);
     const first = screen.getByRole('button', { name: 'first' });

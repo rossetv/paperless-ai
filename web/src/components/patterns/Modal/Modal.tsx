@@ -1,10 +1,26 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
 import { cn } from '../../../lib/cn';
 import { useFocusTrap } from '../../../hooks/useFocusTrap';
 import styles from './Modal.module.css';
+
+let scrollLocks = 0;
+let overflowBeforeLock = '';
+
+/** Locks body scroll while any modal is open; the last one out restores it. */
+function lockBodyScroll(): () => void {
+  if (scrollLocks === 0) {
+    overflowBeforeLock = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  scrollLocks += 1;
+  return () => {
+    scrollLocks -= 1;
+    if (scrollLocks === 0) document.body.style.overflow = overflowBeforeLock;
+  };
+}
 
 export interface ModalProps {
   /** Whether the modal is visible and mounted. */
@@ -23,7 +39,9 @@ export interface ModalProps {
 /**
  * Accessible modal dialog, portalled into document.body so it sits above every
  * stacking context. Focus is trapped while open (via `useFocusTrap`) and restored
- * on close; Escape and backdrop clicks call `onClose`.
+ * on close; Escape and backdrop clicks call `onClose`. Body scroll is locked while
+ * open. Initial focus goes to the first focusable element of the content, or to
+ * the element marked `data-autofocus`.
  */
 export function Modal({
   isOpen,
@@ -37,6 +55,8 @@ export function Modal({
   const titleId = React.useId();
 
   useFocusTrap(dialogRef, isOpen, onClose);
+
+  useEffect(() => (isOpen ? lockBodyScroll() : undefined), [isOpen]);
 
   if (!isOpen) return null;
 
@@ -73,7 +93,7 @@ export function Modal({
           </IconButton>
         </div>
 
-        <div className={styles['body']}>{children}</div>
+        <div className={styles['body']} data-focus-content="">{children}</div>
       </dialog>
     </div>,
     document.body,
