@@ -30,13 +30,16 @@ export function TagEditor({
 }: TagEditorProps): React.ReactElement {
   const uid = useId();
   const wrapRef = React.useRef<HTMLDivElement>(null);
-  // Index of the chip just removed; focus is placed once the chip is gone.
-  const removedIndex = React.useRef<number | null>(null);
+  // The chip just removed; focus is placed once the chip is gone.
+  const removed = React.useRef<{ id: number; index: number } | null>(null);
 
   React.useEffect(() => {
-    const index = removedIndex.current;
-    if (index === null) return;
-    removedIndex.current = null;
+    const pending = removed.current;
+    if (pending === null) return;
+    removed.current = null;
+    // The removal did not take effect, so this change is not its result.
+    if (selectedIds.includes(pending.id)) return;
+    const { index } = pending;
     // Focus that moved on its own, e.g. into an open Add tag list, stays there.
     if (document.activeElement !== null && document.activeElement !== document.body) return;
     // Buttons are the remove buttons in chip order, then the Add tag trigger.
@@ -70,7 +73,7 @@ export function TagEditor({
           <Chip
             key={t.id}
             onRemove={() => {
-              removedIndex.current = index;
+              removed.current = { id: t.id, index };
               onRemove(t.id);
             }}
             removeLabel={`Remove ${t.name}`}
