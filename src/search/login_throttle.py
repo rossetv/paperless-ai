@@ -11,9 +11,9 @@ any argon2 work) if either is locked:
   behind a shared NAT is not locked out as eagerly as a lone attacker.
 
 Only repeated failures inside the rolling window accrue; a success clears both
-entries. An attempt still being checked counts toward the limit too, so a burst
-of concurrent logins cannot all start before the first failure is recorded. The counters are process-local, which is correct for this
-single-process server but would not be shared across replicas.
+entries. An attempt still being checked counts toward the limit too. The
+counters are process-local, which is correct for this single-process server but
+would not be shared across replicas.
 """
 
 from __future__ import annotations

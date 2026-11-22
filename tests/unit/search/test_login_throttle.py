@@ -227,8 +227,7 @@ def test_the_per_username_map_is_also_bounded() -> None:
     assert throttle.username_size() <= _MAX_TRACKED_KEYS
 
 
-# Attempts under way: the lock decision counts them, so a burst of concurrent
-# logins cannot all start before the first failure is recorded.
+# Attempts still being checked count toward the limit.
 
 
 def test_attempts_under_way_count_toward_the_limit() -> None:
