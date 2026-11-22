@@ -530,10 +530,19 @@ async def _search_stream(
                 continue
             if kind == "sentinel":
                 break
-            seq += 1
             if kind == "event":
-                yield event_line(payload, seq)  # type: ignore[arg-type]
-            elif kind == "result":
+                try:
+                    line = event_line(payload, seq + 1)  # type: ignore[arg-type]
+                except Exception:
+                    # A trace frame is only progress; dropping it keeps the
+                    # stream going to its result or error frame.
+                    log.exception("api.search_stream_serialise_failed")
+                    continue
+                seq += 1
+                yield line
+                continue
+            seq += 1
+            if kind == "result":
                 try:
                     line = result_line(to_search_response(payload), seq)  # type: ignore[arg-type]
                 except Exception:
