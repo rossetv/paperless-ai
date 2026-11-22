@@ -48,6 +48,7 @@ export function Select<T extends string = string>({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   const listboxId = `${id}-listbox`;
+  const optionId = (index: number): string => `${id}-option-${index}`;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -66,6 +67,14 @@ export function Select<T extends string = string>({
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [isOpen]);
+
+  // Keep the keyboard-highlighted option visible in a long, scrolling list.
+  useEffect(() => {
+    if (!isOpen || highlightedIndex < 0) return;
+    const el = document.getElementById(optionId(highlightedIndex));
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- optionId only depends on id
+  }, [isOpen, highlightedIndex]);
 
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption?.label ?? placeholder;
@@ -116,7 +125,7 @@ export function Select<T extends string = string>({
         if (!isOpen) {
           open();
         } else {
-          const highlighted = highlightedIndex >= 0 ? options[highlightedIndex] : undefined;
+          const highlighted = options[highlightedIndex >= 0 ? highlightedIndex : 0];
           if (highlighted !== undefined) {
             selectOption(highlighted.value);
           }
@@ -130,9 +139,18 @@ export function Select<T extends string = string>({
           setHighlightedIndex((prev) => Math.max(prev - 1, 0));
         }
         break;
-      case 'Escape':
+      case 'Home':
+      case 'End':
         if (isOpen) {
           event.preventDefault();
+          setHighlightedIndex(event.key === 'Home' ? 0 : options.length - 1);
+        }
+        break;
+      case 'Escape':
+        if (isOpen) {
+          // Handled here, so a dialog around the list must not also close.
+          event.preventDefault();
+          event.stopPropagation();
           close();
         }
         break;
@@ -144,7 +162,17 @@ export function Select<T extends string = string>({
   const wrapperClasses = cn(styles['select'], className);
 
   return (
-    <div ref={rootRef} className={wrapperClasses}>
+    <div
+      ref={rootRef}
+      className={wrapperClasses}
+      onBlur={(event) => {
+        // Focus left the control (Tab, programmatic): close without picking or refocusing.
+        if (isOpen && !rootRef.current?.contains(event.relatedTarget)) {
+          setIsOpen(false);
+          setHighlightedIndex(-1);
+        }
+      }}
+    >
       {label !== undefined && (
         <span id={`${id}-label`} className={styles['label']}>
           {label}
@@ -162,7 +190,7 @@ export function Select<T extends string = string>({
         aria-label={label === undefined ? displayLabel : undefined}
         aria-activedescendant={
           isOpen && highlightedIndex >= 0
-            ? `${id}-option-${options[highlightedIndex]?.value ?? ''}`
+            ? optionId(highlightedIndex)
             : undefined
         }
         disabled={disabled}
@@ -182,6 +210,8 @@ export function Select<T extends string = string>({
           role="listbox"
           aria-labelledby={label !== undefined ? `${id}-label` : undefined}
           className={styles['listbox']}
+          // Keeps focus on the trigger so clicking an option or the scrollbar is not a blur.
+          onMouseDown={(e) => e.preventDefault()}
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;
@@ -189,7 +219,7 @@ export function Select<T extends string = string>({
             return (
               <li
                 key={option.value}
-                id={`${id}-option-${option.value}`}
+                id={optionId(index)}
                 role="option"
                 aria-selected={isSelected}
                 className={cn(

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { render, screen } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FilterableListbox, type FilterableItem } from './FilterableListbox';
 
@@ -202,5 +202,129 @@ describe('FilterableListbox', () => {
     expect(screen.getByRole('listbox')).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Apple/ })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Banana/ })).toBeInTheDocument();
+  });
+});
+
+describe('FilterableListbox keyboard and semantics', () => {
+  async function openIt(ui: React.ReactElement = <SingleHarness />) {
+    render(ui);
+    await userEvent.click(screen.getByRole('button', { name: /^(—|Apple)/ }));
+    return screen.getByRole('combobox');
+  }
+
+  it('Escape on the open list closes it, is default-prevented and does not reach the document', async () => {
+    const input = await openIt();
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    const escape = createEvent.keyDown(input, { key: 'Escape' });
+    fireEvent(input, escape);
+    document.removeEventListener('keydown', seen);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(escape.defaultPrevented).toBe(true);
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it('Enter with nothing highlighted picks the first visible option', async () => {
+    const onSelect = vi.fn();
+    await openIt(<SingleHarness onSelect={onSelect} />);
+    await userEvent.keyboard('ban{Enter}');
+    expect(onSelect).toHaveBeenCalledWith(3);
+  });
+
+  it('Enter with no matches and no highlight picks nothing', async () => {
+    const onSelect = vi.fn();
+    await openIt(<SingleHarness onSelect={onSelect} />);
+    await userEvent.keyboard('zzz{Enter}');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('Enter with nothing highlighted never fires the clear row', async () => {
+    const onClear = vi.fn();
+    const onSelect = vi.fn();
+    await openIt(<SingleHarness initial={1} onClear={onClear} onSelect={onSelect} />);
+    await userEvent.keyboard('{Enter}');
+    expect(onClear).not.toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledWith(1);
+  });
+
+  it('Tab away closes the list without picking', async () => {
+    const onSelect = vi.fn();
+    await openIt(
+      <>
+        <SingleHarness onSelect={onSelect} />
+        <button type="button">after</button>
+      </>,
+    );
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.tab();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus();
+  });
+
+  it('Home and End move the highlight once a row is highlighted', async () => {
+    const input = await openIt();
+    await userEvent.keyboard('{ArrowDown}{End}');
+    expect(screen.getByRole('option', { name: /Cherry/ }).id).toBe(
+      input.getAttribute('aria-activedescendant'),
+    );
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByRole('option', { name: /Apple/ }).id).toBe(
+      input.getAttribute('aria-activedescendant'),
+    );
+  });
+
+  it('scrolls the highlighted option into view', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      await openIt();
+      await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+      expect(scroll).toHaveBeenLastCalledWith({ block: 'nearest' });
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
+  it('marks the listbox multiselectable only in multi mode', async () => {
+    await openIt();
+    expect(screen.getByRole('listbox')).not.toHaveAttribute('aria-multiselectable');
+    await userEvent.keyboard('{Escape}');
+    render(
+      <FilterableListbox<number>
+        id="multi"
+        items={ITEMS}
+        value={[]}
+        multiple
+        triggerLabel="+ Add"
+        onSelect={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: '+ Add' }));
+    expect(screen.getByRole('listbox')).toHaveAttribute('aria-multiselectable', 'true');
+  });
+
+  it('keeps the "No matches" text out of the listbox', async () => {
+    await openIt();
+    await userEvent.keyboard('zzz');
+    const empty = screen.getByText('No matches');
+    expect(empty.closest('[role="listbox"]')).toBeNull();
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+  });
+
+  it('builds option ids from the instance and index, not the raw value', async () => {
+    render(
+      <FilterableListbox<string>
+        id="odd"
+        items={[{ value: 'a b/c', label: 'Odd' }]}
+        value={null}
+        triggerLabel="—"
+        onSelect={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button'));
+    expect(screen.getByRole('option').id).not.toContain('a b/c');
+    expect(screen.getByRole('option').id).toMatch(/^odd-option-.*0$/);
   });
 });
