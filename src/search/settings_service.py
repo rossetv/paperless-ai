@@ -107,8 +107,10 @@ class SettingView:
     """One config key as the Settings screen sees it.
 
     Attributes:
-        effective_value: The ``config``-table value, else the environment
-            value, else ``None`` when only the coded default applies.
+        effective_value: The ``config``-table value, else the non-blank
+            environment value (a blank one only for keys in
+            ``BLANK_IS_A_VALUE``), else ``None`` when only the coded default
+            applies.
         default_value: The coded default as a string, or ``None`` for secrets
             and keys whose default is ``None``.
     """

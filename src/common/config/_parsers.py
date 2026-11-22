@@ -94,11 +94,12 @@ def _get_csv_env(
 ) -> list[str]:
     """Parse a comma-separated value from *source*, falling back to *default*.
 
-    When *require_non_empty* is ``True``, raises ``ValueError`` if the value
-    is set but yields no items (used for model lists).
+    When *require_non_empty* is ``True`` (model lists), a blank value counts as
+    unset and gives *default*, while a value such as ``","`` that is set but
+    yields no items raises ``ValueError``.
     """
     value = source.get(var_name)
-    if value is None:
+    if value is None or (require_non_empty and not value.strip()):
         return [item for item in default if item]
     parts = [part.strip() for part in value.split(",") if part.strip()]
     if require_non_empty and not parts:

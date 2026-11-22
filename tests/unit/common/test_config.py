@@ -502,11 +502,9 @@ class TestModelListsValidation:
         ):
             _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ",,, ,"})
 
-    def test_ocr_models_empty_string_raises(self, mocker):
-        with pytest.raises(
-            ValueError, match="OCR_MODELS must contain at least one model"
-        ):
-            _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ""})
+    def test_ocr_models_empty_string_uses_default(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ""})
+        assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
 
     def test_classify_models_all_commas_raises(self, mocker):
         with pytest.raises(
@@ -514,11 +512,9 @@ class TestModelListsValidation:
         ):
             _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ",,, ,"})
 
-    def test_classify_models_empty_string_raises(self, mocker):
-        with pytest.raises(
-            ValueError, match="CLASSIFY_MODELS must contain at least one model"
-        ):
-            _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ""})
+    def test_classify_models_empty_string_uses_default(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ""})
+        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
 
     def test_ocr_models_single_model(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": "model-a"})
