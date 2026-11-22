@@ -480,4 +480,57 @@ describe('LibraryScreen', () => {
     expect(probe.textContent).toMatch(/\/library\/document\/42/);
     expect(probe.textContent).toMatch(/tag=12/);
   });
+
+  describe('scroll position on return', () => {
+    const scrollTo = vi.fn();
+    beforeEach(() => {
+      scrollTo.mockReset();
+      window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+      sessionStorage.clear();
+    });
+
+    it('restores the scroll position saved when a card was opened, once the list has rendered', async () => {
+      const loaded = documentsResult({
+        documents: [makeDoc(42, 'Invoice April')],
+        total: 1,
+        page: 1,
+        page_size: 24,
+      });
+      mockUseDocuments.mockReturnValue(loaded);
+      Object.defineProperty(window, 'scrollY', { value: 1806, configurable: true });
+      const first = renderScreen();
+      await userEvent.click(screen.getByRole('button', { name: /open document/i }));
+      first.unmount();
+      scrollTo.mockReset();
+
+      // Back: the list is not cached, so it loads again before it renders.
+      mockUseDocuments.mockReturnValue(documentsResult(undefined, { isLoading: true }));
+      const { rerender } = render(
+        <MemoryRouter initialEntries={['/library']}>
+          <Routes>
+            <Route path="*" element={<LibraryScreen />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      mockUseDocuments.mockReturnValue(loaded);
+      rerender(
+        <MemoryRouter initialEntries={['/library']}>
+          <Routes>
+            <Route path="*" element={<LibraryScreen />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
+    });
+
+    it('does not scroll when nothing was saved for this history entry', () => {
+      mockUseDocuments.mockReturnValue(
+        documentsResult({ documents: [makeDoc(1, 'Doc one')], total: 1, page: 1, page_size: 24 }),
+      );
+      renderScreen();
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+  });
 });

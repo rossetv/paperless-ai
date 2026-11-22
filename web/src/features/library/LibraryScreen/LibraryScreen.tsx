@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { ViewToggle } from '../../../components/patterns/ViewToggle/ViewToggle';
@@ -66,6 +66,8 @@ function isNarrowViewport(): boolean {
   );
 }
 
+/** Where the list was scrolled to, per history entry, for the way back from a document. */
+const scrollKey = (locationKey: string): string => `library-scroll:${locationKey}`;
 
 /**
  * The Library browse screen. All state lives in the URL (`useLibraryUrlState`).
@@ -77,6 +79,7 @@ function isNarrowViewport(): boolean {
 export function LibraryScreen(): React.ReactElement {
   const { query, view, setQuery, setView, searchString } = useLibraryUrlState();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const documents = useDocuments(query);
   const facets = useFacets();
@@ -188,12 +191,31 @@ export function LibraryScreen(): React.ReactElement {
     return chips;
   }, [facetData, query, setQuery]);
 
+  // The browser restores scroll before an uncached list has loaded, when the page is
+  // still short, so it lands near the top. Put it back once the list has rendered.
+  const scrollRestored = useRef(false);
+  useLayoutEffect(() => {
+    if (scrollRestored.current || documents.data === undefined) return;
+    scrollRestored.current = true;
+    try {
+      const saved = Number(sessionStorage.getItem(scrollKey(location.key)));
+      if (saved > 0) window.scrollTo({ top: saved, behavior: 'instant' });
+    } catch {
+      // Storage can be blocked; the browser's own restore is then all there is.
+    }
+  }, [documents.data, location.key]);
+
   // Stable so LibraryCard's React.memo is not defeated by a new arrow each render.
   const handleOpen = useCallback(
     (id: number) => {
+      try {
+        sessionStorage.setItem(scrollKey(location.key), String(window.scrollY));
+      } catch {
+        // Storage can be blocked; Back then relies on the browser's own restore.
+      }
       void navigate(`/library/document/${id}${searchString}`);
     },
-    [navigate, searchString],
+    [navigate, searchString, location.key],
   );
 
   // Prefer the server-echoed page_size so the pager matches what was returned.
