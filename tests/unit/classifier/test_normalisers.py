@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from classifier.normalisers import COMPANY_SUFFIXES, normalise_name, normalise_simple
 
 
@@ -72,6 +74,33 @@ class TestNormaliseName:
 
     def test_keeps_non_latin_letters(self):
         assert normalise_name("東京電力 Co") == "東京電力"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("Acme™", "acme"),
+            ("Acme℠ Ltd", "acme"),
+            ("Office²", "office"),
+            ("½ Price", "price"),
+        ],
+    )
+    def test_symbols_and_superscripts_do_not_become_letters(self, value, expected):
+        assert normalise_name(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("İstanbul", "istanbul"),
+            ("Straße", "strasse"),
+            ("ﬁnance", "finance"),
+            ("ＡＣＭＥ", "acme"),
+            ("ℌilbert", "hilbert"),
+            ("Αθήνα", "αθηνα"),
+            ("Москва", "москва"),
+        ],
+    )
+    def test_folds_case_and_compatibility_forms(self, value, expected):
+        assert normalise_name(value) == expected
 
 
 class TestCompanySuffixes:

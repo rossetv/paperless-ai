@@ -39,6 +39,11 @@ def normalise_simple(value: str) -> str:
     return " ".join(value.lower().split())
 
 
+def _is_symbol_or_other_number(ch: str) -> bool:
+    category = unicodedata.category(ch)
+    return category.startswith("S") or category == "No"
+
+
 def normalise_name(value: str) -> str:
     """
     Normalise an organisation name for fuzzy matching.
@@ -52,10 +57,12 @@ def normalise_name(value: str) -> str:
     >>> normalise_name("Müller GmbH")
     'muller'
     """
-    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    # Symbols and superscripts go first: NFKD would turn "™" into "TM", "²" into "2".
+    kept = "".join(ch for ch in value if not _is_symbol_or_other_number(ch))
+    folded = unicodedata.normalize("NFKD", kept).casefold()
     cleaned = "".join(
         ch
-        for ch in decomposed
+        for ch in folded
         if (ch.isalnum() or ch.isspace()) and not unicodedata.combining(ch)
     )
     parts = cleaned.split()
