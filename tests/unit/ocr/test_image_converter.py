@@ -19,7 +19,12 @@ from pdf2image.exceptions import (
 )
 from PIL import Image, ImageOps
 
-from ocr.image_converter import ImageConversionError, PageSource, open_page_source
+from ocr.image_converter import (
+    ImageConversionError,
+    PageSource,
+    _apply_exif_orientation,
+    open_page_source,
+)
 
 
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
@@ -745,19 +750,71 @@ class TestImageMaxSide:
         assert page.getpixel(red_corner)[0] > 200
         assert page.getpixel(red_corner)[1] < 80
 
+    @pytest.mark.parametrize("fmt", ["PNG", "TIFF"])
     @pytest.mark.parametrize("orientation", [2, 3, 4, 5, 6, 7, 8])
-    def test_orientation_pixels_match_pillows_own_transpose(self, orientation):
+    def test_orientation_pixels_match_pillows_own_transpose(self, orientation, fmt):
         img = Image.effect_noise((30, 20), 80).convert("RGB")
         exif = Image.Exif()
         exif[0x0112] = orientation
         buf = BytesIO()
-        img.save(buf, format="PNG", exif=exif)
+        img.save(buf, format=fmt, exif=exif)
         expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
 
-        with open_page_source(buf.getvalue(), "image/png") as source:
+        with open_page_source(buf.getvalue(), "image/x") as source:
             page = source.load_page(0)
 
         assert page.tobytes() == expected.convert("RGB").tobytes()
+
+    @pytest.mark.parametrize("orientation", [3, 6, 8])
+    @pytest.mark.parametrize("compression", [None, "tiff_lzw", "tiff_adobe_deflate"])
+    def test_a_tiff_is_turned_upright_once(self, orientation, compression):
+        img = Image.effect_noise((30, 20), 80).convert("RGB")
+        buf = BytesIO()
+        img.save(
+            buf,
+            format="TIFF",
+            compression=compression,
+            tiffinfo={0x0112: orientation},
+        )
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.size == expected.size
+        assert page.tobytes() == expected.convert("RGB").tobytes()
+
+    def test_a_bilevel_group4_tiff_is_turned_upright_once(self):
+        img = Image.effect_noise((30, 20), 80).convert("1")
+        buf = BytesIO()
+        img.save(buf, format="TIFF", compression="group4", tiffinfo={0x0112: 6})
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.size == expected.size == (20, 30)
+        assert page.convert("L").tobytes() == expected.convert("L").tobytes()
+
+    def test_a_multi_picture_phone_jpeg_gives_one_upright_page(self):
+        stored = Image.new("RGB", (30, 20), "white")
+        stored.paste("red", (0, 0, 10, 10))
+        preview = Image.new("L", (15, 10)).convert("RGB")
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        buf = BytesIO()
+        stored.save(
+            buf, format="MPO", save_all=True, append_images=[preview], exif=exif
+        )
+        assert Image.open(BytesIO(buf.getvalue())).n_frames == 2
+
+        with open_page_source(buf.getvalue(), "image/jpeg", max_side=100) as source:
+            assert len(source) == 1
+            page = source.load_page(0)
+
+        assert page.size == (20, 30)
+        assert page.getpixel((17, 2))[0] > 200
+        assert page.getpixel((17, 2))[1] < 80
 
     def test_a_damaged_exif_tag_does_not_stop_a_rotated_jpeg_opening(self):
         # Orientation 6 plus tag 0x0115 typed ASCII: rewriting this EXIF raises.
@@ -800,3 +857,34 @@ class TestImageMaxSide:
 
         with open_page_source(content, "image/png") as source:
             assert source.load_page(0).size == (300, 200)
+
+
+class TestExifOrientationDecodeErrors:
+    def test_a_decode_error_is_not_mistaken_for_junk_exif(self):
+        image = Image.new("RGB", (10, 10))
+
+        with patch.object(Image.Image, "load", side_effect=ValueError("bad data")):
+            with pytest.raises(ValueError, match="bad data"):
+                _apply_exif_orientation(image)
+
+
+class TestDamagedTiffTags:
+    @pytest.mark.parametrize(
+        ("tag", "bad_type"),
+        [(0x0100, 1), (0x0111, 2)],
+        ids=["width-tag-has-the-wrong-type", "strip-offset-tag-has-the-wrong-type"],
+    )
+    def test_a_tiff_with_a_damaged_header_tag_is_an_image_conversion_error(
+        self, tag, bad_type
+    ):
+        good = _encode([Image.new("RGB", (40, 30))], "TIFF")
+        damaged = bytearray(good)
+        ifd = struct.unpack("<I", good[4:8])[0]
+        for i in range(struct.unpack("<H", good[ifd : ifd + 2])[0]):
+            entry = ifd + 2 + 12 * i
+            if struct.unpack("<H", good[entry : entry + 2])[0] == tag:
+                damaged[entry + 2 : entry + 4] = struct.pack("<H", bad_type)
+
+        assert damaged != good
+        with pytest.raises(ImageConversionError):
+            open_page_source(bytes(damaged), "image/tiff")

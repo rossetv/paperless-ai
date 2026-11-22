@@ -65,8 +65,19 @@ _STRIP_ROWS = 256
 
 # Errors that mean Pillow cannot (or must not) decode the bytes. The bomb
 # error is not an OSError; uncaught it escapes the worker, the pre-tag stays,
-# and the document is re-downloaded and re-decoded every poll.
-_UNDECODABLE = (UnidentifiedImageError, OSError, Image.DecompressionBombError)
+# and the document is re-downloaded and re-decoded every poll. So do the plain
+# errors Pillow raises on damaged header tags (a TIFF with a bad strip offset
+# gives a TypeError, a bad width a ValueError).
+_UNDECODABLE = (
+    UnidentifiedImageError,
+    OSError,
+    Image.DecompressionBombError,
+    ValueError,
+    TypeError,
+    SyntaxError,
+    struct.error,
+    EOFError,
+)
 
 
 class ImageConversionError(Exception):
@@ -189,7 +200,8 @@ def open_page_source(
     try:
         img = Image.open(BytesIO(content))
         _check_pixel_cap(img)
-        if getattr(img, "n_frames", 1) > 1:
+        # An MPO's extra frames are previews or depth maps of its one picture.
+        if getattr(img, "n_frames", 1) > 1 and img.format != "MPO":
             # Stream frames like PDF pages: decoding all of a 100-page 300-DPI
             # TIFF at once is ~2.6 GB.
             img.close()
@@ -224,6 +236,9 @@ def _check_pixel_cap(image: Image.Image) -> None:
 
 def _apply_exif_orientation(image: Image.Image) -> Image.Image:
     """Return *image* itself, or a rotated/flipped copy when EXIF says it is not upright."""
+    # Loaded first: Pillow turns a TIFF upright itself on load and drops its tag.
+    # Outside the try so a decode failure is not mistaken for junk EXIF.
+    image.load()
     try:
         orientation = image.getexif().get(_EXIF_ORIENTATION, 1)
     except (SyntaxError, ValueError, struct.error):
