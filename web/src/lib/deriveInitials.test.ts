@@ -40,4 +40,9 @@ describe('deriveInitials', () => {
   it('returns "?" for a whitespace-only display name and empty username', () => {
     expect(deriveInitials('   ', '')).toBe('?');
   });
+
+  it('never splits an emoji into half a surrogate pair', () => {
+    expect(deriveInitials('😀 Smile', 'x')).toBe('😀S');
+    expect(deriveInitials('😀😀😀', 'x')).toBe('😀😀');
+  });
 });
