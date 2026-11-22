@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
+import { ApiError } from '../../../api/client';
 import { IndexScreen } from './IndexScreen';
 import type {
   IndexStatusResponse,
@@ -191,6 +192,26 @@ describe('IndexScreen', () => {
     );
     render(<IndexScreen />);
     expect(screen.getByRole('alert')).toHaveTextContent(/could not load the index status/i);
+  });
+
+  it('keeps the status data and shows a notice when a refetch fails', () => {
+    primeAll();
+    mockStatus.mockReturnValue(
+      queryResult({ data: STATUS, isError: true, error: new Error('boom'), status: 'error' }),
+    );
+    render(<IndexScreen />);
+    expect(screen.queryByText(/could not load the index status/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/could not refresh the index status/i)).toBeInTheDocument();
+    expect(screen.getByText('ocr')).toBeInTheDocument();
+  });
+
+  it('shows the error when a reconcile fails', () => {
+    primeAll();
+    mockReconcile.mockReturnValue(
+      mutationResult({ isError: true, error: new ApiError(409, undefined, 'Reconcile busy'), status: 'error' }),
+    );
+    render(<IndexScreen />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Reconcile busy');
   });
 
   it('triggers a reconcile when "Reconcile now" is clicked', async () => {

@@ -44,7 +44,10 @@ const RESPONSE: SearchResponse = {
       {
         phase: 'plan',
         label: 'Planning the query',
-        detail: { rewritten_query: 'Npower 2024 payments', skipped_trivial: false },
+        detail: {
+          rewritten_query: 'Npower 2024 payments',
+          skipped_trivial: false,
+        },
         tokens: { prompt: 1100, completion: 40, reasoning: 0, total: 1140 },
         cost: { usd: 0.004, local: false },
         ms: 300,
@@ -88,12 +91,25 @@ describe('ResultsScreen', () => {
   it('runs a fresh search when the editable recap field is submitted', async () => {
     const onSearch = vi.fn();
     renderResults({ onSearch });
-    const recap = screen.getByDisplayValue(
-      'how much did I pay npower in 2024',
-    );
+    const recap = screen.getByDisplayValue('how much did I pay npower in 2024');
     await userEvent.clear(recap);
     await userEvent.type(recap, 'octopus tariff for 2025{Enter}');
     expect(onSearch).toHaveBeenCalledWith('octopus tariff for 2025');
+  });
+
+  it('announces the finished answer once in a status line', () => {
+    renderResults();
+    expect(screen.getAllByText('Answer ready, 1 source')).toHaveLength(1);
+    expect(screen.getByText('Answer ready, 1 source')).toHaveAttribute(
+      'role',
+      'status',
+    );
+  });
+
+  it('pluralises the source count in the status line', () => {
+    const source = RESPONSE.sources[0]!;
+    renderResults({ result: { ...RESPONSE, sources: [source, source] } });
+    expect(screen.getByText('Answer ready, 2 sources')).toBeInTheDocument();
   });
 
   it('renders the filter rail', () => {
@@ -103,7 +119,9 @@ describe('ResultsScreen', () => {
 
   it('renders the synthesised answer', () => {
     renderResults();
-    expect(screen.getByText(/you paid £1,847.32 to npower/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/you paid £1,847.32 to npower/i),
+    ).toBeInTheDocument();
   });
 
   it('renders a "Sources" header', () => {
@@ -168,9 +186,7 @@ describe('ResultsScreen', () => {
   it('fires onPreview when a source view is clicked', async () => {
     const onPreview = vi.fn();
     renderResults({ onPreview });
-    await userEvent.click(
-      screen.getByRole('button', { name: /^view$/i }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: /^view$/i }));
     expect(onPreview).toHaveBeenCalledWith(9823);
   });
 

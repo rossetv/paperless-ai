@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
@@ -43,6 +43,18 @@ export function ResultsScreen({
   const { answer, sources, stats, cost, trace, outcome_kind } = result;
   const isAnswered = outcome_kind === 'answered';
 
+  // The region is empty on first render and filled after mount: text that is
+  // already there when a live region appears is not reliably announced.
+  const [status, setStatus] = useState('');
+  const sourceCount = sources.length;
+  useEffect(() => {
+    setStatus(
+      isAnswered
+        ? `Answer ready, ${sourceCount} ${sourceCount === 1 ? 'source' : 'sources'}`
+        : 'Search finished',
+    );
+  }, [isAnswered, sourceCount]);
+
   /** A citation both highlights its source card and opens its preview. */
   function handleCitationActivate(index: number): void {
     onCitationActivate(index);
@@ -60,6 +72,9 @@ export function ResultsScreen({
       }
     >
       <Stack direction="vertical" gap={10}>
+        <span role="status" aria-live="polite" className="visually-hidden">
+          {status}
+        </span>
         {/* Keyed by `query` so it re-seeds whenever a fresh search lands. */}
         <SearchField
           key={query}

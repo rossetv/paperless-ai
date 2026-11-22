@@ -23,6 +23,7 @@
 .footer {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--spacing-10);
   margin-top: var(--spacing-14);
@@ -48,6 +49,7 @@
 
 .primary {
   display: flex;
+  margin-left: auto;
   align-items: center;
   gap: var(--spacing-8);
 }

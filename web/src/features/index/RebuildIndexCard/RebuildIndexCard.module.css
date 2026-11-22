@@ -1,6 +1,6 @@
 .card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: var(--spacing-13);
   align-items: center;
   background-color: transparent;
@@ -77,4 +77,16 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-8);
+}
+
+/* Phones: the button drops below the text instead of squeezing it. */
+@media (width <= 480px) {
+  .card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .card > :last-child {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
 }

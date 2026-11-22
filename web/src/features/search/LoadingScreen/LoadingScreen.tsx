@@ -8,8 +8,16 @@ import { Text } from '../../../components/primitives/Text/Text';
 import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
 import { PipelineStages } from '../../../components/primitives/PipelineStages/PipelineStages';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
-import { formatCostLabel, formatElapsed, phaseToStages } from '../trace/phaseStages';
-import type { FilterRequest, PhaseRecord, SearchPhase } from '../../../api/types';
+import {
+  formatCostLabel,
+  formatElapsed,
+  phaseToStages,
+} from '../trace/phaseStages';
+import type {
+  FilterRequest,
+  PhaseRecord,
+  SearchPhase,
+} from '../../../api/types';
 import styles from './LoadingScreen.module.css';
 
 export interface LoadingScreenProps {
@@ -50,6 +58,7 @@ export function LoadingScreen({
   const elapsedLabel = formatElapsed(Date.now() - startedAtRef.current);
 
   const stages = phaseToStages(phaseRecords, activePhase);
+  const activeStage = stages.find((s) => s.state === 'active');
 
   // The live rail omits per-phase cost chips, so the header shows the running total.
   const spent = phaseRecords.reduce(
@@ -86,19 +95,28 @@ export function LoadingScreen({
         {/* Pipeline progress */}
         <Card elevated>
           <Stack direction="vertical" gap={10}>
-            {/* Both live counters share one polite status region so screen
-                readers hear progress without being interrupted. */}
+            {/* Only the phase is announced; the timer ticks every 500 ms and
+                would be re-read constantly. */}
             <Stack direction="horizontal" gap={9} align="center">
               <Spinner size="small" label="Searching" />
               <Text as="span" variant="body-emphasis">
                 Searching your library…
               </Text>
               <span className={styles['spacer']} />
-              <span role="status" aria-live="polite" aria-atomic="true">
+              {/* A plain wrapper keeps the row's line-box height. */}
+              <span>
                 <Text as="span" variant="micro" tone="tertiary">
                   {elapsedLabel}
                   {costCounter !== undefined && ` · ${costCounter}`}
                 </Text>
+              </span>
+              <span
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="visually-hidden"
+              >
+                {activeStage?.label}
               </span>
             </Stack>
             {stages.length > 0 && (

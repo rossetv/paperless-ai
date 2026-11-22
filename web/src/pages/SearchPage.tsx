@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
@@ -26,7 +26,10 @@ import { ResultsScreen } from '../features/search/ResultsScreen/ResultsScreen';
 import { NoResultsScreen } from '../features/search/NoResultsScreen/NoResultsScreen';
 import { IndexNotReadyScreen } from '../features/search/IndexNotReadyScreen/IndexNotReadyScreen';
 import { SearchErrorScreen } from '../features/search/SearchErrorScreen/SearchErrorScreen';
-import { useStreamingSearch } from '../features/search/useStreamingSearch';
+import {
+  RETURN_TO_RESULTS,
+  useStreamingSearch,
+} from '../features/search/useStreamingSearch';
 import { ME_QUERY_KEY } from '../api/hooks';
 import {
   useSearchUrlState,
@@ -43,7 +46,14 @@ export function SearchPage(): React.ReactElement {
     number | undefined
   >(undefined);
 
-  const { state, run } = useStreamingSearch();
+  // Only Back/Forward, or the document page's link back to the results, shows
+  // the kept answer; any other link or a new query searches.
+  const location = useLocation();
+  const returning =
+    (location.state as Partial<typeof RETURN_TO_RESULTS> | null)?.returnToResults === true;
+  const { state, run } = useStreamingSearch(
+    useNavigationType() === 'POP' || returning,
+  );
 
   // Re-run the stream whenever the URL's query/filters change to a non-empty
   // query. Filters are serialised so a fresh-but-equal object does not

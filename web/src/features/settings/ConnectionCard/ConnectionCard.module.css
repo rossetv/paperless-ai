@@ -192,6 +192,39 @@
   display: none;
 }
 
+/* On a phone the title, status pill, chevron and Test button cannot share one line: the title
+   row keeps the full width, and the pill and Test button drop to a second line under it. */
+@media (width <= 699.98px) {
+  .header {
+    flex-wrap: wrap;
+    row-gap: var(--spacing-6);
+  }
+
+  .toggle {
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    row-gap: var(--spacing-4);
+  }
+
+  .header-info {
+    flex-basis: 0;
+  }
+
+  .chevron {
+    order: 1;
+  }
+
+  .pill {
+    order: 2;
+    flex-basis: calc(100% - var(--spacing-16) - var(--spacing-10));
+    margin-left: calc(var(--spacing-16) + var(--spacing-10));
+  }
+
+  .btn-test {
+    margin-left: calc(var(--spacing-16) + var(--spacing-10));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chevron,
   .glyph,

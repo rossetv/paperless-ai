@@ -3,6 +3,7 @@ import { SettingsLayout } from '../../../components/layout/SettingsLayout/Settin
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { useSettings, useUpdateSettings } from '../../../api/hooks';
+import { errorDetail } from '../../../api/client';
 import type { SettingItem } from '../../../api/types';
 import type { ConfigValue, SettingsDraft } from '../fieldModel';
 import {
@@ -62,6 +63,18 @@ function SettingsContent({
   // A re-index-forcing save (embedding model / chunking) shows a toast: the whole library is
   // being re-embedded server-side.
   const [reindexNotice, setReindexNotice] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+
+  // Reload, closing the tab and leaving the site would drop the edits. In-app navigation is not
+  // intercepted: BrowserRouter has no blocker.
+  React.useEffect(() => {
+    if (!isDirty) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
 
   const handleChange = (key: string, value: ConfigValue | null): void => {
     // `null` is an untouched secret: restore the baseline (the server mask) so the key counts as
@@ -76,11 +89,15 @@ function SettingsContent({
     for (const [key, value] of Object.entries(changedValues())) {
       changes[key] = serialiseValue(value);
     }
+    setSaveError(null);
     save.mutate(
       { changes },
       {
         onSuccess: (data) => {
           if (data.reindex_triggered) setReindexNotice(true);
+        },
+        onError: (error) => {
+          setSaveError(errorDetail(error, 'Could not save the settings. Try again.'));
         },
       },
     );
@@ -121,6 +138,13 @@ function SettingsContent({
         onSave={handleSave}
         reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
       />
+      {saveError !== null && (
+        <Toast
+          message={saveError}
+          variant="error"
+          onDismiss={() => setSaveError(null)}
+        />
+      )}
       {reindexNotice && (
         <Toast
           message="Settings saved. Re-indexing all documents — re-embedding your library, which may take a few minutes."

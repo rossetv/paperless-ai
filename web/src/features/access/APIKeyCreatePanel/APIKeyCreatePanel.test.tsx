@@ -142,6 +142,21 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('keeps the secret on Escape and backdrop click, closing only via Done', async () => {
+    const onClose = vi.fn();
+    render(<APIKeyCreatePanel onClose={onClose} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
+    await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
+    await waitFor(() => screen.getByRole('button', { name: /done/i }));
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(
+      document.querySelector('[data-testid="modal-backdrop"]') as HTMLElement,
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('sk-pls-bQ94XfullSECRETvalue1234567890')).toBeInTheDocument();
+  });
+
   it('shows an inline error when clipboard access is denied', async () => {
     // Stub writeText to reject — simulates a browser that denies clipboard.
     Object.assign(navigator, {

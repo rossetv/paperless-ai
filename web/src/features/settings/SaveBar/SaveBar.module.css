@@ -48,6 +48,10 @@
   gap: var(--spacing-10);
 }
 
+.inner > button {
+  flex-shrink: 0;
+}
+
 .dot {
   flex-shrink: 0;
   width: var(--size-conn-dot);
@@ -74,6 +78,50 @@
   color: var(--colour-text-secondary);
   margin-left: auto;
   margin-right: var(--spacing-6);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Below a phone-landscape width the hint takes its own row under the count and buttons. */
+@media (width <= 600px) {
+  .bar {
+    padding-inline: var(--spacing-10);
+  }
+
+  .inner {
+    flex-wrap: wrap;
+    gap: var(--spacing-6);
+  }
+
+  .dot {
+    display: none;
+  }
+
+  .inner > button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* The count gives way to the buttons, never the other way round. */
+  .message {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .caption {
+    order: 1;
+    flex: 1 0 100%;
+    margin: 0;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
 }
 
 /* Rebuild warning when a reindex key is dirty. */

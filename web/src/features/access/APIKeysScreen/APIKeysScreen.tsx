@@ -7,6 +7,8 @@ import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
 import { useApiKeys, useDeleteApiKey } from '../../../api/hooks';
+import { Toast } from '../../../components/patterns/Toast/Toast';
+import { errorDetail } from '../../../api/client';
 import { useAuth } from '../../../hooks/useAuth';
 import type { ApiKey } from '../../../api/types';
 import { APIKeyCreatePanel } from '../APIKeyCreatePanel/APIKeyCreatePanel';
@@ -69,12 +71,16 @@ export function APIKeysScreen(): React.ReactElement {
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [editingKey, setEditingKey] = React.useState<ApiKey | null>(null);
   const [confirmingId, setConfirmingId] = React.useState<number | null>(null);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   const keys = keysQuery.data?.keys ?? [];
 
   async function handleDelete(id: number): Promise<void> {
+    setDeleteError(null);
     try {
       await deleteKey.mutateAsync(id);
+    } catch (error) {
+      setDeleteError(errorDetail(error, 'Could not revoke the key. Try again.'));
     } finally {
       setConfirmingId(null);
     }
@@ -234,6 +240,14 @@ export function APIKeysScreen(): React.ReactElement {
         <APIKeyEditPanel
           apiKey={editingKey}
           onClose={() => setEditingKey(null)}
+        />
+      )}
+
+      {deleteError !== null && (
+        <Toast
+          message={deleteError}
+          variant="error"
+          onDismiss={() => setDeleteError(null)}
         />
       )}
     </SettingsLayout>

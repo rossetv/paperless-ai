@@ -94,6 +94,22 @@ describe('LoadingScreen', () => {
     expect(screen.getByText(/^\d+:\d{2}$/)).toBeInTheDocument();
   });
 
+  it('keeps the elapsed timer out of any live region', () => {
+    const { container } = renderLoading({ activePhase: 'plan' });
+    const timer = screen.getByText(/^\d+:\d{2}$/);
+    expect(timer.closest('[role="status"], [aria-live]')).toBeNull();
+    const live = container.querySelectorAll('[aria-live]');
+    expect(live.length).toBeGreaterThan(0);
+  });
+
+  it('announces the running phase in a live region', () => {
+    renderLoading({ activePhase: 'plan' });
+    const live = screen
+      .getAllByRole('status')
+      .find((el) => el.getAttribute('aria-live') === 'polite');
+    expect(live).toHaveTextContent(/planning the query/i);
+  });
+
   it('renders skeleton source placeholders', () => {
     const { container } = renderLoading();
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
@@ -101,7 +117,7 @@ describe('LoadingScreen', () => {
 
   it('shows the active phase as in progress', () => {
     renderLoading({ phaseRecords: [], activePhase: 'plan' });
-    expect(screen.getByText(/planning the query/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/planning the query/i)).toHaveLength(2);
     expect(screen.getByText(/in progress/i)).toBeInTheDocument();
   });
 
@@ -125,7 +141,7 @@ describe('LoadingScreen', () => {
     // The live rail omits verdict details.
     expect(screen.queryByText('Annual statement')).toBeNull();
     expect(screen.queryByText('wrong year')).toBeNull();
-    expect(screen.getByText(/synthesising the answer/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/synthesising the answer/i)).toHaveLength(2);
   });
 
   it('shows a cumulative token/cost total summed across phase records', () => {
@@ -142,7 +158,7 @@ describe('LoadingScreen', () => {
       label: 'Judging relevance',
       detail: { bailed: true, degraded: false, verdicts: [] },
       tokens: { prompt: 2400, completion: 200, reasoning: 0, total: 2600 },
-      cost: { usd: 0.0050, local: false },
+      cost: { usd: 0.005, local: false },
       ms: 1,
     };
     renderLoading({
@@ -162,7 +178,10 @@ describe('LoadingScreen', () => {
   });
 
   it('renders no rail before any phase has started', () => {
-    const { container } = renderLoading({ phaseRecords: [], activePhase: null });
+    const { container } = renderLoading({
+      phaseRecords: [],
+      activePhase: null,
+    });
     expect(container.querySelector('ol')).not.toBeInTheDocument();
   });
 });

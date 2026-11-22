@@ -20,6 +20,18 @@ describe('formatShortDate', () => {
     expect(formatShortDate('')).toBe('—');
   });
 
+  it('returns an em dash for a day that does not exist in its month', () => {
+    expect(formatShortDate('2023-02-31')).toBe('—');
+    expect(formatShortDate('2023-02-29')).toBe('—');
+    expect(formatShortDate('2023-04-31')).toBe('—');
+    expect(formatShortDate('2023-05-00')).toBe('—');
+    expect(formatShortDate('2023-05-99')).toBe('—');
+    expect(formatShortDate('2024-02-29')).toBe('29 Feb 2024');
+    expect(formatShortDate('1900-02-29')).toBe('—');
+    expect(formatShortDate('2000-02-29')).toBe('29 Feb 2000');
+    expect(isoDateOnly('2023-02-31')).toBe('');
+  });
+
   it('returns an em dash for an out-of-range month', () => {
     expect(formatShortDate('2023-13-01')).toBe('—');
   });

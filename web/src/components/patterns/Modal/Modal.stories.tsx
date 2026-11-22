@@ -79,3 +79,16 @@ export const LongContent: Story = {
     )),
   },
 };
+
+/** Escape and backdrop clicks are ignored; only the buttons close it. */
+export const NotDismissible: Story = {
+  args: {
+    isOpen: true,
+    title: 'Copy this now',
+    dismissible: false,
+    onClose: () => {
+      /* story — noop */
+    },
+    children: <p>Escape and clicking outside do nothing; use the close button.</p>,
+  },
+};
