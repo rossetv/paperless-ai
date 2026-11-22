@@ -13,11 +13,17 @@ vi.mock('../features/shell/AppNavBar/AppNavBar', () => ({
 // The screen features are exercised in their own suites; here, mock each to a
 // tiny probe so the page-orchestration logic is tested in isolation.
 vi.mock('../features/search/IdleScreen/IdleScreen', () => ({
+  // The real idle hero carries the page's own h1.
   IdleScreen: ({ onSearch }: { onSearch: (q: string) => void }) =>
     React.createElement(
-      'button',
-      { 'data-testid': 'idle', onClick: () => onSearch('npower bills') },
-      'idle',
+      React.Fragment,
+      null,
+      React.createElement('h1', null, 'Ask your library.'),
+      React.createElement(
+        'button',
+        { 'data-testid': 'idle', onClick: () => onSearch('npower bills') },
+        'idle',
+      ),
     ),
 }));
 vi.mock('../features/search/LoadingScreen/LoadingScreen', () => ({
@@ -207,6 +213,33 @@ describe('SearchPage', () => {
     mockUseStreamingSearch.mockReturnValue(streamState({ status: 'idle' }));
     renderPage();
     expect(screen.getByTestId('idle')).toBeInTheDocument();
+  });
+
+  it('has exactly one h1 on the idle screen', () => {
+    mockUseStreamingSearch.mockReturnValue(streamState({ status: 'idle' }));
+    renderPage();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('has exactly one h1 while the idle hero stands in for a 401', () => {
+    mockUseStreamingSearch.mockReturnValue(
+      streamState({
+        query: 'invoice',
+        status: 'error',
+        error: { status: 401, message: 'unauthorised' },
+      }),
+    );
+    renderPage('/?q=invoice');
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('has exactly one h1 on a results screen', async () => {
+    mockUseStreamingSearch.mockReturnValue(
+      streamState({ status: 'done', result: SUCCESS_DATA }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
   it('renders the LoadingScreen while a search is streaming', async () => {

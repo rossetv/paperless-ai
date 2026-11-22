@@ -74,9 +74,3 @@
 [data-theme="light"] {
   color-scheme: light;
 }
-
-/* The destructive button's fill carries white text, so it keeps the light
-   theme's red in both themes while the status foreground above lightens. */
-:root {
-  --colour-button-destructive-bg: #c0382e;
-}

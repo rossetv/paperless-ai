@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
@@ -98,5 +98,37 @@ describe('useRouteAnnounce late headings', () => {
     cleanup();
     expect(disconnect).toHaveBeenCalledTimes(1);
     disconnect.mockRestore();
+  });
+
+  describe('watch window', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('still focuses a heading that appears after a slow load', async () => {
+      renderAt();
+      act(() => go('/settings'));
+      await act(async () => { vi.advanceTimersByTime(3000); });
+      act(() => setHeading('Settings'));
+      await flush();
+      expect(screen.getByRole('heading', { name: 'Settings' })).toHaveFocus();
+    });
+
+    it('stops waiting once a pointer is pressed', async () => {
+      renderAt();
+      act(() => go('/index'));
+      fireEvent.pointerDown(document.body);
+      act(() => setHeading('Index'));
+      await flush();
+      expect(screen.getByRole('heading', { name: 'Index' })).not.toHaveFocus();
+    });
+
+    it('stops waiting when the time runs out', async () => {
+      renderAt();
+      act(() => go('/index'));
+      await act(async () => { vi.advanceTimersByTime(10_001); });
+      act(() => setHeading('Index'));
+      await flush();
+      expect(screen.getByRole('heading', { name: 'Index' })).not.toHaveFocus();
+    });
   });
 });

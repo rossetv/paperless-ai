@@ -17,7 +17,8 @@ export function pageName(pathname: string): string | undefined {
   return undefined;
 }
 
-const WATCH_MS = 2000;
+// Long enough for a slow API to finish loading and remount a page's layout.
+const WATCH_MS = 10_000;
 
 function focusQuietly(el: HTMLElement): void {
   if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
@@ -34,7 +35,7 @@ function focusQuietly(el: HTMLElement): void {
  * screen reader announces the new page. Pages with neither get `fallback`. A query-string change leaves focus alone.
  *
  * A heading that renders late, or is replaced after it took focus, is
- * focused when it appears. That wait ends after a couple of seconds, on the
+ * focused when it appears. That wait ends after ten seconds, on the
  * first key or pointer press, or once focus sits on something the hook did not put there.
  */
 export function useRouteAnnounce(fallback: RefObject<HTMLElement | null>): void {

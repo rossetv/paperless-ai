@@ -90,7 +90,7 @@
   margin-top: var(--spacing-10);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
-  color: var(--colour-status-danger-fg);
+  color: var(--colour-dark-danger);
 }
 
 .note {
