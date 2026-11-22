@@ -26,7 +26,9 @@ def test_match_expr_merges_spellings_the_tokenizer_treats_alike() -> None:
     assert expr == '"the"'
 
 
-def test_match_expr_keeps_terms_with_different_tokens() -> None:
+def test_match_expr_keeps_different_words_and_accent_variants_as_separate_terms() -> (
+    None
+):
     terms = ["boiler", "boiler room", "room boiler", "boilers", "café", "cafe"]
 
     expr = build_match_expr(terms)

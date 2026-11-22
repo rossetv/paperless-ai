@@ -137,10 +137,10 @@ def _token_key(term: str) -> tuple[str, ...]:
     """Return what the FTS5 default tokenizer would index *term* as, conservatively.
 
     ``chunks_fts`` uses the default ``unicode61`` tokenizer: it lower-cases and
-    splits on every character that is not a letter or number. Combining marks
-    are kept inside a token and diacritics are not folded, so two terms share a
-    key only when the tokenizer certainly treats them alike. A term with no
-    token keeps its exact spelling as its key.
+    splits on every character that is not a letter or number. The tokenizer folds
+    diacritics (``café`` is indexed as ``cafe``), but this key does not, so terms
+    that differ only by an accent keep separate keys. Combining marks stay inside
+    a token. A term with no token keeps its exact spelling as its key.
     """
     tokens: list[str] = []
     current: list[str] = []

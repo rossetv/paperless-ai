@@ -220,8 +220,8 @@ def register_paperless_exception_handlers(app: FastAPI) -> None:
     """Map ``httpx`` errors escaping a route handler to meaningful statuses.
 
     Upstream 404 and 409 pass through; 5xx, 401, 403 and network errors become
-    502 (a 401/403 means the server's own token was rejected, which the browser
-    must not read as "log in"). The streaming PDF/thumbnail handlers handle their
+    502 (the server's own token was rejected or lacks permission, which the
+    browser must not read as "log in"). The streaming PDF/thumbnail handlers handle their
     own errors because they must close their ``httpx`` client first.
     """
 
@@ -242,7 +242,12 @@ def register_paperless_exception_handlers(app: FastAPI) -> None:
                 content={"detail": "conflict in Paperless-ngx"},
             )
         if status in (401, 403):
-            log.warning("paperless.token_rejected", status=status)
+            log.warning(
+                "paperless.token_rejected"
+                if status == 401
+                else "paperless.permission_denied",
+                status=status,
+            )
             detail = (
                 "Paperless-ngx rejected the server's API token"
                 if status == 401
