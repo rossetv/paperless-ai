@@ -212,6 +212,23 @@ class TestSettingsChangeRetiresCore:
 
         assert new_client.total_calls == 2
 
+    def test_a_retired_core_answering_first_does_not_fix_its_ttl_into_the_cache(
+        self,
+    ) -> None:
+        reset_search_result_cache()
+        old_core = _core(
+            _store_reader(), _answered_client(), SEARCH_CACHE_TTL_SECONDS=0
+        )
+        reset_search_result_cache()
+        new_client = _answered_client()
+        new_core = _core(_store_reader(), new_client, SEARCH_CACHE_TTL_SECONDS=3600)
+
+        old_core.answer("queued before the save")
+        new_core.answer("a query")
+        new_core.answer("a query")
+
+        assert new_client.total_calls == 2
+
     def test_a_core_built_after_the_save_still_caches(self) -> None:
         reset_search_result_cache()
         _core(_store_reader(), _answered_client())

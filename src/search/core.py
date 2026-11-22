@@ -246,16 +246,19 @@ class SearchCore:
                 so a caller charging a token quota charges nothing for it; the
                 result's own cost still reports the original spend.
         """
-        cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
-        # Building the key costs a get_stats() round-trip, so skip it when the
-        # cache is off.
-        cache_key = (
-            self._cache_key(query, ui_filters, asker)
-            if self._settings.SEARCH_CACHE_TTL_SECONDS > 0
+        # A core retired by a settings save must not build the cache (it would
+        # fix the old TTL into it) nor read or fill it.
+        cache = None
+        cache_key = None
+        if (
+            self._settings.SEARCH_CACHE_TTL_SECONDS > 0
             and self._cache_generation == cache_generation()
-            else None
-        )
-        if cache_key is not None:
+        ):
+            cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
+            # Building the key costs a get_stats() round-trip, so only do it
+            # when the cache is on.
+            cache_key = self._cache_key(query, ui_filters, asker)
+        if cache is not None and cache_key is not None:
             cached = cache.get(cache_key)
             if cached is not None:
                 log.info(
@@ -269,7 +272,7 @@ class SearchCore:
 
         result = self._answer_uncached(query, ui_filters, asker, on_event=on_event)
 
-        if cache_key is not None and is_cacheable(result):
+        if cache is not None and cache_key is not None and is_cacheable(result):
             cache.put(cache_key, result)
         return result
 
