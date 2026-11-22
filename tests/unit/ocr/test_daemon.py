@@ -32,10 +32,11 @@ def _doc(id, tags=None):
 
 class TestMain:
     @patch("ocr.daemon.bootstrap_daemon", return_value=None)
-    def test_config_error_returns(self, mock_bootstrap):
-        result = main()
+    def test_config_error_exits_with_status_1(self, mock_bootstrap):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
 
-        assert result is None
+        assert exc_info.value.code == 1
         mock_bootstrap.assert_called_once_with(
             get_processing_tag_id=unittest.mock.ANY,
             get_pre_tag_id=unittest.mock.ANY,
@@ -44,7 +45,8 @@ class TestMain:
     @patch("ocr.daemon.bootstrap_daemon", return_value=None)
     @patch("ocr.daemon.run_polling_threadpool")
     def test_does_not_start_loop_on_config_error(self, mock_loop, mock_bootstrap):
-        main()
+        with pytest.raises(SystemExit):
+            main()
 
         mock_loop.assert_not_called()
 
@@ -52,7 +54,8 @@ class TestMain:
     def test_bootstrap_lambdas_extract_correct_settings(self, mock_bootstrap):
         mock_bootstrap.return_value = None
 
-        main()
+        with pytest.raises(SystemExit):
+            main()
 
         call_kwargs = mock_bootstrap.call_args[1]
         settings = _settings(OCR_PROCESSING_TAG_ID=777, PRE_TAG_ID=888)
