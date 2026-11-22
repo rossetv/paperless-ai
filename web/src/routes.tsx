@@ -160,7 +160,8 @@ function BootstrapGate({
   // intent === 'login'. Render the form without waiting for `me`: after a
   // logout redirect the query is mid-refetch, and a loader would flash a blank
   // frame between sign-out and the form.
-  if (meQuery.data?.user !== undefined) {
+  // Same reading as ProtectedRoute: a stale user behind a failed re-check is not signed in.
+  if (meQuery.isSuccess && meQuery.data.user !== undefined) {
     return <Navigate to={returnTarget(location.state)} replace />;
   }
   return children;

@@ -160,6 +160,16 @@ describe('AppRoutes', () => {
     await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
   });
 
+  it('shows the login page, not a redirect loop, when a cached user has a failed re-check', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(
+      meResult({ isError: true, error: new Error('Unauthenticated'), data: { user: SAMPLE_USER } }),
+    );
+    renderAt('/library?tag=tax');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+    expect(screen.getByTestId('where')).toHaveTextContent('/login');
+  });
+
   it('returns to the page asked for once the user has signed in', async () => {
     const setup = setupStatusResult({ isSuccess: true, data: { needed: false } });
     mockUseSetupStatus.mockReturnValue(setup);
