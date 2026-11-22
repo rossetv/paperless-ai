@@ -73,7 +73,8 @@ export function usePublicStats(): UseQueryResult<PublicStats, Error> {
 }
 
 /**
- * Login mutation — POST /api/auth/login. Invalidates `me` so `useAuth` re-resolves.
+ * Login mutation — POST /api/auth/login. Clears the earlier session's cached data and
+ * invalidates `me` so `useAuth` re-resolves.
  *
  * Fails with `Unauthenticated` (401) or `ApiError` (403, suspended account).
  */
@@ -83,6 +84,11 @@ export function useLogin(): UseMutationResult<LoginResponse, Error, LoginRequest
     mutationFn: login,
     meta: skipSessionCheck,
     onSuccess: () => {
+      // A lapsed session leaves its cached data behind and the next sign-in may be
+      // another user, so drop all of it; only `me` stays, to be re-checked below.
+      queryClient.removeQueries({
+        predicate: (query) => query.queryKey.join('/') !== queryKeys.me().join('/'),
+      });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
   });
