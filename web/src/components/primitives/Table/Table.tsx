@@ -37,6 +37,9 @@ export interface TableProps<Row> {
   className?: string;
 }
 
+/** Px of clipped content too small to be worth a fade: a border or a focus ring. */
+const END_SLACK = 4;
+
 /**
  * The browser leaves a control that is only partly clipped where it is, so its
  * focus ring is cut off or sits under the edge fade. The wrapper's
@@ -68,7 +71,10 @@ export function Table<Row>({
     if (el === null) return undefined;
     const update = (): void => {
       const start = el.scrollLeft > 1;
-      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      // The last cell's trailing padding is empty, so scrolling past it hides no content.
+      const lastCell = el.querySelector('th:last-child');
+      const endPadding = lastCell === null ? 0 : parseFloat(getComputedStyle(lastCell).paddingRight) || 0;
+      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - endPadding - END_SLACK;
       setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
     };
     update();

@@ -124,6 +124,24 @@ describe('Table', () => {
       expect(wrapper.dataset['fadeEnd']).toBeUndefined();
     });
 
+    it('leaves the end edge unmarked when only the last cell\'s padding is out of view', () => {
+      vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+        paddingRight: '24px',
+      } as CSSStyleDeclaration);
+      try {
+        render(<Table columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />);
+        const wrapper = screen.getByRole('table').parentElement as HTMLElement;
+        sizeWrapper(wrapper, 707, 680);
+        fireEvent.scroll(wrapper);
+        expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+        sizeWrapper(wrapper, 779, 748);
+        fireEvent.scroll(wrapper);
+        expect(wrapper.dataset['fadeEnd']).toBe('true');
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
     it('scrolls a focused control into view so an edge-clipped one is not left cut off', () => {
       const scrollIntoView = vi.fn();
       Object.defineProperty(Element.prototype, 'scrollIntoView', {
