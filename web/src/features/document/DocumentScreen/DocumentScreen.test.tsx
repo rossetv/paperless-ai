@@ -1,10 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tanstack/react-query';
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
+import { ApiError } from '../../../api/client';
 import { DocumentScreen } from './DocumentScreen';
 
 vi.mock('../../../api/hooks', () => ({
@@ -404,20 +405,83 @@ describe('DocumentScreen', () => {
 
     mockUseDeleteDocument.mockReturnValue(voidMutationStub({ mutate: deleteMutate }));
 
-    renderScreen({ role: 'admin' });
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/document/934']}>
+          <Routes>
+            <Route
+              path="/document/934"
+              element={<DocumentScreen document={DOC} parent="library" parentSearch="" role="admin" />}
+            />
+            <Route path="/library" element={<p>library page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
-    const confirmBtn = await screen.findByRole('button', { name: /^delete$/i });
-    fireEvent.click(confirmBtn);
-
+    fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
     expect(deleteMutate).toHaveBeenCalledWith(934, expect.objectContaining({ onSuccess: expect.any(Function) }));
 
-    capturedOnSuccess?.();
-    // MemoryRouter absorbs the navigation; the closed modal shows the delete
-    // flowed through.
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    act(() => capturedOnSuccess?.());
+    expect(await screen.findByText('library page')).toBeInTheDocument();
+  });
+
+  it('a failed delete shows the server error and stays on the document', async () => {
+    const deleteMutate = vi.fn((_id: number, opts?: { onError?: (err: Error) => void }) => {
+      opts?.onError?.(new ApiError(403, undefined, 'Admins only'));
+    });
+    mockUseDeleteDocument.mockReturnValue(
+      voidMutationStub({ mutate: deleteMutate as unknown as UseMutateFunction<void, Error, number> }),
     );
+    renderScreen({ role: 'admin' });
+    fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Admins only');
+    expect(screen.getByText(/#934/)).toBeInTheDocument();
+  });
+
+  it('re-classify confirms it was queued', async () => {
+    const reclassifyMutate = vi.fn((_id: number, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.());
+    mockUseReclassifyDocument.mockReturnValue(
+      voidMutationStub({ mutate: reclassifyMutate as unknown as UseMutateFunction<void, Error, number> }),
+    );
+    renderScreen({ role: 'member' });
+    fireEvent.click(screen.getByRole('button', { name: /re-classify/i }));
+    expect(reclassifyMutate).toHaveBeenCalledWith(934, expect.anything());
+    expect(await screen.findByText(/re-classif/i, { selector: '[role="status"] *' })).toBeInTheDocument();
+  });
+
+  it('a failed re-transcribe shows the server error', async () => {
+    const retranscribeMutate = vi.fn((_id: number, opts?: { onError?: (err: Error) => void }) =>
+      opts?.onError?.(new ApiError(503, undefined, 'OCR is turned off')),
+    );
+    mockUseRetranscribeDocument.mockReturnValue(
+      voidMutationStub({ mutate: retranscribeMutate as unknown as UseMutateFunction<void, Error, number> }),
+    );
+    renderScreen({ role: 'member' });
+    fireEvent.click(screen.getByRole('button', { name: /re-transcribe/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('OCR is turned off');
+  });
+
+  it('re-transcribe is disabled while its request runs', () => {
+    mockUseRetranscribeDocument.mockReturnValue(voidMutationStub({ isPending: true }));
+    renderScreen({ role: 'member' });
+    expect(screen.getByRole('button', { name: /re-transcribe/i })).toBeDisabled();
+  });
+
+  it('a failed tag create shows the error', async () => {
+    const tagMutate = vi.fn((_name: string, opts?: { onError?: (err: Error) => void }) =>
+      opts?.onError?.(new Error('network down')),
+    );
+    mockUseCreateTag.mockReturnValue(
+      createMutationStub({ mutate: tagMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
+    );
+    renderScreen({ role: 'member' });
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'alpha-tag' } });
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/tag/i);
   });
 
   it('renders MatchCard at the top of the sidebar when parent is search', () => {

@@ -19,7 +19,7 @@ import {
   useDeleteDocument,
 } from '../../../api/hooks';
 import { queryKeys } from '../../../api/hooks/keys';
-import { documentPdfUrl } from '../../../api/client';
+import { documentPdfUrl, errorDetail } from '../../../api/client';
 import { Card } from '../../../components/primitives/Card/Card';
 import { Toast, type ToastVariant } from '../../../components/patterns/Toast/Toast';
 import { DocumentTitle } from '../DocumentTitle/DocumentTitle';
@@ -96,6 +96,9 @@ export function DocumentScreen({
   const qc = useQueryClient();
   const canEdit = role !== 'readonly';
   const [toast, setToast] = React.useState<{ message: string; variant: ToastVariant } | null>(null);
+  const notify = (message: string): void => setToast({ message, variant: 'info' });
+  const notifyError = (fallback: string) => (err: Error): void =>
+    setToast({ message: errorDetail(err, fallback), variant: 'error' });
 
   // The last attempted patch, so the retry button can re-fire it.
   const lastAttemptRef = React.useRef<DocumentPatch | null>(null);
@@ -229,7 +232,11 @@ export function DocumentScreen({
 
   function createTagThenAdd(name: string): void {
     createTag.mutate(name, {
-      onSuccess: (created) => changeTags((ids) => [...ids, created.id], [created]),
+      onSuccess: (created) => {
+        notify(`Created tag “${created.name}”.`);
+        changeTags((ids) => [...ids, created.id], [created]);
+      },
+      onError: notifyError("Couldn't create the tag."),
     });
   }
 
@@ -299,12 +306,20 @@ export function DocumentScreen({
             onPatch={save}
             onCreateCorrespondent={(name) =>
               createCorrespondent.mutate(name, {
-                onSuccess: (created) => save({ correspondent_id: created.id }),
+                onSuccess: (created) => {
+                  notify(`Created correspondent “${created.name}”.`);
+                  save({ correspondent_id: created.id });
+                },
+                onError: notifyError("Couldn't create the correspondent."),
               })
             }
             onCreateDocumentType={(name) =>
               createDocumentType.mutate(name, {
-                onSuccess: (created) => save({ document_type_id: created.id }),
+                onSuccess: (created) => {
+                  notify(`Created document type “${created.name}”.`);
+                  save({ document_type_id: created.id });
+                },
+                onError: notifyError("Couldn't create the document type."),
               })
             }
           />
@@ -325,17 +340,25 @@ export function DocumentScreen({
             documentId={document.id}
             title={document.title ?? `Document ${document.id}`}
             role={role}
+            reclassifying={reclassify.isPending}
+            retranscribing={retranscribe.isPending}
+            deleting={deleteDoc.isPending}
             onReclassify={(id) =>
               reclassify.mutate(id, {
-                onSuccess: () => {
-                  /* TODO(VR): show a success toast */
-                },
+                onSuccess: () => notify('Queued for re-classification.'),
+                onError: notifyError("Couldn't queue re-classification."),
               })
             }
-            onRetranscribe={(id) => retranscribe.mutate(id)}
+            onRetranscribe={(id) =>
+              retranscribe.mutate(id, {
+                onSuccess: () => notify('Queued for re-transcription.'),
+                onError: notifyError("Couldn't queue re-transcription."),
+              })
+            }
             onDelete={(id) =>
               deleteDoc.mutate(id, {
                 onSuccess: () => navigate(breadcrumbHref),
+                onError: notifyError("Couldn't delete the document."),
               })
             }
           />
@@ -347,6 +370,8 @@ export function DocumentScreen({
           message={toast.message}
           variant={toast.variant}
           onDismiss={() => setToast(null)}
+          // Errors stay until dismissed so they can be read at any pace.
+          {...(toast.variant === 'info' ? { dismissAfterMs: 6_000 } : {})}
         />
       )}
     </main>

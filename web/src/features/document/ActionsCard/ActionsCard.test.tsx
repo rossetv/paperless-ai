@@ -104,4 +104,39 @@ describe('ActionsCard', () => {
     fireEvent.click(confirmBtn);
     expect(onDelete).toHaveBeenCalledWith(42);
   });
+  it('disables each action button while its request runs', () => {
+    render(
+      <ActionsCard
+        documentId={42}
+        role="admin"
+        title="Doc"
+        onReclassify={noop}
+        onRetranscribe={noop}
+        onDelete={noop}
+        reclassifying
+        retranscribing
+        deleting
+      />,
+    );
+    expect(screen.getByRole('button', { name: /re-classify/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /re-transcribe/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^delete document/i })).toBeDisabled();
+  });
+
+  it('keeps the confirm dialog open while the delete runs and closes it when it ends', () => {
+    const onDelete = vi.fn();
+    const props = { documentId: 42, role: 'admin' as const, title: 'Doc', onReclassify: noop, onRetranscribe: noop, onDelete };
+    const { rerender } = render(<ActionsCard {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    rerender(<ActionsCard {...props} deleting />);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // A second confirm while the first is running sends nothing more.
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+
+    rerender(<ActionsCard {...props} deleting={false} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });
