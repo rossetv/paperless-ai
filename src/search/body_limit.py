@@ -11,8 +11,8 @@ from __future__ import annotations
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-# A settings update is bounded in characters (100 values of 8192), which JSON-escaped
-# non-ASCII text can stretch to about 5 MiB of bytes.
+# A settings update is bounded in characters (100 values of 8192). Escaped, a character
+# above U+FFFF takes 12 bytes (about 9.4 MiB if all were), but real bodies stay far below.
 MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
