@@ -103,10 +103,13 @@ export function LoadingScreen({
                 Searching your library…
               </Text>
               <span className={styles['spacer']} />
-              <Text as="span" variant="micro" tone="tertiary">
-                {elapsedLabel}
-                {costCounter !== undefined && ` · ${costCounter}`}
-              </Text>
+              {/* A plain wrapper keeps the row's line-box height. */}
+              <span>
+                <Text as="span" variant="micro" tone="tertiary">
+                  {elapsedLabel}
+                  {costCounter !== undefined && ` · ${costCounter}`}
+                </Text>
+              </span>
               <span
                 role="status"
                 aria-live="polite"
