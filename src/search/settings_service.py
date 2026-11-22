@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from appdb.config import BLANK_IS_A_VALUE
 from common.config import (
     CONFIG_KEYS,
     REINDEX_KEYS,
@@ -106,8 +107,10 @@ class SettingView:
     """One config key as the Settings screen sees it.
 
     Attributes:
-        effective_value: The ``config``-table value, else the environment
-            value, else ``None`` when only the coded default applies.
+        effective_value: The ``config``-table value, else the non-blank
+            environment value (a blank one only for keys in
+            ``BLANK_IS_A_VALUE``), else ``None`` when only the coded default
+            applies.
         default_value: The coded default as a string, or ``None`` for secrets
             and keys whose default is ``None``.
     """
@@ -130,7 +133,7 @@ def view_settings(
         if key in config_table:
             value: str | None = config_table[key]
             source: ValueSource = "database"
-        elif key in environ:
+        elif key in environ and (environ[key].strip() or key in BLANK_IS_A_VALUE):
             value = environ[key]
             source = "environment"
         else:
