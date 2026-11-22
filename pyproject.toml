@@ -15,7 +15,7 @@ dependencies = [
     "sqlite-vec~=0.1",
     "fastapi~=0.136",
     "uvicorn[standard]~=0.47",
-    "mcp~=1.28",
+    "mcp~=2.3",
     "argon2-cffi~=25.1",
 ]
 

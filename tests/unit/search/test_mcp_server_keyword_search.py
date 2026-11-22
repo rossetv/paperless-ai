@@ -50,12 +50,12 @@ def _build_app(core: MagicMock):
 
 @pytest.mark.anyio
 async def test_keyword_search_returns_document_list_with_urls() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool("keyword_search", {"query": "invoice"})
 
     payload = json.loads(result.content[0].text)
@@ -69,12 +69,12 @@ async def test_keyword_search_returns_document_list_with_urls() -> None:
 
 @pytest.mark.anyio
 async def test_keyword_search_clamps_limit_and_passes_filters() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         await client.call_tool(
             "keyword_search",
             {
@@ -98,7 +98,7 @@ async def test_keyword_search_clamps_limit_and_passes_filters() -> None:
 
 @pytest.mark.anyio
 async def test_keyword_search_filter_only_browse_passes_none_query() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core(
         page=KeywordPage(
@@ -110,7 +110,7 @@ async def test_keyword_search_filter_only_browse_passes_none_query() -> None:
     )
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool(
             "keyword_search", {"filters": {"tag_ids": [101]}}
         )
@@ -123,7 +123,7 @@ async def test_keyword_search_filter_only_browse_passes_none_query() -> None:
 
 @pytest.mark.anyio
 async def test_keyword_search_sanitises_failure() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     core.keyword_search.side_effect = RuntimeError(
@@ -131,7 +131,7 @@ async def test_keyword_search_sanitises_failure() -> None:
     )
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool("keyword_search", {"query": "x"})
 
     assert result.isError is True
@@ -141,14 +141,14 @@ async def test_keyword_search_sanitises_failure() -> None:
 
 @pytest.mark.anyio
 async def test_keyword_search_rejects_an_over_length_query() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     from search.wire import MAX_QUERY_LENGTH
 
     core = _make_core()
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool(
             "keyword_search", {"query": "x" * (MAX_QUERY_LENGTH + 1)}
         )
@@ -160,17 +160,34 @@ async def test_keyword_search_rejects_an_over_length_query() -> None:
 
 @pytest.mark.anyio
 async def test_keyword_search_accepts_a_query_at_the_length_limit() -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     from search.wire import MAX_QUERY_LENGTH
 
     core = _make_core()
     app = _build_app(core)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool(
             "keyword_search", {"query": "x" * MAX_QUERY_LENGTH}
         )
 
     assert result.isError is False
     core.keyword_search.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_keyword_search_invalid_filter_tells_the_caller_which_field() -> None:
+    from tests.helpers.mcp_client import connect_client
+
+    core = _make_core()
+    app = _build_app(core)
+
+    async with connect_client(app._server) as client:
+        result = await client.call_tool(
+            "keyword_search", {"filters": {"tag_ids": "not-a-list"}}
+        )
+
+    assert result.isError is True
+    assert "tag_ids" in result.content[0].text
+    core.keyword_search.assert_not_called()

@@ -1,17 +1,20 @@
 """Tests for search.mcp_server, the MCP endpoint.
 
-Tool tests use ``create_connected_server_and_client_session`` for an in-process
+Tool tests use ``tests.helpers.mcp_client.connect_client`` for an in-process
 round-trip; auth tests use Starlette's ``TestClient`` against the ASGI app.
 """
 
 from __future__ import annotations
 
+import asyncio
+import importlib.metadata
 import json
 from unittest.mock import MagicMock
 
 import pytest
 from starlette.testclient import TestClient
 
+from search.mcp_server import _SseAcceptOnGetMiddleware
 from search.mcp_server import build_mcp_app as _real_build_mcp_app
 from search.models import SearchResult
 from search.offload import LazySemaphore
@@ -147,7 +150,7 @@ async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
     restart. The second resolve returns a different core, as a config_version bump
     would.
     """
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core_v1 = _make_core()
     core_v2 = _make_core()
@@ -164,7 +167,7 @@ async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
         search_semaphore=LazySemaphore(0),
     )
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         await client.call_tool("semantic_search", {"query": "first"})
         await client.call_tool("semantic_search", {"query": "second"})
 
@@ -178,7 +181,7 @@ async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
 @pytest.mark.anyio
 async def test_semantic_search_calls_retrieve_and_returns_sources() -> None:
     """semantic_search invokes core.retrieve and exposes sources without answer."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     retrieve_result = _retrieve_result()
     core = _make_core(retrieve_result=retrieve_result)
@@ -186,8 +189,8 @@ async def test_semantic_search_calls_retrieve_and_returns_sources() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(
-        mcp_app._fastmcp  # access the FastMCP instance for in-memory transport
+    async with connect_client(
+        mcp_app._server  # the MCPServer instance, connected in process
     ) as client:
         result = await client.call_tool("semantic_search", {"query": "invoice 2024"})
 
@@ -209,7 +212,7 @@ async def test_semantic_search_calls_retrieve_and_returns_sources() -> None:
 @pytest.mark.anyio
 async def test_deep_search_calls_answer_and_returns_full_result() -> None:
     """deep_search invokes core.answer and returns answer + sources."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     answer_result = _answer_result()
     core = _make_core(answer_result=answer_result)
@@ -217,7 +220,7 @@ async def test_deep_search_calls_answer_and_returns_full_result() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool(
             "deep_search", {"question": "What does the invoice cover?"}
         )
@@ -245,14 +248,14 @@ async def test_deep_search_calls_answer_and_returns_full_result() -> None:
 @pytest.mark.anyio
 async def test_semantic_search_with_no_filters_passes_none_ui_filters() -> None:
     """semantic_search with no filters argument passes ui_filters=None."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         await client.call_tool("semantic_search", {"query": "boiler warranty"})
 
     core.retrieve.assert_called_once()
@@ -267,14 +270,14 @@ async def test_semantic_search_with_no_filters_passes_none_ui_filters() -> None:
 @pytest.mark.anyio
 async def test_deep_search_with_no_filters_passes_none_ui_filters() -> None:
     """deep_search with no filters argument passes ui_filters=None."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         await client.call_tool("deep_search", {"question": "What is my name?"})
 
     core.answer.assert_called_once()
@@ -289,18 +292,18 @@ async def test_deep_search_with_no_filters_passes_none_ui_filters() -> None:
 async def test_semantic_search_missing_required_query_is_rejected() -> None:
     """A call to semantic_search without the required 'query' argument is rejected.
 
-    FastMCP validates required arguments and returns an error result
+    MCPServer validates required arguments and returns an error result
     (``isError=True``) rather than raising an exception, as per the MCP
     protocol's tool-error mechanism.
     """
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("semantic_search", {})  # missing 'query'
 
     assert result.isError is True
@@ -312,17 +315,17 @@ async def test_semantic_search_missing_required_query_is_rejected() -> None:
 async def test_deep_search_missing_required_question_is_rejected() -> None:
     """A call to deep_search without the required 'question' argument is rejected.
 
-    FastMCP validates required arguments and returns an error result
+    MCPServer validates required arguments and returns an error result
     (``isError=True``) rather than raising an exception.
     """
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("deep_search", {})  # missing 'question'
 
     assert result.isError is True
@@ -333,14 +336,14 @@ async def test_deep_search_missing_required_question_is_rejected() -> None:
 @pytest.mark.anyio
 async def test_tools_list_exposes_the_expected_tools() -> None:
     """The MCP advertises exactly the expected tools and nothing retired."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         listed = await client.list_tools()
 
     names = {tool.name for tool in listed.tools}
@@ -433,6 +436,82 @@ def test_api_key_without_mcp_scope_is_rejected_with_401() -> None:
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("accept", ["*/*", "text/event-stream-x"])
+def test_authenticated_get_not_accepting_event_stream_gets_406(accept: str) -> None:
+    """A GET that does not name exactly ``text/event-stream`` is refused at once."""
+    core = _make_core()
+    settings = _make_settings()
+    app_db_path, raw_key = _app_db_with_key(scopes="mcp")
+
+    asgi_app = build_mcp_app(core, settings, app_db_path)
+    client = TestClient(asgi_app, raise_server_exceptions=False)
+
+    response = client.get(
+        "/mcp",
+        headers={"Authorization": f"Bearer {raw_key}", "Accept": accept},
+    )
+
+    assert response.status_code == 406
+    assert "text/event-stream" in response.json()["error"]["message"]
+
+
+def test_event_stream_accept_is_matched_case_insensitively() -> None:
+    """``Accept: Text/Event-Stream`` passes the GET check; it is not answered 406."""
+    reached: list[bool] = []
+
+    async def inner(scope: object, receive: object, send: object) -> None:
+        reached.append(True)
+
+    middleware = _SseAcceptOnGetMiddleware(inner)
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "headers": [(b"accept", b"Text/Event-Stream")],
+    }
+
+    async def send(message: object) -> None:
+        pass
+
+    asyncio.run(middleware(scope, None, send))  # type: ignore[arg-type]
+
+    assert reached == [True]
+
+
+def test_initialize_reports_the_installed_mcp_version() -> None:
+    """serverInfo.version is the installed mcp package version, not empty."""
+    core = _make_core()
+    settings = _make_settings()
+    app_db_path, raw_key = _app_db_with_key(scopes="mcp")
+
+    asgi_app = build_mcp_app(core, settings, app_db_path)
+    with TestClient(asgi_app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/mcp",
+            headers={
+                "Authorization": f"Bearer {raw_key}",
+                "Accept": "application/json, text/event-stream",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "id": 1,
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0.1"},
+                },
+            },
+        )
+
+    body = response.text
+    data_line = next(
+        (ln[5:] for ln in body.splitlines() if ln.startswith("data:")), body
+    )
+    version = json.loads(data_line)["result"]["serverInfo"]["version"]
+    assert version
+    assert version == importlib.metadata.version("mcp")
 
 
 def test_no_bearer_prefix_is_rejected() -> None:
@@ -531,7 +610,7 @@ async def test_semantic_search_core_exception_does_not_leak_path() -> None:
     A core exception whose message contains a path must reach the client only as a
     generic sanitised message, never as ``str(exc)``.
     """
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     secret_path = "/var/data/paperless/index.db"
 
@@ -543,7 +622,7 @@ async def test_semantic_search_core_exception_does_not_leak_path() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("semantic_search", {"query": "test"})
 
     assert result.isError is True
@@ -561,7 +640,7 @@ async def test_semantic_search_core_exception_does_not_leak_path() -> None:
 @pytest.mark.anyio
 async def test_deep_search_core_exception_does_not_leak_path() -> None:
     """deep_search must not expose filesystem paths in error text."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     secret_path = "/var/data/paperless/index.db"
 
@@ -573,7 +652,7 @@ async def test_deep_search_core_exception_does_not_leak_path() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("deep_search", {"question": "test"})
 
     assert result.isError is True
@@ -589,7 +668,7 @@ async def test_deep_search_core_exception_does_not_leak_path() -> None:
 @pytest.mark.anyio
 async def test_semantic_search_rejects_over_length_query() -> None:
     """semantic_search must reject a query exceeding 4000 characters."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
@@ -598,7 +677,7 @@ async def test_semantic_search_rejects_over_length_query() -> None:
 
     too_long = "x" * 4001
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("semantic_search", {"query": too_long})
 
     assert result.isError is True
@@ -613,7 +692,7 @@ async def test_semantic_search_rejects_over_length_query() -> None:
 @pytest.mark.anyio
 async def test_deep_search_rejects_over_length_question() -> None:
     """deep_search must reject a question exceeding 4000 characters."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
@@ -622,7 +701,7 @@ async def test_deep_search_rejects_over_length_question() -> None:
 
     too_long = "x" * 4001
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("deep_search", {"question": too_long})
 
     assert result.isError is True
@@ -636,14 +715,14 @@ async def test_deep_search_rejects_over_length_question() -> None:
 @pytest.mark.anyio
 async def test_semantic_search_rejects_empty_query() -> None:
     """An empty query is rejected at the boundary, never reaching the LLM."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("semantic_search", {"query": ""})
 
     assert result.isError is True
@@ -653,14 +732,14 @@ async def test_semantic_search_rejects_empty_query() -> None:
 @pytest.mark.anyio
 async def test_deep_search_rejects_whitespace_only_question() -> None:
     """A whitespace-only question is rejected before any LLM spend."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         result = await client.call_tool("deep_search", {"question": "   \t  "})
 
     assert result.isError is True
@@ -670,14 +749,14 @@ async def test_deep_search_rejects_whitespace_only_question() -> None:
 @pytest.mark.anyio
 async def test_deep_search_trims_surrounding_whitespace() -> None:
     """A valid question is trimmed so the pipeline sees one normalised form."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core(answer_result=_answer_result())
     settings = _make_settings()
 
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
-    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+    async with connect_client(mcp_app._server) as client:
         await client.call_tool("deep_search", {"question": "  what is owed?  "})
 
     core.answer.assert_called_once()

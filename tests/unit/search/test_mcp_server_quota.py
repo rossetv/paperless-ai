@@ -100,13 +100,13 @@ def _text(result) -> str:
 async def test_semantic_search_still_runs_after_the_quota_is_used_up(
     app_db_path: str,
 ) -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     _use_up_quota(app_db_path)
     core = _make_core()
     app = _build(core, app_db_path)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool("semantic_search", {"query": "invoice"})
 
     assert result.isError is False
@@ -117,12 +117,12 @@ async def test_semantic_search_still_runs_after_the_quota_is_used_up(
 async def test_semantic_search_does_not_count_against_the_quota(
     app_db_path: str,
 ) -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core()
     app = _build(core, app_db_path)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         await client.call_tool("semantic_search", {"query": "invoice"})
 
     assert _tokens_used(app_db_path) == 0
@@ -132,12 +132,12 @@ async def test_semantic_search_does_not_count_against_the_quota(
 async def test_deep_search_is_counted_and_then_refused_at_the_quota(
     app_db_path: str,
 ) -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core(answer_tokens=QUOTA)
     app = _build(core, app_db_path)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         first = await client.call_tool("deep_search", {"question": "invoice"})
         second = await client.call_tool("deep_search", {"question": "invoice"})
 
@@ -152,7 +152,7 @@ async def test_deep_search_is_counted_and_then_refused_at_the_quota(
 async def test_deep_search_answered_from_the_cache_records_no_tokens(
     app_db_path: str,
 ) -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core(answer_tokens=50)
 
@@ -163,7 +163,7 @@ async def test_deep_search_answered_from_the_cache_records_no_tokens(
     core.answer.side_effect = _cached_answer
     app = _build(core, app_db_path)
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         result = await client.call_tool("deep_search", {"question": "invoice"})
 
     assert result.isError is False
@@ -174,7 +174,7 @@ async def test_deep_search_answered_from_the_cache_records_no_tokens(
 async def test_deep_search_waiting_for_a_slot_is_refused_if_the_quota_ran_out_meanwhile(
     app_db_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from tests.helpers.mcp_client import connect_client
 
     core = _make_core(max_concurrent=1, answer_tokens=QUOTA)
     in_answer = threading.Event()
@@ -206,7 +206,7 @@ async def test_deep_search_waiting_for_a_slot_is_refused_if_the_quota_ran_out_me
     async def _call(name: str, client) -> None:
         results[name] = await client.call_tool("deep_search", {"question": "q"})
 
-    async with create_connected_server_and_client_session(app._fastmcp) as client:
+    async with connect_client(app._server) as client:
         async with anyio.create_task_group() as tg:
             # The first call passes both checks and holds the only slot.
             tg.start_soon(_call, "first", client)
@@ -243,7 +243,7 @@ async def test_cancelled_deep_search_keeps_its_slot_until_the_work_ends_and_reco
     app = build_mcp_app(lambda _path: core, app_db_path, search_semaphore=semaphore)
 
     call = asyncio.ensure_future(
-        app._fastmcp.call_tool("deep_search", {"question": "invoice"})
+        app._server.call_tool("deep_search", {"question": "invoice"})
     )
     try:
         await anyio.to_thread.run_sync(in_answer.wait)
@@ -290,7 +290,7 @@ async def test_work_of_a_cancelled_deep_search_that_then_fails_is_logged_not_dro
     )
 
     call = asyncio.ensure_future(
-        app._fastmcp.call_tool("deep_search", {"question": "invoice"})
+        app._server.call_tool("deep_search", {"question": "invoice"})
     )
     with structlog.testing.capture_logs() as logs:
         try:
