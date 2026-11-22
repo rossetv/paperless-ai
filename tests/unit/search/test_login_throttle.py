@@ -217,3 +217,58 @@ def test_the_per_username_map_is_also_bounded() -> None:
     for index in range(_MAX_TRACKED_KEYS + 50):
         throttle.record_failure(_key(username=f"user-{index}", ip="10.0.0.1"))
     assert throttle.username_size() <= _MAX_TRACKED_KEYS
+
+
+# Attempts under way: the lock decision counts them, so a burst of concurrent
+# logins cannot all start before the first failure is recorded.
+
+
+def test_attempts_under_way_count_toward_the_limit() -> None:
+    """Once the threshold of attempts is in flight, the next one is refused."""
+    throttle = LoginThrottle(clock=_FakeClock())
+    key = _key()
+    for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+        assert throttle.begin_attempt(key) is True
+    assert throttle.begin_attempt(key) is False
+    assert throttle.is_locked(key) is True
+
+
+def test_attempts_under_way_count_toward_the_per_username_limit() -> None:
+    """In-flight attempts from many IPs count against the username."""
+    throttle = LoginThrottle(clock=_FakeClock())
+    for index in range(_MAX_FAILURES_PER_USERNAME):
+        assert throttle.begin_attempt(_key(ip=f"203.0.113.{index}")) is True
+    assert throttle.begin_attempt(_key(ip="198.51.100.7")) is False
+
+
+def test_in_flight_attempts_and_past_failures_add_up() -> None:
+    """Recorded failures plus attempts under way reach the threshold together."""
+    throttle = LoginThrottle(clock=_FakeClock())
+    key = _key()
+    for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT - 1):
+        assert throttle.begin_attempt(key) is True
+        throttle.record_failure(key)
+    assert throttle.begin_attempt(key) is True
+    assert throttle.begin_attempt(key) is False
+
+
+def test_a_success_frees_its_slot_without_dropping_others_in_flight() -> None:
+    """A success clears the history but other attempts under way still count."""
+    throttle = LoginThrottle(clock=_FakeClock())
+    key = _key()
+    for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+        assert throttle.begin_attempt(key) is True
+    throttle.record_success(key)
+    assert throttle.begin_attempt(key) is True
+    assert throttle.begin_attempt(key) is False
+
+
+def test_an_abandoned_attempt_frees_its_slot_and_counts_no_failure() -> None:
+    """An attempt that ends in an error neither holds its slot nor counts."""
+    throttle = LoginThrottle(clock=_FakeClock())
+    key = _key()
+    for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+        assert throttle.begin_attempt(key) is True
+        throttle.abandon_attempt(key)
+    assert throttle.is_locked(key) is False
+    assert throttle.begin_attempt(key) is True

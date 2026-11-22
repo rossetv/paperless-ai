@@ -11,7 +11,8 @@ any argon2 work) if either is locked:
   behind a shared NAT is not locked out as eagerly as a lone attacker.
 
 Only repeated failures inside the rolling window accrue; a success clears both
-entries. The counters are process-local, which is correct for this
+entries. An attempt still being checked counts toward the limit too, so a burst
+of concurrent logins cannot all start before the first failure is recorded. The counters are process-local, which is correct for this
 single-process server but would not be shared across replicas.
 """
 
@@ -84,6 +85,38 @@ def _is_record_locked(record: _AttemptRecord, now: float) -> bool:
     return True
 
 
+def _would_lock(
+    records: OrderedDict[_K, _AttemptRecord],
+    pending: dict[_K, int],
+    key: _K,
+    now: float,
+    *,
+    threshold: int,
+) -> bool:
+    """Whether one more attempt for *key* is refused. The caller holds the lock.
+
+    In-window failures and attempts under way are added up, so the limit holds
+    whether the attempts come one after another or all at once.
+    """
+    failures = 0
+    record = records.get(key)
+    if record is not None:
+        if _is_record_locked(record, now):
+            return True
+        cutoff = now - _FAILURE_WINDOW_SECONDS
+        failures = sum(1 for t in record.failure_times if t > cutoff)
+    return failures + pending.get(key, 0) >= threshold
+
+
+def _settle(pending: dict[_K, int], key: _K) -> None:
+    """Drop one attempt under way for *key*. The caller holds the lock."""
+    count = pending.get(key, 0)
+    if count <= 1:
+        pending.pop(key, None)
+    else:
+        pending[key] = count - 1
+
+
 def _register_failure(
     records: OrderedDict[_K, _AttemptRecord],
     key: _K,
@@ -116,8 +149,10 @@ class LoginThrottle:
     """A bounded, TTL'd, thread-safe failed-login throttle.
 
     Both counters (see the module docstring) share one lock and use an
-    ``OrderedDict`` for O(1) oldest-first eviction. *clock* is injectable for
-    tests.
+    ``OrderedDict`` for O(1) oldest-first eviction. A login calls
+    :meth:`begin_attempt` before checking the password, then settles it with
+    exactly one of :meth:`record_failure`, :meth:`record_success` or
+    :meth:`abandon_attempt`. *clock* is injectable for tests.
     """
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
@@ -125,32 +160,65 @@ class LoginThrottle:
         self._lock = threading.Lock()
         self._records: OrderedDict[AttemptKey, _AttemptRecord] = OrderedDict()
         self._username_records: OrderedDict[str, _AttemptRecord] = OrderedDict()
+        # Attempts begun and not yet settled; an entry goes when it reaches zero,
+        # so these stay as small as the number of logins in flight.
+        self._pending: dict[AttemptKey, int] = {}
+        self._username_pending: dict[str, int] = {}
 
     def is_locked(self, key: AttemptKey) -> bool:
-        """Return whether *key* is locked by either counter.
+        """Return whether a new attempt for *key* would be refused by either counter."""
+        now = self._clock()
+        with self._lock:
+            return self._is_locked(key, now)
 
-        Called before authenticating, so a locked key costs no argon2 work.
+    def begin_attempt(self, key: AttemptKey) -> bool:
+        """Reserve a slot for a login attempt; ``False`` when *key* is locked.
+
+        Called before authenticating, so a locked key costs no argon2 work. The
+        check and the reservation are one step, so attempts already under way
+        count toward the limit.
         """
         now = self._clock()
         with self._lock:
-            return self._is_key_locked(key, now) or self._is_username_locked(
-                key.username, now
+            if self._is_locked(key, now):
+                return False
+            self._pending[key] = self._pending.get(key, 0) + 1
+            self._username_pending[key.username] = (
+                self._username_pending.get(key.username, 0) + 1
             )
+            return True
 
-    def _is_key_locked(self, key: AttemptKey, now: float) -> bool:
-        """Whether the per-(IP, username) counter is locked. Caller holds lock."""
-        record = self._records.get(key)
-        return record is not None and _is_record_locked(record, now)
+    def _is_locked(self, key: AttemptKey, now: float) -> bool:
+        """Whether either counter refuses one more attempt. Caller holds the lock."""
+        return _would_lock(
+            self._records,
+            self._pending,
+            key,
+            now,
+            threshold=_MAX_FAILURES_BEFORE_LOCKOUT,
+        ) or _would_lock(
+            self._username_records,
+            self._username_pending,
+            key.username,
+            now,
+            threshold=_MAX_FAILURES_PER_USERNAME,
+        )
 
-    def _is_username_locked(self, username: str, now: float) -> bool:
-        """Whether the per-username counter is locked. Caller holds the lock."""
-        record = self._username_records.get(username)
-        return record is not None and _is_record_locked(record, now)
+    def _settle(self, key: AttemptKey) -> None:
+        """Drop one attempt under way for *key* in both maps. Caller holds lock."""
+        _settle(self._pending, key)
+        _settle(self._username_pending, key.username)
+
+    def abandon_attempt(self, key: AttemptKey) -> None:
+        """Settle an attempt that ended in an error, counting no failure."""
+        with self._lock:
+            self._settle(key)
 
     def record_failure(self, key: AttemptKey) -> None:
         """Record one failed login for *key* against both counters."""
         now = self._clock()
         with self._lock:
+            self._settle(key)
             _register_failure(
                 self._records,
                 key,
@@ -167,6 +235,7 @@ class LoginThrottle:
     def record_success(self, key: AttemptKey) -> None:
         """Clear *key*'s history in both counters, including the per-username one."""
         with self._lock:
+            self._settle(key)
             self._records.pop(key, None)
             self._username_records.pop(key.username, None)
 
@@ -185,6 +254,8 @@ class LoginThrottle:
         with self._lock:
             self._records.clear()
             self._username_records.clear()
+            self._pending.clear()
+            self._username_pending.clear()
 
 
 # Process-wide: a fresh instance per request would forget every prior failure.

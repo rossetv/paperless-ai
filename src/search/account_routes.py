@@ -227,7 +227,7 @@ def _login(
     client_ip = request.client.host if request.client else None
     attempt_key = build_attempt_key(client_ip=client_ip, username=body.username)
     throttle = get_login_throttle()
-    if throttle.is_locked(attempt_key):
+    if not throttle.begin_attempt(attempt_key):
         # Generic message, no account hints.
         log.warning("search.login_throttled", username=body.username)
         raise HTTPException(
@@ -235,7 +235,11 @@ def _login(
             detail="Too many failed login attempts. Try again later.",
         )
 
-    user = authenticate(app_db, body.username, body.password)
+    try:
+        user = authenticate(app_db, body.username, body.password)
+    except BaseException:
+        throttle.abandon_attempt(attempt_key)
+        raise
     if user is None:
         # Wrong username or password — one message for both, so the response
         # does not reveal whether the username exists. Count the failure toward
