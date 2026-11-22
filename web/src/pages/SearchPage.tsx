@@ -177,6 +177,7 @@ export function SearchPage(): React.ReactElement {
   return (
     <Page>
       <AppNavBar />
+      <h1 className="visually-hidden">Search</h1>
       {renderScreen()}
     </Page>
   );
