@@ -49,11 +49,10 @@ export function ConnectionCard({
         <button
           type="button"
           aria-expanded={open}
-          aria-label={title}
           className={styles['toggle']}
           onClick={toggle}
         >
-          <span className={styles['glyph']}>{glyph}</span>
+          <span className={styles['glyph']} aria-hidden="true">{glyph}</span>
 
           <span className={styles['header-info']}>
             <span className={styles['title']}>{title}</span>

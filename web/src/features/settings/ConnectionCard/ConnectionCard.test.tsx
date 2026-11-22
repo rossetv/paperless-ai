@@ -18,15 +18,20 @@ function makeCard(overrides: Partial<React.ComponentProps<typeof ConnectionCard>
   );
 }
 
-/** The accordion header toggle button — matches exact name "Paperless-ngx". */
+/** The accordion header toggle button — its name starts with the card title. */
 function getHeaderToggle() {
-  return screen.getByRole('button', { name: 'Paperless-ngx' });
+  return screen.getByRole('button', { name: /^Paperless-ngx/ });
 }
 
 describe('ConnectionCard', () => {
   it('starts collapsed — body not visible', () => {
     render(makeCard());
     expect(screen.queryByTestId('card-body')).not.toBeVisible();
+  });
+
+  it('names the header toggle with all the text it shows', () => {
+    render(makeCard());
+    expect(getHeaderToggle()).toHaveAccessibleName(/Paperless-ngx.*Where documents live.*Untested/);
   });
 
   it('expands on header click and body becomes visible', async () => {

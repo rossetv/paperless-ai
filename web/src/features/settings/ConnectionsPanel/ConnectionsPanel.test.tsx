@@ -111,7 +111,7 @@ describe('ConnectionsPanel', () => {
 
   it('expanding a card reveals its fields', async () => {
     renderPanel(DRAFT_OPENAI);
-    const paperlessHeader = screen.getByRole('button', { name: 'Paperless-ngx' });
+    const paperlessHeader = screen.getByRole('button', { name: /^Paperless-ngx/ });
     await userEvent.click(paperlessHeader);
     expect(screen.getByText('Server URL')).toBeVisible();
   });
