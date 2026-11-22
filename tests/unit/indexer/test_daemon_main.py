@@ -93,6 +93,46 @@ def test_main_proceeds_when_lock_acquired(
         lock_handle.close()
 
 
+def test_main_opens_the_default_app_db_when_the_env_path_is_blank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_handle = open(str(tmp_path / "index.db.lock"), "wb")
+    opened: list[str] = []
+    try:
+        settings = make_settings_obj(INDEX_DB_PATH=str(tmp_path / "index.db"))
+        monkeypatch.setenv("APP_DB_PATH", "  ")
+        monkeypatch.setattr(
+            "indexer.daemon._boot.current_settings", lambda *a, **kw: settings
+        )
+        monkeypatch.setattr("indexer.daemon._boot.configure_logging", lambda s: None)
+        monkeypatch.setattr("indexer.daemon._boot.setup_libraries", lambda s: None)
+        monkeypatch.setattr(
+            "indexer.daemon._boot.acquire_writer_lock", lambda path: lock_handle
+        )
+        monkeypatch.setattr(
+            "indexer.daemon._boot.register_signal_handlers", lambda: None
+        )
+        monkeypatch.setattr(
+            "indexer.daemon._boot._open_app_db", lambda path: opened.append(path)
+        )
+        # Preflight fails right after the app.db path is resolved.
+        monkeypatch.setattr(
+            "indexer.daemon._boot.PaperlessClient",
+            lambda s: MagicMock(ping=MagicMock(side_effect=SystemExit(1))),
+        )
+        monkeypatch.setattr("indexer.daemon._boot.EmbeddingClient", MagicMock())
+        monkeypatch.setattr("indexer.daemon._boot.StoreWriter", MagicMock())
+
+        from indexer import daemon
+
+        with pytest.raises(SystemExit):
+            daemon.main()
+    finally:
+        lock_handle.close()
+
+    assert opened == ["/data/app.db"]
+
+
 def test_interruptible_wait_returns_false_on_shutdown(tmp_path: Path) -> None:
     sentinel_path = tmp_path / "reconcile.request"
 

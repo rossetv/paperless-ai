@@ -6,7 +6,6 @@ takes effect on the next cycle without a restart.
 
 from __future__ import annotations
 
-import os
 import threading
 from dataclasses import dataclass
 from typing import Iterable
@@ -18,7 +17,7 @@ from appdb.schema import ensure_schema
 from common.bootstrap import bootstrap_daemon
 from common.circuit_breaker import HALTED_DETAIL, WriteBackCircuitBreaker
 from common.concurrency import llm_limiter
-from common.config import Settings, current_settings
+from common.config import Settings, app_db_path_from_env, current_settings
 from common.daemon_loop import CycleOutcome, run_polling_threadpool
 from common.heartbeat import Heartbeat, run_stall_ticker
 from common.document_iter import iter_documents_by_pipeline_tag
@@ -151,7 +150,7 @@ def main() -> None:
     taxonomy_client = PaperlessClient(settings)
     taxonomy_cache = TaxonomyCache(taxonomy_client, settings.CLASSIFY_TAXONOMY_LIMIT)
 
-    app_db_path = os.environ.get("APP_DB_PATH", "/data/app.db")
+    app_db_path = app_db_path_from_env()
     state = _DaemonState(
         settings=settings,
         list_client=list_client,

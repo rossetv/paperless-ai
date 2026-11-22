@@ -13,7 +13,8 @@ import pytest
 from appdb import config as config_store
 from appdb.connection import connect
 from appdb.schema import ensure_schema
-from common.config import load_settings
+from common.config import app_db_path_from_env, load_settings
+from common.config._loader import _resolve_app_db_path
 
 _MINIMAL_ENV = {
     "PAPERLESS_TOKEN": "env-token",
@@ -242,3 +243,15 @@ def test_ai_models_deprecation_warning_silent_when_new_keys_set() -> None:
         assert _settings_mod._ai_models_deprecation_warned is False
     finally:
         _settings_mod._ai_models_deprecation_warned = False
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_app_db_path_means_the_default_path(blank) -> None:
+    with patch.dict(os.environ, {"APP_DB_PATH": blank}, clear=True):
+        assert app_db_path_from_env() == "/data/app.db"
+        assert _resolve_app_db_path(None) == "/data/app.db"
+
+
+def test_app_db_path_from_the_environment_is_used_and_stripped() -> None:
+    with patch.dict(os.environ, {"APP_DB_PATH": " /srv/app.db "}, clear=True):
+        assert app_db_path_from_env() == "/srv/app.db"

@@ -11,7 +11,8 @@ import threading
 from collections.abc import Mapping
 
 from ._catalogue import CONFIG_KEYS
-from ._settings import Settings, _build_settings
+from ._parsers import _get_str_env
+from ._settings import _DEFAULT_APP_DB_PATH, Settings, _build_settings
 
 
 def load_settings(app_db_path: str) -> Settings:
@@ -56,13 +57,18 @@ _SETTINGS_CACHE: dict[str, tuple[int, Settings]] = {}
 _SETTINGS_CACHE_LOCK = threading.Lock()
 
 
+def app_db_path_from_env() -> str:
+    """Return ``APP_DB_PATH`` from the environment; unset or blank is the default.
+
+    A blank path would open a private temporary database, so every process
+    would get its own empty config.
+    """
+    return _get_str_env(os.environ, "APP_DB_PATH", _DEFAULT_APP_DB_PATH)
+
+
 def _resolve_app_db_path(app_db_path: str | None) -> str:
     """Resolve *app_db_path* to the path that will be used as the cache key."""
-    return (
-        app_db_path
-        if app_db_path is not None
-        else os.environ.get("APP_DB_PATH", "/data/app.db")
-    )
+    return app_db_path if app_db_path is not None else app_db_path_from_env()
 
 
 def _hot_load(resolved: str) -> tuple[int, Settings]:

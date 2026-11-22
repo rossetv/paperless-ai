@@ -9,7 +9,12 @@ raise ``ValueError`` naming the offending variable.
 from __future__ import annotations
 
 from ._catalogue import BOOTSTRAP_KEYS, CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
-from ._loader import current_settings, current_settings_with_version, load_settings
+from ._loader import (
+    app_db_path_from_env,
+    current_settings,
+    current_settings_with_version,
+    load_settings,
+)
 from ._settings import Settings, build_settings
 
 # Re-exported for tests that reset the hot-load cache between cases; private, so
@@ -22,6 +27,7 @@ __all__ = [
     "REINDEX_KEYS",
     "SECRET_KEYS",
     "Settings",
+    "app_db_path_from_env",
     "build_settings",
     "current_settings",
     "current_settings_with_version",
