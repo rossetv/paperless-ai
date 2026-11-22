@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from store.migrations import StoreError
 from store.reader import _lookups
 from store.reader._filters import MAX_FTS_TERMS, build_match_expr
 from store.reader._reader import StoreReader
@@ -15,6 +18,24 @@ def test_match_expr_without_repeats_is_and_of_quoted_terms() -> None:
 
 def test_match_expr_drops_repeated_terms_keeping_first_seen_order() -> None:
     assert build_match_expr(["b", "a", "b", "a", "c"]) == '"b" AND "a" AND "c"'
+
+
+def test_match_expr_merges_spellings_the_tokenizer_treats_alike() -> None:
+    expr = build_match_expr(["the", "The", "THE", "the.", "the,", "(the)"])
+
+    assert expr == '"the"'
+
+
+def test_match_expr_keeps_terms_with_different_tokens() -> None:
+    terms = ["boiler", "boiler room", "room boiler", "boilers", "café", "cafe"]
+
+    expr = build_match_expr(terms)
+
+    assert expr == " AND ".join(f'"{t}"' for t in terms)
+
+
+def test_match_expr_keeps_a_term_without_tokens() -> None:
+    assert build_match_expr(["a", "..", "a."]) == '"a" AND ".."'
 
 
 def test_match_expr_keeps_at_most_the_term_cap() -> None:
@@ -88,4 +109,23 @@ def test_quick_check_caches_a_failing_result(populated_db: str, monkeypatch) -> 
     assert reader.quick_check() is False
     assert reader.quick_check() is False
     assert len(calls) == 1
+    reader.close()
+
+
+def test_quick_check_error_is_not_cached(populated_db: str, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def flaky(conn, lock):
+        calls.append(1)
+        if len(calls) == 1:
+            raise StoreError("busy")
+        return True
+
+    monkeypatch.setattr(_lookups, "quick_check", flaky)
+    reader = _reader_with_clock(populated_db, _Clock())
+
+    with pytest.raises(StoreError):
+        reader.quick_check()
+    assert reader.quick_check() is True
+    assert len(calls) == 2
     reader.close()
