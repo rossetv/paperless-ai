@@ -67,7 +67,7 @@
 }
 
 .destructive {
-  background-color: var(--colour-status-danger-fg);
+  background-color: var(--colour-button-destructive-bg);
   color: var(--colour-text-on-dark);
   border-color: transparent;
   padding: var(--spacing-6) var(--spacing-11);
