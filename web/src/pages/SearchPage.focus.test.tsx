@@ -6,16 +6,24 @@ import { MemoryRouter } from 'react-router-dom';
 import { SearchPage } from './SearchPage';
 
 vi.mock('../features/shell/AppNavBar/AppNavBar', () => ({
-  AppNavBar: () => null,
+  AppNavBar: () => <button type="button">Account</button>,
 }));
 
 // Each screen is a stand-in with the real field's shape: a search input and a
 // named submit button; the loading screen's input is disabled, as the real one is.
+// A tag filter's search input comes first, as the filter panel's does.
 type Fields = { onSearch?: (q: string) => void; disabled?: boolean };
 function Field({ onSearch, disabled = false }: Fields) {
   return (
     <>
-      <input type="search" aria-label="field" disabled={disabled} defaultValue="" />
+      <input type="search" id="filter-tags-search" aria-label="Search tags" />
+      <input
+        type="search"
+        id="results-search"
+        aria-label="What do you want to know?"
+        disabled={disabled}
+        defaultValue=""
+      />
       <button type="button" onClick={() => onSearch?.('pill')}>
         pill
       </button>
@@ -67,15 +75,32 @@ describe('SearchPage focus', () => {
   it('returns focus to the search field once the results of a submitted search appear', async () => {
     streamState = { status: 'streaming', query: 'bills', phaseRecords: [], activePhase: null, result: null, error: null };
     const { rerender } = render(tree());
-    await userEvent.click(screen.getByRole('searchbox'));
+    const field = () => screen.getByRole('searchbox', { name: 'What do you want to know?' });
+    await userEvent.click(field());
     await userEvent.click(screen.getByRole('button', { name: 'Search' }));
     // Searching: the field is disabled and cannot hold focus.
-    expect(screen.getByRole('searchbox')).toBeDisabled();
+    expect(field()).toBeDisabled();
+    // The tag filter is enabled all the while, but is not the field to return to.
+    expect(screen.getByRole('searchbox', { name: 'Search tags' })).not.toHaveFocus();
 
     streamState = { ...streamState, status: 'done', result: RESULT };
     rerender(tree());
 
-    expect(screen.getByRole('searchbox')).toHaveFocus();
+    expect(field()).toHaveFocus();
+  });
+
+  it('leaves focus where the person put it while the search ran', async () => {
+    streamState = { status: 'streaming', query: 'bills', phaseRecords: [], activePhase: null, result: null, error: null };
+    const { rerender } = render(tree());
+    await userEvent.click(screen.getByRole('searchbox', { name: 'What do you want to know?' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Account' })).toHaveFocus();
+
+    streamState = { ...streamState, status: 'done', result: RESULT };
+    rerender(tree());
+
+    expect(screen.getByRole('button', { name: 'Account' })).toHaveFocus();
   });
 
   it('does not take focus when the search was started from outside the field', async () => {
@@ -85,6 +110,6 @@ describe('SearchPage focus', () => {
     streamState = { ...streamState, status: 'done', result: RESULT };
     rerender(tree());
 
-    expect(screen.getByRole('searchbox')).not.toHaveFocus();
+    expect(screen.getByRole('searchbox', { name: 'What do you want to know?' })).not.toHaveFocus();
   });
 });
