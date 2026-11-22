@@ -7,7 +7,6 @@ ranked lists.
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -40,12 +39,19 @@ log = structlog.get_logger(__name__)
 _RRF_K = 60
 
 
+def _fold(text: str) -> str:
+    """Lower-case, strip accents and map every non-letter/digit to a space."""
+    decomposed = unicodedata.normalize("NFKD", text).casefold()
+    return "".join(
+        ch if ch.isalnum() else " "
+        for ch in decomposed
+        if not unicodedata.combining(ch)
+    )
+
+
 def _normalise(text: str) -> str:
     """Normalise for fuzzy taxonomy matching: "Gas-Bill." == "gas bill" == "gasbill"."""
-    text = unicodedata.normalize("NFKC", text)
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]", "", text)
-    return text
+    return "".join(_fold(text).split())
 
 
 # Connectives ignored when comparing word sets. "a"/"an" are left out on purpose:
@@ -70,8 +76,7 @@ class NameMatch:
 
 def _tokenise(text: str) -> frozenset[str]:
     """Split *text* into normalised whole-word tokens, so "ID" never matches "Video"."""
-    folded = unicodedata.normalize("NFKC", text).lower()
-    return frozenset(tok for tok in re.split(r"[^a-z0-9]+", folded) if tok)
+    return frozenset(_fold(text).split())
 
 
 def _content_tokens(text: str) -> frozenset[str]:
@@ -98,9 +103,10 @@ def _match_name(
             return NameMatch(id=entry.id, method="exact")
 
     normalised_candidate = _normalise(candidate)
-    for entry in entries:
-        if _normalise(entry.name) == normalised_candidate:
-            return NameMatch(id=entry.id, method="normalised")
+    if normalised_candidate:
+        for entry in entries:
+            if _normalise(entry.name) == normalised_candidate:
+                return NameMatch(id=entry.id, method="normalised")
 
     candidate_tokens = _content_tokens(candidate)
     if candidate_tokens:
