@@ -24,10 +24,10 @@ from typing import TYPE_CHECKING, cast
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
+from appdb import config as config_store
 from appdb import users as user_store
 from appdb.passwords import hash_password
 from appdb.users import Role, UsernameTakenError, UserStatus
-from common.config import current_settings
 from search.accounts import (
     GuardError,
     apply_guarded_delete,
@@ -59,6 +59,16 @@ if TYPE_CHECKING:
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
+
+
+def _remember_ttl(app_db: sqlite3.Connection, startup: Settings) -> int:
+    """The saved ``SEARCH_SESSION_TTL``, or the startup value when none is usable."""
+    saved = config_store.get(app_db, "SEARCH_SESSION_TTL")
+    try:
+        ttl = int(saved) if saved is not None else 0
+    except ValueError:
+        ttl = 0
+    return ttl if ttl >= 1 else startup.SEARCH_SESSION_TTL
 
 
 def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
@@ -96,7 +106,6 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
         request: Request,
         response: Response,
         app_db: sqlite3.Connection = Depends(get_app_db),
-        state: AppState = Depends(get_app_state),
     ) -> UserEnvelope:
         """Verify credentials and set the session cookie.
 
@@ -109,7 +118,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
             request,
             response,
             app_db,
-            remember_ttl_seconds=current_settings(state.app_db_path).SEARCH_SESSION_TTL,
+            remember_ttl_seconds=_remember_ttl(app_db, settings),
         )
 
     @router.post("/api/auth/logout", status_code=204)
