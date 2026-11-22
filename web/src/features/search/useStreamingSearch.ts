@@ -115,6 +115,21 @@ function toFailure(err: unknown): StreamFailure {
   };
 }
 
+/**
+ * The last finished search, kept across unmounts so Back from a preview shows
+ * the answer again instead of paying for the same search twice. In memory only:
+ * a reload searches afresh.
+ */
+let lastDone: { key: string; state: StreamingSearchState } | null = null;
+
+const searchKey = (query: string, filters: FilterRequest): string =>
+  `${query}\u0000${JSON.stringify(filters)}`;
+
+/** Forgets the kept search; for tests. */
+export function clearLastSearch(): void {
+  lastDone = null;
+}
+
 export interface UseStreamingSearch {
   state: StreamingSearchState;
   /** Starts a search, cancelling any in-flight one. */
@@ -123,14 +138,31 @@ export interface UseStreamingSearch {
 
 /** Runs agentic searches as a live NDJSON stream. */
 export function useStreamingSearch(): UseStreamingSearch {
-  const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
+  const [state, dispatch] = useReducer(
+    reducer,
+    lastDone?.state ?? INITIAL_STATE,
+  );
 
   // Refs, not state: changing them must not re-render, and the async loop
   // must read the latest value.
   const controllerRef = useRef<AbortController | null>(null);
   const runIdRef = useRef(0);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const keyRef = useRef<string | null>(lastDone?.key ?? null);
+
+  useEffect(() => {
+    if (state.status === 'done' && keyRef.current !== null) {
+      lastDone = { key: keyRef.current, state };
+    }
+  }, [state]);
 
   const run = useCallback((query: string, filters: FilterRequest): void => {
+    const key = searchKey(query, filters);
+    if (keyRef.current === key && stateRef.current.status === 'done') {
+      return;
+    }
+    keyRef.current = key;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -185,6 +217,12 @@ export function useStreamingSearch(): UseStreamingSearch {
             default:
               break;
           }
+        }
+        if (isCurrent()) {
+          dispatch({
+            type: 'error',
+            error: { message: 'The search ended unexpectedly.' },
+          });
         }
       } catch (err) {
         // A deliberate abort (supersede / unmount) is not a user-facing error.

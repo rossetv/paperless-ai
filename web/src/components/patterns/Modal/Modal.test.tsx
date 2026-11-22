@@ -118,7 +118,7 @@ describe('Modal', () => {
     await waitFor(() => expect(screen.getByLabelText('Field')).toHaveFocus());
     await userEvent.keyboard('{Escape}');
     expect(onKeyDown).toHaveBeenCalledTimes(1);
-    expect(onKeyDown.mock.calls[0][0].defaultPrevented).toBe(false);
+    expect(onKeyDown.mock.calls[0]?.[0].defaultPrevented).toBe(false);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 

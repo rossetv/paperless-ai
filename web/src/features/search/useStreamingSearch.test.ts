@@ -13,7 +13,7 @@ vi.mock('../../api/client', async (importOriginal) => {
 });
 
 import { streamSearch, parseNdjson, ApiError, Unauthenticated } from '../../api/client';
-import { useStreamingSearch } from './useStreamingSearch';
+import { clearLastSearch, useStreamingSearch } from './useStreamingSearch';
 
 const mockStreamSearch = streamSearch as ReturnType<typeof vi.fn>;
 const mockParseNdjson = parseNdjson as ReturnType<typeof vi.fn>;
@@ -80,6 +80,7 @@ describe('useStreamingSearch', () => {
   beforeEach(() => {
     mockStreamSearch.mockReset();
     mockParseNdjson.mockReset();
+    clearLastSearch();
   });
 
   afterEach(() => {
@@ -191,6 +192,88 @@ describe('useStreamingSearch', () => {
 
     await waitFor(() => expect(result.current.state.status).toBe('error'));
     expect(result.current.state.error?.status).toBe(503);
+  });
+
+  it('goes to the error state when the stream ends without a result or error', async () => {
+    mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+    mockParseNdjson.mockReturnValue(eventsGen([PLAN_START, PLAN_DONE]));
+
+    const { result } = renderHook(() => useStreamingSearch());
+    await act(async () => {
+      result.current.run('q', EMPTY_FILTERS);
+    });
+
+    await waitFor(() => expect(result.current.state.status).toBe('error'));
+    expect(result.current.state.error?.message).toBe(
+      'The search ended unexpectedly.',
+    );
+    expect(result.current.state.phaseRecords).toHaveLength(1);
+  });
+
+  describe('keeping the last finished search', () => {
+    async function finishSearch(query: string): Promise<void> {
+      mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+      mockParseNdjson.mockReturnValueOnce(
+        eventsGen([{ type: 'result', seq: 1, result: makeResponse('kept') }]),
+      );
+      const first = renderHook(() => useStreamingSearch());
+      await act(async () => {
+        first.result.current.run(query, EMPTY_FILTERS);
+      });
+      await waitFor(() => expect(first.result.current.state.status).toBe('done'));
+      first.unmount();
+      mockStreamSearch.mockClear();
+    }
+
+    it('shows the kept answer on remount and does not search again', async () => {
+      await finishSearch('q');
+
+      const { result } = renderHook(() => useStreamingSearch());
+      expect(result.current.state.status).toBe('done');
+      expect(result.current.state.result?.answer).toBe('kept');
+      await act(async () => {
+        result.current.run('q', EMPTY_FILTERS);
+      });
+      expect(mockStreamSearch).not.toHaveBeenCalled();
+      expect(result.current.state.status).toBe('done');
+    });
+
+    it('searches for a different query or different filters', async () => {
+      await finishSearch('q');
+      mockParseNdjson.mockImplementation(() => neverGen());
+
+      const { result } = renderHook(() => useStreamingSearch());
+      await act(async () => {
+        result.current.run('other', EMPTY_FILTERS);
+      });
+      expect(mockStreamSearch).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        result.current.run('other', { ...EMPTY_FILTERS, tag_ids: [3] });
+      });
+      expect(mockStreamSearch).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not keep a failed search, so Try again runs', async () => {
+      mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+      mockParseNdjson.mockReturnValueOnce(
+        eventsGen([{ type: 'error', seq: 1, kind: 'internal', message: 'boom' }]),
+      );
+      const first = renderHook(() => useStreamingSearch());
+      await act(async () => {
+        first.result.current.run('q', EMPTY_FILTERS);
+      });
+      await waitFor(() => expect(first.result.current.state.status).toBe('error'));
+      first.unmount();
+      mockStreamSearch.mockClear();
+      mockParseNdjson.mockReturnValueOnce(neverGen());
+
+      const { result } = renderHook(() => useStreamingSearch());
+      expect(result.current.state.status).toBe('idle');
+      await act(async () => {
+        result.current.run('q', EMPTY_FILTERS);
+      });
+      expect(mockStreamSearch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('aborts a prior in-flight stream when run is called again', async () => {
