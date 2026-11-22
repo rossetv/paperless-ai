@@ -5,14 +5,14 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { useRouteAnnounce } from './useRouteAnnounce';
 
 let setHeading: (h: string | null) => void;
-let go: (to: string) => void;
+let go: (to: string | number) => void;
 
 function Harness(): React.ReactElement {
   const wrapper = React.useRef<HTMLDivElement>(null);
   const [heading, set] = React.useState<string | null>(null);
   const navigate = useNavigate();
   setHeading = set;
-  go = navigate;
+  go = navigate as (to: string | number) => void;
   useRouteAnnounce(wrapper);
   return (
     <div ref={wrapper} tabIndex={-1} data-testid="wrapper">
@@ -23,9 +23,9 @@ function Harness(): React.ReactElement {
   );
 }
 
-function renderAt(): void {
+function renderAt(entries: string[] = ['/library']): void {
   render(
-    <MemoryRouter initialEntries={['/library']}>
+    <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
       <Harness />
     </MemoryRouter>,
   );
@@ -98,6 +98,37 @@ describe('useRouteAnnounce late headings', () => {
     cleanup();
     expect(disconnect).toHaveBeenCalledTimes(1);
     disconnect.mockRestore();
+  });
+
+  describe('scrolling', () => {
+    const focusOptions = (spy: { mock: { calls: unknown[][] } }): unknown[] =>
+      spy.mock.calls.map((call) => call[0]);
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('scrolls the heading into view on a fresh navigation, the first time and on a refocus', async () => {
+      const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+      renderAt();
+      act(() => setHeading('Loading'));
+      act(() => go('/index'));
+      act(() => setHeading('Index'));
+      await flush();
+      expect(screen.getByRole('heading', { name: 'Index' })).toHaveFocus();
+      expect(focusOptions(focus).length).toBeGreaterThan(1);
+      expect(focusOptions(focus).every((o) => o === undefined)).toBe(true);
+    });
+
+    it('does not scroll when focusing after Back, the first time or on a refocus', async () => {
+      renderAt(['/library', '/index']);
+      act(() => setHeading('Loading'));
+      const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+      act(() => go(-1));
+      act(() => setHeading('Library'));
+      await flush();
+      expect(screen.getByRole('heading', { name: 'Library' })).toHaveFocus();
+      expect(focusOptions(focus).length).toBeGreaterThan(1);
+      expect(focusOptions(focus).every((o) => (o as FocusOptions).preventScroll === true)).toBe(true);
+    });
   });
 
   describe('watch window', () => {

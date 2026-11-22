@@ -81,27 +81,6 @@ function isFreshLoad(): boolean {
 }
 
 /**
- * Scroll to `top` without animating. Moving focus to the page heading scrolls it into
- * view, smoothly under the page's scroll-behavior, so for a moment after that the
- * position is put back. The wait ends at the first input or after a second.
- */
-function restoreScroll(top: number): void {
-  const apply = (): void => window.scrollTo({ top, behavior: 'instant' });
-  // A microtask runs once the focus call that scrolled has returned.
-  const onFocus = (): void => queueMicrotask(apply);
-  const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
-  const stop = (): void => {
-    window.clearTimeout(timer);
-    document.removeEventListener('focusin', onFocus, true);
-    for (const type of inputs) document.removeEventListener(type, stop, true);
-  };
-  const timer = window.setTimeout(stop, 1000);
-  document.addEventListener('focusin', onFocus, true);
-  for (const type of inputs) document.addEventListener(type, stop, true);
-  apply();
-}
-
-/**
  * The Library browse screen. All state lives in the URL (`useLibraryUrlState`).
  * Opening a card keeps the search string so going back restores the query.
  *
@@ -240,7 +219,7 @@ export function LibraryScreen(): React.ReactElement {
       const key = scrollKey(location.key);
       const saved = Number(sessionStorage.getItem(key));
       sessionStorage.removeItem(key);
-      if (saved > 0) restoreScroll(saved);
+      if (saved > 0) window.scrollTo({ top: saved, behavior: 'instant' });
     } catch {
       // Storage can be blocked; the browser's own restore is then all there is.
     }

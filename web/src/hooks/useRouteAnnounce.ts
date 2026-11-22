@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigationType } from 'react-router-dom';
 
 const SUFFIX = 'Paperless AI Search';
 
@@ -20,19 +20,22 @@ export function pageName(pathname: string): string | undefined {
 // Long enough for a slow API to finish loading and remount a page's layout.
 const WATCH_MS = 10_000;
 
-function focusQuietly(el: HTMLElement): void {
+function focusQuietly(el: HTMLElement, preventScroll: boolean): void {
   if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
   // Focus here is a reading position, not a control, so it gets no ring; a later Tab back keeps its normal one.
   const before = el.style.outline;
   el.style.outline = 'none';
   el.addEventListener('blur', () => { el.style.outline = before; }, { once: true });
-  el.focus();
+  // Back and Forward leave the page where the browser or the screen puts it; a new page scrolls to its heading.
+  if (preventScroll) el.focus({ preventScroll: true });
+  else el.focus();
 }
 
 /**
  * Keeps `document.title` in step with the route and, when the pathname changes
  * after the first render, moves focus to the page heading (or `<main>`) so a
  * screen reader announces the new page. Pages with neither get `fallback`. A query-string change leaves focus alone.
+ * Focus moves without scrolling on Back and Forward, so the page keeps the position it returns to.
  *
  * A heading that renders late, or is replaced after it took focus, is
  * focused when it appears. That wait ends after ten seconds, on the
@@ -40,6 +43,8 @@ function focusQuietly(el: HTMLElement): void {
  */
 export function useRouteAnnounce(fallback: RefObject<HTMLElement | null>): void {
   const { pathname } = useLocation();
+  const isBackOrForward = useRef(false);
+  isBackOrForward.current = useNavigationType() === 'POP';
   const baseTitle = useRef(document.title);
   const previous = useRef(pathname);
 
@@ -50,11 +55,12 @@ export function useRouteAnnounce(fallback: RefObject<HTMLElement | null>): void 
     if (previous.current === pathname) return;
     previous.current = pathname;
 
+    const preventScroll = isBackOrForward.current;
     let focused: HTMLElement | null = null;
     const focusTarget = (): void => {
       const target = document.querySelector<HTMLElement>('h1') ?? document.querySelector<HTMLElement>('main') ?? fallback.current;
       if (target === null || target === document.activeElement) return;
-      focusQuietly(target);
+      focusQuietly(target, preventScroll);
       focused = target;
     };
     focusTarget();

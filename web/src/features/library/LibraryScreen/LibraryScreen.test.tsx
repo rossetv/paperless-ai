@@ -558,18 +558,6 @@ describe('LibraryScreen', () => {
       expect(sessionStorage.getItem('library-scroll:default')).toBeNull();
     });
 
-    it('puts the position back when moving focus to the page heading scrolls it away', async () => {
-      mockUseDocuments.mockReturnValue(loadedList());
-      sessionStorage.setItem('library-scroll:default', '1806');
-      renderScreen();
-      scrollTo.mockReset();
-      // The route announcer focuses the heading, which scrolls the page to the top.
-      screen.getByRole('heading', { level: 1, name: 'Library' }).setAttribute('tabindex', '-1');
-      screen.getByRole('heading', { level: 1, name: 'Library' }).focus();
-      await Promise.resolve();
-      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
-    });
-
     it('does not restore on the first screen of a fresh page load', async () => {
       vi.resetModules();
       vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
