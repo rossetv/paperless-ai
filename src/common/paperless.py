@@ -145,6 +145,14 @@ class PaperlessClient:
         self._raise_for_status_if_server_error(response)
         return response
 
+    # A 5xx may have stored the note already, so only a request that never
+    # reached the server is retried.
+    @retry(retryable_exceptions=(httpx.ConnectError, httpx.ConnectTimeout))
+    def _post_note(self, url: str, **kwargs: Any) -> httpx.Response:
+        response = self._client.post(url, **kwargs)
+        self._raise_for_status_if_server_error(response)
+        return response
+
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _delete(self, url: str, **kwargs: Any) -> httpx.Response:
         response = self._client.delete(url, **kwargs)
@@ -577,7 +585,7 @@ class PaperlessClient:
         """
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/notes/"
         log.info("paperless.add_note", doc_id=doc_id, length=len(text))
-        response = self._post(url, json={"note": text})
+        response = self._post_note(url, json={"note": text})
         response.raise_for_status()
 
     def delete_note(self, doc_id: int, note_id: int) -> None:
