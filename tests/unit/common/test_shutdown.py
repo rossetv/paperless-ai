@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import signal
+import threading
+import time
 
 import pytest
 
@@ -11,6 +13,7 @@ from common.shutdown import (
     register_signal_handlers,
     request_shutdown,
     reset_shutdown,
+    wait_for_shutdown,
 )
 
 
@@ -98,3 +101,29 @@ class TestSignalHandlerBehavior:
         handler(signal.SIGTERM, None)
         handler(signal.SIGTERM, None)
         assert is_shutdown_requested() is True
+
+
+class TestWaitForShutdown:
+    def test_returns_within_a_slice_when_shutdown_is_requested_mid_wait(self):
+        returned_at: list[float] = []
+
+        def wait() -> None:
+            wait_for_shutdown(30)
+            returned_at.append(time.monotonic())
+
+        waiter = threading.Thread(target=wait)
+        waiter.start()
+        time.sleep(0.1)  # well inside the first slice, so the wait is under way
+        assert waiter.is_alive()
+        requested_at = time.monotonic()
+        request_shutdown()
+        waiter.join(timeout=3)
+
+        assert not waiter.is_alive()
+        assert returned_at[0] - requested_at < 1.0
+
+    def test_waits_the_full_timeout_without_shutdown(self):
+        start = time.monotonic()
+        wait_for_shutdown(0.2)
+
+        assert time.monotonic() - start >= 0.2

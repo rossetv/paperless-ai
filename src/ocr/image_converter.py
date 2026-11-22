@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import struct
 import tempfile
 from io import BytesIO
 from types import TracebackType
@@ -46,10 +47,38 @@ _PAGE_MODE_TARGETS = {
     "F": "L",
 }
 
+_EXIF_ORIENTATION = 0x0112
+# Orientation value -> the transpose that makes the pixels upright.
+_ORIENTATION_TRANSPOSE = {
+    2: Image.Transpose.FLIP_LEFT_RIGHT,
+    3: Image.Transpose.ROTATE_180,
+    4: Image.Transpose.FLIP_TOP_BOTTOM,
+    5: Image.Transpose.TRANSPOSE,
+    6: Image.Transpose.ROTATE_270,
+    7: Image.Transpose.TRANSVERSE,
+    8: Image.Transpose.ROTATE_90,
+}
+
+# Rows converted at a time for 16-bit greyscale, which Pillow cannot resize:
+# the 32-bit intermediate then stays a strip, not the whole page.
+_STRIP_ROWS = 256
+
 # Errors that mean Pillow cannot (or must not) decode the bytes. The bomb
 # error is not an OSError; uncaught it escapes the worker, the pre-tag stays,
-# and the document is re-downloaded and re-decoded every poll.
-_UNDECODABLE = (UnidentifiedImageError, OSError, Image.DecompressionBombError)
+# and the document is re-downloaded and re-decoded every poll. So do the plain
+# errors Pillow raises on damaged header tags (a TIFF with a bad strip offset
+# gives a TypeError, a bad width a ValueError, a cut-off GIF an IndexError).
+_UNDECODABLE = (
+    UnidentifiedImageError,
+    OSError,
+    Image.DecompressionBombError,
+    ValueError,
+    TypeError,
+    SyntaxError,
+    struct.error,
+    EOFError,
+    IndexError,
+)
 
 
 class ImageConversionError(Exception):
@@ -172,7 +201,8 @@ def open_page_source(
     try:
         img = Image.open(BytesIO(content))
         _check_pixel_cap(img)
-        if getattr(img, "n_frames", 1) > 1:
+        # An MPO's extra frames are previews or depth maps of its one picture.
+        if getattr(img, "n_frames", 1) > 1 and img.format != "MPO":
             # Stream frames like PDF pages: decoding all of a 100-page 300-DPI
             # TIFF at once is ~2.6 GB.
             img.close()
@@ -180,10 +210,12 @@ def open_page_source(
         if max_side is not None:
             # JPEG decodes at a reduced size; a no-op for other formats.
             img.draft(None, (max_side, max_side))
-        page = _normalise(img, max_side)
+        upright = _apply_exif_orientation(img)
+        page = _normalise(upright, max_side)
         page.load()
-        if page is not img:
-            img.close()
+        for source in (upright, img):
+            if page is not source:
+                source.close()
         return PageSource(images=[page])
     except _UNDECODABLE as e:
         raise ImageConversionError(f"Unable to open image: {e}") from e
@@ -203,6 +235,21 @@ def _check_pixel_cap(image: Image.Image) -> None:
         )
 
 
+def _apply_exif_orientation(image: Image.Image) -> Image.Image:
+    """Return *image* itself, or a rotated/flipped copy when EXIF says it is not upright."""
+    # Loaded first: Pillow turns a TIFF upright itself on load and drops its tag.
+    # Outside the try so a decode failure is not mistaken for junk EXIF.
+    image.load()
+    try:
+        orientation = image.getexif().get(_EXIF_ORIENTATION, 1)
+    except (SyntaxError, ValueError, struct.error):
+        # A junk EXIF block means "upright", not an undecodable image.
+        return image
+    method = _ORIENTATION_TRANSPOSE.get(orientation)
+    # Not ImageOps.exif_transpose: it re-writes the EXIF block, which a damaged tag breaks.
+    return image.transpose(method) if method is not None else image
+
+
 def _to_page_mode(image: Image.Image) -> Image.Image:
     """Return *image* itself when it is page-safe, else a converted new image.
 
@@ -215,8 +262,21 @@ def _to_page_mode(image: Image.Image) -> Image.Image:
         return image
     if mode == "I" or mode.startswith("I;16"):
         # point() only accepts I and native I;16 — widen I;16B/L/N first.
-        return image.convert("I").point(lambda v: v / 257).convert("L")
+        return _sixteen_bit_to_l(image)
     return image.convert(_PAGE_MODE_TARGETS.get(mode, "RGB"))
+
+
+def _sixteen_bit_to_l(image: Image.Image) -> Image.Image:
+    """Rescale integer greyscale to 8 bits a strip of rows at a time."""
+    result = Image.new("L", image.size)
+    for top in range(0, image.height, _STRIP_ROWS):
+        box = (0, top, image.width, min(top + _STRIP_ROWS, image.height))
+        with image.crop(box) as strip:
+            wide = strip.convert("I")
+            with wide, wide.point(lambda v: v / 257) as scaled:
+                with scaled.convert("L") as narrow:
+                    result.paste(narrow, (0, top))
+    return result
 
 
 def _fit_to_side(image: Image.Image, max_side: int | None) -> Image.Image:
@@ -225,9 +285,19 @@ def _fit_to_side(image: Image.Image, max_side: int | None) -> Image.Image:
         return image
     scale = max_side / max(image.size)
     size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-    # reducing_gap does most of the shrink with a cheap integer reduce, as
-    # Image.thumbnail does.
-    return image.resize(size, reducing_gap=2.0)
+    source = image
+    # Nearest sampling would drop the thin strokes of a bilevel or palette scan.
+    if image.mode == "1":
+        source = image.convert("L")
+    elif image.mode == "P":
+        source = image.convert("RGBA" if "transparency" in image.info else "RGB")
+    try:
+        # reducing_gap does most of the shrink with a cheap integer reduce, as
+        # Image.thumbnail does.
+        return source.resize(size, reducing_gap=2.0)
+    finally:
+        if source is not image:
+            source.close()
 
 
 def _normalise(image: Image.Image, max_side: int | None) -> Image.Image:
@@ -235,6 +305,13 @@ def _normalise(image: Image.Image, max_side: int | None) -> Image.Image:
 
     May return *image* itself; any intermediate bitmap is closed.
     """
+    if image.mode in ("I", "F"):
+        # These resize fine, so shrink before the 8-bit conversion, not after.
+        shrunk = _fit_to_side(image, max_side)
+        page = _to_page_mode(shrunk)
+        if shrunk is not image and shrunk is not page:
+            shrunk.close()
+        return page
     page = _to_page_mode(image)
     fitted = _fit_to_side(page, max_side)
     if page is not image and fitted is not page:

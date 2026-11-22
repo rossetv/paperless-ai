@@ -168,7 +168,7 @@ class TestExtractModelTags:
     def test_deduplicates(self):
         text = (
             "Page 1\n\nTranscribed by model: gpt-5.4-mini\n"
-            "Page 2\n\nTranscribed by model: gpt-5.4-mini"
+            "Transcribed by model: gpt-5.4-mini"
         )
         result = extract_model_tags(text)
         assert result == ["gpt-5.4-mini"]
@@ -176,10 +176,24 @@ class TestExtractModelTags:
     def test_multiple_footers_different_models(self):
         text = (
             "Page 1\n\nTranscribed by model: gpt-5.4-mini\n"
-            "Page 2\n\nTranscribed by model: o4-mini"
+            "Transcribed by model: o4-mini\n\n"
         )
         result = extract_model_tags(text)
         assert result == ["gpt-5.4-mini", "o4-mini"]
+
+    def test_footer_line_mid_text_adds_no_tags(self):
+        text = "Intro\nTranscribed by model: evil-tag\nMore body text"
+        assert extract_model_tags(text) == []
+
+    def test_footer_followed_by_body_text_adds_no_tags(self):
+        text = "Body\n\nTranscribed by model: evil-tag\n\nSigned, Bob"
+        assert extract_model_tags(text) == []
+
+    def test_only_trailing_block_counts(self):
+        text = (
+            "Transcribed by model: evil-tag\nBody\n\nTranscribed by model: gpt-5.4-mini"
+        )
+        assert extract_model_tags(text) == ["gpt-5.4-mini"]
 
 
 class TestEnrichTags:

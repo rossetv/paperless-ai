@@ -31,16 +31,18 @@ def _doc(id, tags=None):
 
 class TestMainConfigError:
     @patch("classifier.daemon.bootstrap_daemon", return_value=None)
-    def test_returns_on_config_error(self, mock_bootstrap):
-        result = main()
+    def test_exits_with_status_1_on_config_error(self, mock_bootstrap):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
 
-        assert result is None
+        assert exc_info.value.code == 1
         mock_bootstrap.assert_called_once()
 
     @patch("classifier.daemon.bootstrap_daemon", return_value=None)
     @patch("classifier.daemon.run_polling_threadpool")
     def test_does_not_start_loop_on_config_error(self, mock_loop, mock_bootstrap):
-        main()
+        with pytest.raises(SystemExit):
+            main()
 
         mock_loop.assert_not_called()
 

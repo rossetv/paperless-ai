@@ -17,9 +17,14 @@ from pdf2image.exceptions import (
     PDFSyntaxError,
     PopplerNotInstalledError,
 )
-from PIL import Image
+from PIL import Image, ImageOps
 
-from ocr.image_converter import ImageConversionError, PageSource, open_page_source
+from ocr.image_converter import (
+    ImageConversionError,
+    PageSource,
+    _apply_exif_orientation,
+    open_page_source,
+)
 
 
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
@@ -649,15 +654,179 @@ class TestImagePixelCap:
 class TestImageMaxSide:
     """Image uploads are scaled to max_side like PDF pages are."""
 
-    @pytest.mark.parametrize("mode", ["P", "1", "LA", "RGBA"])
-    def test_large_image_in_every_page_safe_mode_can_be_scaled(self, mode):
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [("P", "RGB"), ("1", "L"), ("LA", "LA"), ("RGBA", "RGBA")],
+    )
+    def test_large_image_in_every_page_safe_mode_can_be_scaled(self, mode, expected):
         content = _encode([Image.new(mode, (300, 200))], "PNG")
 
         with open_page_source(content, "image/png", max_side=100) as source:
             page = source.load_page(0)
 
         assert page.size == (100, 67)
-        assert page.mode == mode
+        assert page.mode == expected
+
+    def test_shrunk_bilevel_scan_keeps_its_thin_strokes(self):
+        img = Image.new("1", (3000, 2000), 1)
+        for x in range(0, 3000, 10):
+            img.paste(0, (x, 0, x + 1, 2000))
+        content = _encode([img], "PNG")
+
+        with open_page_source(content, "image/png", max_side=1000) as source:
+            page = source.load_page(0)
+
+        # Averaged strokes give greys; nearest sampling gives only black and white.
+        assert sum(page.histogram()[1:255]) > 0
+
+    def test_shrunk_palette_image_with_transparency_keeps_its_alpha(self):
+        img = Image.new("P", (300, 200), 0)
+        img.putpalette([255, 255, 255, 0, 0, 0])
+        img.info["transparency"] = 0
+        content = _encode([img], "PNG")
+
+        with open_page_source(content, "image/png", max_side=100) as source:
+            page = source.load_page(0)
+
+        assert page.mode == "RGBA"
+
+    def test_sixteen_bit_scan_is_never_widened_to_32_bit_at_full_size(self):
+        content = _encode([_sixteen_bit(2000, 1000, ink=2000, paper=60000)], "TIFF")
+        widened: list[int] = []
+        original = Image.Image.convert
+
+        def spy(self, mode=None, *args, **kwargs):
+            if mode == "I":
+                widened.append(self.width * self.height)
+            return original(self, mode, *args, **kwargs)
+
+        with patch.object(Image.Image, "convert", spy):
+            with open_page_source(content, "image/tiff", max_side=500) as source:
+                page = source.load_page(0)
+
+        assert page.size == (500, 250) and page.mode == "L"
+        assert max(widened) < 2000 * 1000
+
+    def test_32bit_greyscale_is_shrunk_before_it_is_converted(self):
+        content = _encode([Image.new("I", (2000, 1000), 60000)], "TIFF")
+        converted: list[int] = []
+        original = Image.Image.convert
+
+        def spy(self, mode=None, *args, **kwargs):
+            converted.append(self.width * self.height)
+            return original(self, mode, *args, **kwargs)
+
+        with patch.object(Image.Image, "convert", spy):
+            with open_page_source(content, "image/tiff", max_side=500) as source:
+                page = source.load_page(0)
+
+        assert page.size == (500, 250) and page.mode == "L"
+        assert max(converted) <= 500 * 250
+
+    @pytest.mark.parametrize("fmt", ["PNG", "WEBP"])
+    def test_unreadable_exif_block_leaves_the_image_openable(self, fmt):
+        buf = BytesIO()
+        Image.new("RGB", (30, 20)).save(buf, format=fmt, exif=b"garbage")
+
+        with open_page_source(buf.getvalue(), "image/x") as source:
+            assert source.load_page(0).size == (30, 20)
+
+    @pytest.mark.parametrize(
+        ("orientation", "size"), [(1, (30, 20)), (6, (20, 30)), (3, (30, 20))]
+    )
+    def test_exif_orientation_is_applied_to_an_uploaded_photo(self, orientation, size):
+        img = Image.new("RGB", (30, 20), "white")
+        img.paste("red", (0, 0, 10, 10))
+        exif = Image.Exif()
+        exif[0x0112] = orientation
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=100, exif=exif)
+
+        with open_page_source(buf.getvalue(), "image/jpeg") as source:
+            page = source.load_page(0)
+
+        assert page.size == size
+        red_corner = {1: (2, 2), 6: (17, 2), 3: (27, 17)}[orientation]
+        assert page.getpixel(red_corner)[0] > 200
+        assert page.getpixel(red_corner)[1] < 80
+
+    @pytest.mark.parametrize("fmt", ["PNG", "TIFF"])
+    @pytest.mark.parametrize("orientation", [2, 3, 4, 5, 6, 7, 8])
+    def test_orientation_pixels_match_pillows_own_transpose(self, orientation, fmt):
+        img = Image.effect_noise((30, 20), 80).convert("RGB")
+        exif = Image.Exif()
+        exif[0x0112] = orientation
+        buf = BytesIO()
+        img.save(buf, format=fmt, exif=exif)
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/x") as source:
+            page = source.load_page(0)
+
+        assert page.tobytes() == expected.convert("RGB").tobytes()
+
+    @pytest.mark.parametrize("orientation", [3, 6, 8])
+    @pytest.mark.parametrize("compression", [None, "tiff_lzw", "tiff_adobe_deflate"])
+    def test_a_tiff_is_turned_upright_once(self, orientation, compression):
+        img = Image.effect_noise((30, 20), 80).convert("RGB")
+        buf = BytesIO()
+        img.save(
+            buf,
+            format="TIFF",
+            compression=compression,
+            tiffinfo={0x0112: orientation},
+        )
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.size == expected.size
+        assert page.tobytes() == expected.convert("RGB").tobytes()
+
+    def test_a_bilevel_group4_tiff_is_turned_upright_once(self):
+        img = Image.effect_noise((30, 20), 80).convert("1")
+        buf = BytesIO()
+        img.save(buf, format="TIFF", compression="group4", tiffinfo={0x0112: 6})
+        expected = ImageOps.exif_transpose(Image.open(BytesIO(buf.getvalue())))
+
+        with open_page_source(buf.getvalue(), "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.size == expected.size == (20, 30)
+        assert page.convert("L").tobytes() == expected.convert("L").tobytes()
+
+    def test_a_multi_picture_phone_jpeg_gives_one_upright_page(self):
+        stored = Image.new("RGB", (30, 20), "white")
+        stored.paste("red", (0, 0, 10, 10))
+        preview = Image.new("L", (15, 10)).convert("RGB")
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        buf = BytesIO()
+        stored.save(
+            buf, format="MPO", save_all=True, append_images=[preview], exif=exif
+        )
+        assert Image.open(BytesIO(buf.getvalue())).n_frames == 2
+
+        with open_page_source(buf.getvalue(), "image/jpeg", max_side=100) as source:
+            assert len(source) == 1
+            page = source.load_page(0)
+
+        assert page.size == (20, 30)
+        assert page.getpixel((17, 2))[0] > 200
+        assert page.getpixel((17, 2))[1] < 80
+
+    def test_a_damaged_exif_tag_does_not_stop_a_rotated_jpeg_opening(self):
+        # Orientation 6 plus tag 0x0115 typed ASCII: rewriting this EXIF raises.
+        blob = (
+            b"Exif\x00\x00MM\x00*\x00\x00\x00\x08\x00\x03\x01\x15\x00\x02\x00\x00\x00\x04Cam\x00"
+            b"\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00"
+        )
+        buf = BytesIO()
+        Image.new("RGB", (40, 30), "white").save(buf, format="JPEG", exif=blob)
+
+        with open_page_source(buf.getvalue(), "image/jpeg") as source:
+            assert source.load_page(0).size == (30, 40)
 
     @pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
     def test_large_image_is_scaled_to_max_side_keeping_aspect(self, fmt):
@@ -688,3 +857,61 @@ class TestImageMaxSide:
 
         with open_page_source(content, "image/png") as source:
             assert source.load_page(0).size == (300, 200)
+
+
+class TestExifOrientationDecodeErrors:
+    def test_a_decode_error_is_not_mistaken_for_junk_exif(self):
+        image = Image.new("RGB", (10, 10))
+
+        with patch.object(Image.Image, "load", side_effect=ValueError("bad data")):
+            with pytest.raises(ValueError, match="bad data"):
+                _apply_exif_orientation(image)
+
+
+class TestDamagedTiffTags:
+    @pytest.mark.parametrize(
+        ("tag", "bad_type"),
+        [(0x0100, 1), (0x0111, 2)],
+        ids=["width-tag-has-the-wrong-type", "strip-offset-tag-has-the-wrong-type"],
+    )
+    def test_a_tiff_with_a_damaged_header_tag_is_an_image_conversion_error(
+        self, tag, bad_type
+    ):
+        good = _encode([Image.new("RGB", (40, 30))], "TIFF")
+        damaged = bytearray(good)
+        ifd = struct.unpack("<I", good[4:8])[0]
+        for i in range(struct.unpack("<H", good[ifd : ifd + 2])[0]):
+            entry = ifd + 2 + 12 * i
+            if struct.unpack("<H", good[entry : entry + 2])[0] == tag:
+                damaged[entry + 2 : entry + 4] = struct.pack("<H", bad_type)
+
+        assert damaged != good
+        with pytest.raises(ImageConversionError):
+            open_page_source(bytes(damaged), "image/tiff")
+
+
+class TestDamagedGif:
+    def test_a_damaged_multi_frame_gif_only_ever_fails_as_an_image_conversion_error(
+        self,
+    ):
+        frames = [
+            Image.frombytes(
+                "L",
+                (8, 8),
+                bytes(
+                    (i * 37 + j * 91 + f * 13) % 256 for i in range(8) for j in range(8)
+                ),
+            )
+            for f in range(3)
+        ]
+        good = _encode(frames, "GIF")
+
+        for offset in range(len(good)):
+            damaged = bytearray(good)
+            damaged[offset] = 0xFF
+            try:
+                with open_page_source(bytes(damaged), "image/gif") as source:
+                    for page in range(len(source)):
+                        source.load_page(page).close()
+            except ImageConversionError:
+                pass

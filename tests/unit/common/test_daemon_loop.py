@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock, patch
 
 from common.daemon_loop import _safe_item_summary, run_polling_threadpool
@@ -655,3 +656,33 @@ def test_a_queued_document_is_not_started_once_shutdown_is_requested() -> None:
         reset_shutdown()
 
     assert started == [1]
+
+
+def test_default_wait_returns_soon_after_shutdown_is_requested_mid_wait():
+    import threading
+
+    from common.shutdown import request_shutdown, reset_shutdown
+
+    calls = []
+    timer = threading.Timer(0.1, request_shutdown)
+
+    def fetch_work():
+        calls.append(1)
+        timer.start()  # fires while the loop sits in its 30s wait
+        return []
+
+    start = time.monotonic()
+    try:
+        run_polling_threadpool(
+            daemon_name="test",
+            fetch_work=fetch_work,
+            process_item=MagicMock(),
+            poll_interval_seconds=30,
+            max_workers=1,
+        )
+    finally:
+        timer.cancel()
+        reset_shutdown()
+
+    assert calls == [1]
+    assert time.monotonic() - start < 3

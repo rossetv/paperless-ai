@@ -6,6 +6,7 @@ takes effect on the next cycle without a restart.
 
 from __future__ import annotations
 
+import sys
 import threading
 from dataclasses import dataclass
 from typing import Iterable
@@ -116,7 +117,7 @@ def main() -> None:
         get_pre_tag_id=lambda s: s.PRE_TAG_ID,
     )
     if result is None:
-        return
+        sys.exit(1)
     settings, list_client = result
 
     log.info(

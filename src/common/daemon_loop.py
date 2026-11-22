@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -11,7 +10,7 @@ from typing import TypeVar
 import structlog
 
 from .paperless import PAPERLESS_CALL_EXCEPTIONS
-from .shutdown import is_shutdown_requested
+from .shutdown import is_shutdown_requested, wait_for_shutdown
 
 log = structlog.get_logger(__name__)
 
@@ -142,7 +141,7 @@ def run_polling_threadpool(
     before_each_poll: Callable[[], None] | None = None,
     on_cycle: Callable[[CycleOutcome], None] | None = None,
     halt_check: Callable[[], str | None] | None = None,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], None] = wait_for_shutdown,
 ) -> None:
     """Run an infinite polling loop and process items concurrently in a thread pool.
 
