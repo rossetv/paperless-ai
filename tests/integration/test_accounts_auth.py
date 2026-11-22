@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
 from store.reader import StoreReader
 
 from search.auth import SESSION_COOKIE_NAME
@@ -230,6 +233,81 @@ def test_repeated_failures_lock_the_login_with_429(tmp_path: Path) -> None:
         blocked = login(client, username="alice", password="wrong-password")
         assert blocked.status_code == 429
         assert SESSION_COOKIE_NAME not in blocked.cookies
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_concurrent_wrong_passwords_beyond_the_limit_get_429(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Logins still being checked count, so only the limit's worth get a 401."""
+    from search import account_routes
+    from search.login_throttle import _MAX_FAILURES_BEFORE_LOCKOUT
+
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    gate = threading.Event()
+    # Released when a request reaches the password check or returns, so requests are sent one at a time.
+    progress = threading.Semaphore(0)
+
+    def held_authenticate(*_args: object) -> None:
+        progress.release()
+        gate.wait(timeout=10)
+
+    monkeypatch.setattr(account_routes, "authenticate", held_authenticate)
+    attempts = _MAX_FAILURES_BEFORE_LOCKOUT + 3
+    try:
+        client = build_account_client(settings, app_db, store_reader)
+        with ThreadPoolExecutor(max_workers=attempts) as pool:
+            futures = []
+            for _ in range(attempts):
+                future = pool.submit(
+                    login, client, username="alice", password="wrong-password"
+                )
+                future.add_done_callback(lambda _f: progress.release())
+                assert progress.acquire(timeout=10)
+                futures.append(future)
+            gate.set()
+            codes = sorted(f.result().status_code for f in futures)
+        assert codes == [401] * _MAX_FAILURES_BEFORE_LOCKOUT + [429] * 3
+    finally:
+        gate.set()
+        store_reader.close()
+        app_db.close()
+
+
+def test_a_login_that_errors_does_not_count_toward_the_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server error while checking the password leaves the throttle untouched."""
+    from search import account_routes
+    from search.login_throttle import _MAX_FAILURES_BEFORE_LOCKOUT
+
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_user(app_db, username="alice", password="alice-password", role="member")
+        client = build_account_client(settings, app_db, store_reader)
+        real_authenticate = account_routes.authenticate
+
+        def failing_authenticate(*_args: object) -> None:
+            raise RuntimeError("database unavailable")
+
+        monkeypatch.setattr(account_routes, "authenticate", failing_authenticate)
+        for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+            assert (
+                login(client, username="alice", password="alice-password").status_code
+                == 500
+            )
+
+        monkeypatch.setattr(account_routes, "authenticate", real_authenticate)
+        ok = login(client, username="alice", password="alice-password")
+        assert ok.status_code == 200, ok.text
     finally:
         store_reader.close()
         app_db.close()

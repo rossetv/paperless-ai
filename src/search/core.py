@@ -78,6 +78,8 @@ from store import StoreError
 from store.models import DocumentBrowseQuery, KeywordHit, KeywordPage, SearchFilters
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from common.config import Settings
     from common.llm import LlmCallUsage
     from common.paperless import PaperlessClient
@@ -211,6 +213,7 @@ class SearchCore:
         ui_filters: SearchFilters | None = None,
         asker: str | None = None,
         on_event: OnEvent | None = None,
+        on_cache_hit: Callable[[], None] | None = None,
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
@@ -231,6 +234,9 @@ class SearchCore:
             on_event: Fed a :class:`~search.trace.PhaseStart` then a
                 :class:`~search.models.PhaseRecord` per executed phase (the
                 streaming route). A cache hit emits a single ``cache`` phase.
+            on_cache_hit: Called once when the result is served from the cache,
+                so a caller charging a token quota charges nothing for it; the
+                result's own cost still reports the original spend.
         """
         cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
         # Building the key costs a get_stats() round-trip, so skip it when the
@@ -248,6 +254,8 @@ class SearchCore:
                 )
                 if on_event is not None:
                     self._emit_cache_phase(on_event, cached)
+                if on_cache_hit is not None:
+                    on_cache_hit()
                 return cached
 
         result = self._answer_uncached(query, ui_filters, asker, on_event=on_event)

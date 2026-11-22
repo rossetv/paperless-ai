@@ -7,7 +7,10 @@ JSON. Tests run under ``anyio`` because the queue bridge relies on
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +23,7 @@ from search.offload import LazySemaphore
 from search.routes import _search_stream
 from search.trace import PhaseStart
 from search.wire import SearchRequest
-from tests.helpers.factories import make_search_result
+from tests.helpers.factories import make_search_result, make_search_stats
 
 
 def _request(query: str = "when does my passport expire") -> SearchRequest:
@@ -48,7 +51,7 @@ def _emitting_core() -> MagicMock:
     """A stub core whose answer emits one PhaseStart then returns a result."""
     core = MagicMock()
 
-    def _answer(*, query: str, ui_filters: Any, asker: Any, on_event: Any) -> Any:
+    def _answer(*, on_event: Any, **_kwargs: Any) -> Any:
         on_event(PhaseStart("plan", "Planning the query"))
         return make_search_result(answer="streamed answer")
 
@@ -99,7 +102,7 @@ async def test_stream_emits_keepalive_during_a_silent_gap(
 
     core = MagicMock()
 
-    def _slow_answer(*, query: str, ui_filters: Any, asker: Any, on_event: Any) -> Any:
+    def _slow_answer(*, on_event: Any, **_kwargs: Any) -> Any:
         # Hold the worker silent past the keepalive interval — no event and no
         # result enqueued yet — mimicking a long LLM call.
         time.sleep(0.25)
@@ -137,6 +140,120 @@ async def test_stream_emits_error_when_pipeline_raises() -> None:
     assert lines[-1]["message"] == "search failed"
     # No result frame on the failure path.
     assert all(obj["type"] != "result" for obj in lines)
+
+
+@pytest.mark.anyio
+async def test_stream_ends_with_error_frame_when_result_cannot_be_serialised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _broken(_result: Any) -> Any:
+        raise ValueError("unserialisable")
+
+    monkeypatch.setattr("search.routes.to_search_response", _broken)
+
+    resp = await _search_stream(
+        _request(), _emitting_core(), _noop_semaphore(), asker=None
+    )
+    lines = await _lines(resp)
+
+    assert lines[-1]["type"] == "error"
+    assert lines[-1]["kind"] == "internal"
+
+
+@pytest.mark.anyio
+async def test_stream_still_ends_with_the_result_when_a_phase_cannot_be_serialised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _broken(_event: Any, _seq: int) -> str:
+        raise ValueError("unserialisable")
+
+    monkeypatch.setattr("search.routes.event_line", _broken)
+
+    resp = await _search_stream(
+        _request(), _emitting_core(), _noop_semaphore(), asker=None
+    )
+    lines = await _lines(resp)
+
+    assert [line["type"] for line in lines] == ["result"]
+    assert lines[0]["seq"] == 1
+
+
+@pytest.mark.anyio
+async def test_stream_ends_with_error_frame_when_the_quota_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _unreadable(**_kwargs: Any) -> None:
+        raise RuntimeError("app.db unavailable")
+
+    monkeypatch.setattr("search.routes.check_quota", _unreadable)
+
+    resp = await _search_stream(
+        _request(),
+        _emitting_core(),
+        _noop_semaphore(),
+        app_db_path=str(tmp_path / "app.db"),
+        api_key_id=1,
+        quota=10_000,
+    )
+    lines = await _lines(resp)
+
+    assert [(line["type"], line["kind"]) for line in lines] == [("error", "internal")]
+
+
+@pytest.mark.anyio
+async def test_disconnect_keeps_the_slot_until_the_pipeline_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded: list[int] = []
+    monkeypatch.setattr(
+        "search.routes.record_usage_blocking",
+        lambda **kwargs: recorded.append(kwargs["tokens"]),
+    )
+
+    async def _within_quota(**_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr("search.routes.check_quota", _within_quota)
+    finish_pipeline = threading.Event()
+
+    def _long_answer(*, on_event: Any, **_kwargs: Any) -> Any:
+        on_event(PhaseStart("plan", "Planning the query"))
+        finish_pipeline.wait(timeout=5.0)
+        return make_search_result(stats=make_search_stats(total_tokens=300))
+
+    core = MagicMock()
+    core.answer.side_effect = _long_answer
+    semaphore = LazySemaphore(1)
+    resp = await _search_stream(
+        _request(),
+        core,
+        semaphore,
+        app_db_path=str(tmp_path / "app.db"),
+        api_key_id=1,
+        quota=10_000,
+    )
+    first_frame = asyncio.Event()
+
+    async def _client_reads() -> None:
+        async for _chunk in resp.body_iterator:
+            first_frame.set()
+
+    client = asyncio.create_task(_client_reads())
+    try:
+        async with asyncio.timeout(5.0):
+            await first_frame.wait()
+        client.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await client
+
+        assert semaphore.acquire().locked()  # type: ignore[attr-defined]
+    finally:
+        finish_pipeline.set()
+
+    async with asyncio.timeout(5.0):
+        async with semaphore.acquire():
+            pass
+    assert recorded == [300]
 
 
 @pytest.mark.anyio

@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -62,6 +63,11 @@ _RECONCILE_SENTINEL_NAME = "reconcile.request"
 _HEALTHZ_UNAVAILABLE_STATUS = 503
 
 _QUOTA_EXCEEDED_STATUS = 429
+
+_QUOTA_EXCEEDED_MESSAGE = (
+    "Daily LLM token quota for this API key has been reached. "
+    "It resets at UTC midnight."
+)
 
 # One LLM call (e.g. synthesis) can run 40s+ with nothing to send, and an idle
 # proxy or tunnel would close the connection. A blank NDJSON line keeps it open;
@@ -142,12 +148,19 @@ def _raise_quota_429(exc: QuotaExceededError) -> None:
     retry_after = _seconds_to_next_utc_midnight(datetime.now(timezone.utc))
     raise HTTPException(
         status_code=_QUOTA_EXCEEDED_STATUS,
-        detail=(
-            "Daily LLM token quota for this API key has been reached. "
-            "It resets at UTC midnight."
-        ),
+        detail=_QUOTA_EXCEEDED_MESSAGE,
         headers={"Retry-After": str(retry_after)},
     ) from exc
+
+
+async def _check_quota_or_429(
+    *, api_key_id: int | None, quota: int, app_db_path: str
+) -> None:
+    """Run :func:`check_quota`, turning a refusal into the HTTP 429."""
+    try:
+        await check_quota(api_key_id=api_key_id, quota=quota, app_db_path=app_db_path)
+    except QuotaExceededError as exc:
+        _raise_quota_429(exc)
 
 
 def build_api_router(
@@ -198,24 +211,22 @@ def build_api_router(
         core = await run_blocking(lambda: resolve_core(state.app_db_path))
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
         quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
-        try:
-            await check_quota(
-                api_key_id=caller.api_key_id,
-                quota=quota,
-                app_db_path=state.app_db_path,
-            )
-        except QuotaExceededError as exc:
-            _raise_quota_429(exc)
+        # Checked early for a fast 429; _search checks again once it holds a slot.
+        await _check_quota_or_429(
+            api_key_id=caller.api_key_id, quota=quota, app_db_path=state.app_db_path
+        )
         asker = resolve_asker(
             user.display_name,
             identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
         )
-        result = await _search(body, core, search_semaphore, asker=asker)
-        await record_usage(
+        result = await _search(
+            body,
+            core,
+            search_semaphore,
+            asker=asker,
+            app_db_path=state.app_db_path,
             api_key_id=caller.api_key_id,
             quota=quota,
-            tokens=result.cost.tokens.total,
-            app_db_path=state.app_db_path,
         )
         await run_blocking(lambda: _record_recent_search(app_db, user, body.query))
         return result
@@ -239,14 +250,9 @@ def build_api_router(
         quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
         # Pre-check while a clean HTTP status is still possible — once the body
         # streams, the only failure channel is an error frame, never a 429.
-        try:
-            await check_quota(
-                api_key_id=caller.api_key_id,
-                quota=quota,
-                app_db_path=state.app_db_path,
-            )
-        except QuotaExceededError as exc:
-            _raise_quota_429(exc)
+        await _check_quota_or_429(
+            api_key_id=caller.api_key_id, quota=quota, app_db_path=state.app_db_path
+        )
         asker = resolve_asker(
             user.display_name,
             identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
@@ -354,20 +360,34 @@ async def _search(
     core: SearchCore,
     semaphore: LazySemaphore,
     *,
-    asker: str | None = None,
+    asker: str | None,
+    app_db_path: str,
+    api_key_id: int | None,
+    quota: int,
 ) -> SearchResponse:
     """Run ``core.answer`` off the loop under the concurrency bound.
+
+    The quota is checked again once the slot is held, since requests that
+    passed the early check together may have spent it while waiting. The
+    search's tokens are then charged to the API key; a cached answer is free.
 
     A search during an index rebuild hits a missing schema; that becomes a 503
     like the other index-not-ready endpoints, not a 500.
     """
     ui_filters = to_search_filters(body.filters)
+    cache_hits: list[None] = []
 
     async with semaphore.acquire():
+        await _check_quota_or_429(
+            api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
+        )
         try:
             result = await run_blocking(
                 lambda: core.answer(
-                    query=body.query, ui_filters=ui_filters, asker=asker
+                    query=body.query,
+                    ui_filters=ui_filters,
+                    asker=asker,
+                    on_cache_hit=lambda: cache_hits.append(None),
                 )
             )
         except SchemaNotReadyError as exc:
@@ -375,7 +395,23 @@ async def _search(
             raise HTTPException(
                 status_code=503, detail="The search index is not ready"
             ) from exc
+        # Recorded before the slot is freed so the next waiter's check sees it.
+        await record_usage(
+            api_key_id=api_key_id,
+            quota=quota,
+            tokens=0 if cache_hits else result.stats.cost.tokens.total,
+            app_db_path=app_db_path,
+        )
     return to_search_response(result)
+
+
+def _release_slot(slot: AbstractAsyncContextManager[None]) -> None:
+    """Free a slot from :meth:`LazySemaphore.acquire` without awaiting.
+
+    The unbounded no-op slot holds nothing to free.
+    """
+    if isinstance(slot, asyncio.Semaphore):
+        slot.release()
 
 
 async def _search_stream(
@@ -400,7 +436,12 @@ async def _search_stream(
     ``app.db`` connection. The SPA aborts the stream on every new query, and
     the loop then closes the request's connection while this worker may still
     be running; separate connections avoid that race. ``app_db_path=None``
-    skips both writes.
+    skips both writes and the quota re-check.
+
+    The search slot is released when the worker ends, not when the client
+    goes: an abandoned pipeline keeps running and spending tokens. Once the
+    slot is held the quota is checked again; a refusal is a ``quota`` error
+    frame.
     """
     ui_filters = to_search_filters(body.filters)
     loop = asyncio.get_running_loop()
@@ -413,12 +454,14 @@ async def _search_stream(
 
     def run() -> None:
         """Run the blocking pipeline on a worker thread, feeding the queue."""
+        cache_hits: list[None] = []
         try:
             result = core.answer(
                 query=body.query,
                 ui_filters=ui_filters,
                 asker=asker,
                 on_event=on_event,
+                on_cache_hit=lambda: cache_hits.append(None),
             )
             loop.call_soon_threadsafe(queue.put_nowait, ("result", result))
             if app_db_path is not None and user is not None:
@@ -434,7 +477,7 @@ async def _search_stream(
                 record_usage_blocking(
                     api_key_id=api_key_id,
                     quota=quota,
-                    tokens=result.stats.cost.tokens.total,
+                    tokens=0 if cache_hits else result.stats.cost.tokens.total,
                     app_db_path=app_db_path,
                 )
         except LlmBudgetExceededError as exc:
@@ -457,32 +500,58 @@ async def _search_stream(
 
     async def frames() -> AsyncIterator[str]:
         """Drain the queue into ordered NDJSON lines until the sentinel."""
-        async with semaphore.acquire():
+        slot = semaphore.acquire()
+        await slot.__aenter__()
+        try:
+            if app_db_path is not None:
+                await check_quota(
+                    api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
+                )
             worker = loop.run_in_executor(None, run)
-            seq = 0
+        except BaseException as exc:
+            await slot.__aexit__(None, None, None)
+            if isinstance(exc, QuotaExceededError):
+                yield error_line("quota", _QUOTA_EXCEEDED_MESSAGE, 1)
+            elif isinstance(exc, Exception):
+                log.exception("api.search_stream_failed")
+                yield error_line("internal", "search failed", 1)
+            else:
+                raise
+            return
+        worker.add_done_callback(lambda _: _release_slot(slot))
+        seq = 0
+        while True:
             try:
-                while True:
-                    try:
-                        kind, payload = await asyncio.wait_for(
-                            queue.get(), timeout=_STREAM_KEEPALIVE_SECONDS
-                        )
-                    except asyncio.TimeoutError:
-                        yield "\n"
-                        continue
-                    if kind == "sentinel":
-                        break
-                    seq += 1
-                    if kind == "event":
-                        yield event_line(payload, seq)  # type: ignore[arg-type]
-                    elif kind == "result":
-                        yield result_line(to_search_response(payload), seq)  # type: ignore[arg-type]
-                    elif kind == "error":
-                        kind_msg = payload  # (kind, message)
-                        yield error_line(kind_msg[0], kind_msg[1], seq)  # type: ignore[index]
-            finally:
-                # Reap the worker on client disconnect too; run() swallows its
-                # own exceptions, so this never raises.
-                await worker
+                kind, payload = await asyncio.wait_for(
+                    queue.get(), timeout=_STREAM_KEEPALIVE_SECONDS
+                )
+            except asyncio.TimeoutError:
+                yield "\n"
+                continue
+            if kind == "sentinel":
+                break
+            if kind == "event":
+                try:
+                    line = event_line(payload, seq + 1)  # type: ignore[arg-type]
+                except Exception:
+                    # A trace frame is only progress; dropping it keeps the
+                    # stream going to its result or error frame.
+                    log.exception("api.search_stream_serialise_failed")
+                    continue
+                seq += 1
+                yield line
+                continue
+            seq += 1
+            if kind == "result":
+                try:
+                    line = result_line(to_search_response(payload), seq)  # type: ignore[arg-type]
+                except Exception:
+                    log.exception("api.search_stream_serialise_failed")
+                    line = error_line("internal", "search failed", seq)
+                yield line
+            elif kind == "error":
+                kind_msg = payload  # (kind, message)
+                yield error_line(kind_msg[0], kind_msg[1], seq)  # type: ignore[index]
 
     return StreamingResponse(frames(), media_type="application/x-ndjson")
 

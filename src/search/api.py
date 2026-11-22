@@ -43,6 +43,7 @@ from search.account_routes import build_account_router
 from search.api_key_routes import build_api_key_router
 from search.appdb_setup import open_app_db
 from search.appstate import AppState, attach_app_state
+from search.body_limit import BodyLimitMiddleware
 from search.deps import get_current_user, require_api_scope, require_api_scope_member
 from search.document_routes import build_document_router
 from search.index_routes import build_index_router
@@ -218,9 +219,10 @@ def _refresh_once(url: str, app_db_path: str) -> None:
 def register_paperless_exception_handlers(app: FastAPI) -> None:
     """Map ``httpx`` errors escaping a route handler to meaningful statuses.
 
-    Upstream 404 and 409 pass through, 5xx and network errors become 502. The
-    streaming PDF/thumbnail handlers handle their own errors because they must
-    close their ``httpx`` client first.
+    Upstream 404 and 409 pass through; 5xx, 401, 403 and network errors become
+    502 (the server's own token was rejected or lacks permission, which the
+    browser must not read as "log in"). The streaming PDF/thumbnail handlers handle their
+    own errors because they must close their ``httpx`` client first.
     """
 
     @app.exception_handler(httpx.HTTPStatusError)
@@ -239,6 +241,19 @@ def register_paperless_exception_handlers(app: FastAPI) -> None:
                 status_code=409,
                 content={"detail": "conflict in Paperless-ngx"},
             )
+        if status in (401, 403):
+            log.warning(
+                "paperless.token_rejected"
+                if status == 401
+                else "paperless.permission_denied",
+                status=status,
+            )
+            detail = (
+                "Paperless-ngx rejected the server's API token"
+                if status == 401
+                else "Paperless-ngx denied the server's API token permission for this request"
+            )
+            return JSONResponse(status_code=502, content={"detail": detail})
         if status >= 500:
             log.warning("paperless.upstream_error", status=status)
             return JSONResponse(
@@ -314,7 +329,9 @@ def create_app(
         lifespan=lifespan,
     )
 
-    # Registered first so it wraps everything, including /mcp and the SPA.
+    # The last one added is outermost: security headers wrap everything,
+    # including /mcp, the SPA and the body limit's own 413.
+    app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     register_paperless_exception_handlers(app)

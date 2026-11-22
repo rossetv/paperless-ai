@@ -137,3 +137,40 @@ async def test_keyword_search_sanitises_failure() -> None:
     assert result.isError is True
     error_text = " ".join(b.text for b in result.content if hasattr(b, "text"))
     assert "/var/data/paperless/index.db" not in error_text
+
+
+@pytest.mark.anyio
+async def test_keyword_search_rejects_an_over_length_query() -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from search.wire import MAX_QUERY_LENGTH
+
+    core = _make_core()
+    app = _build_app(core)
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        result = await client.call_tool(
+            "keyword_search", {"query": "x" * (MAX_QUERY_LENGTH + 1)}
+        )
+
+    assert result.isError is True
+    assert str(MAX_QUERY_LENGTH) in result.content[0].text
+    core.keyword_search.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_keyword_search_accepts_a_query_at_the_length_limit() -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from search.wire import MAX_QUERY_LENGTH
+
+    core = _make_core()
+    app = _build_app(core)
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        result = await client.call_tool(
+            "keyword_search", {"query": "x" * MAX_QUERY_LENGTH}
+        )
+
+    assert result.isError is False
+    core.keyword_search.assert_called_once()

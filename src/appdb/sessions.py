@@ -116,10 +116,21 @@ def delete(conn: sqlite3.Connection, token_hash: str) -> None:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
 
 
-def delete_for_user(conn: sqlite3.Connection, user_id: int) -> None:
-    """Delete every session owned by *user_id*, revoking their access."""
+def delete_for_user(
+    conn: sqlite3.Connection, user_id: int, *, keep_token_hash: str | None = None
+) -> None:
+    """Delete every session owned by *user_id*, revoking their access.
+
+    The session with *keep_token_hash*, when given, is left in place.
+    """
     with conn:
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        if keep_token_hash is None:
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        else:
+            conn.execute(
+                "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+                (user_id, keep_token_hash),
+            )
     log.info("appdb.sessions_revoked", user_id=user_id)
 
 

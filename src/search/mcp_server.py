@@ -7,6 +7,7 @@ the ``mcp`` scope.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 from collections.abc import Callable
@@ -35,7 +36,12 @@ from search.spend_quota import (
     mcp_api_key_id,
     record_usage,
 )
-from search.wire import FilterRequest, normalise_query, to_search_filters
+from search.wire import (
+    MAX_QUERY_LENGTH,
+    FilterRequest,
+    normalise_query,
+    to_search_filters,
+)
 from store import SearchFilters
 
 if TYPE_CHECKING:
@@ -51,6 +57,15 @@ def _default_paperless_factory(settings: Settings) -> PaperlessClient:
 
 
 log = structlog.get_logger(__name__)
+
+# Strong references to tool bodies whose caller was cancelled: the loop holds
+# tasks only weakly, and a body must run on to free its slot.
+_in_flight: set[asyncio.Task[str]] = set()
+
+
+def _log_orphaned_failure(work: asyncio.Task[str]) -> None:
+    if not work.cancelled() and (exc := work.exception()) is not None:
+        log.error("mcp.tool_failed_after_cancel", exc_info=exc)
 
 
 class _BearerAuthMiddleware:
@@ -227,18 +242,21 @@ def _register_search_tools(
         build_output: Callable[[SearchCore], str],
         *,
         bills_llm: bool,
+        cache_hits: list[None] | None = None,
     ) -> str:
         """Run a tool body off the loop, under the shared concurrency bound.
 
         *build_output* runs on a worker thread, which does not inherit
         contextvars, so callers must read any contextvar on the loop and
         capture it. With *bills_llm* the per-key spend quota is checked before
-        the body and the query's tokens are recorded after.
+        the body (again once the slot is held) and the query's tokens are
+        recorded after (none when *cache_hits* shows a cached answer).
         """
         core = await run_blocking(lambda: resolve_core(app_db_path))
         api_key_id = mcp_api_key_id.get()
         quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
-        if bills_llm:
+
+        async def _enforce_quota() -> None:
             try:
                 await check_quota(
                     api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
@@ -248,30 +266,60 @@ def _register_search_tools(
                     "Daily LLM token quota for this API key has been reached; "
                     "it resets at UTC midnight."
                 ) from exc
-        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
-        async with search_semaphore.acquire():
-            output = await run_blocking(lambda: build_output(core))
+
         if bills_llm:
-            await record_usage(
-                api_key_id=api_key_id,
-                quota=quota,
-                tokens=_total_tokens(output),
-                app_db_path=app_db_path,
-            )
-        return output
+            await _enforce_quota()
+        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
+        slot = search_semaphore.acquire()
+        await slot.__aenter__()
+
+        async def _run_holding_slot() -> str:
+            try:
+                if bills_llm:
+                    # Calls queued for a slot passed the first check before
+                    # any of them recorded usage; look again now they have run.
+                    await _enforce_quota()
+                output = await run_blocking(lambda: build_output(core))
+                if bills_llm:
+                    # Still holding the slot, so the next call's check sees this.
+                    await record_usage(
+                        api_key_id=api_key_id,
+                        quota=quota,
+                        tokens=0 if cache_hits else _total_tokens(output),
+                        app_db_path=app_db_path,
+                    )
+                return output
+            finally:
+                await slot.__aexit__(None, None, None)
+
+        # A cancelled call cannot stop the worker thread, so the work keeps
+        # its slot and records its spend until it really ends.
+        work = asyncio.ensure_future(_run_holding_slot())
+        _in_flight.add(work)
+        work.add_done_callback(_in_flight.discard)
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            # Nobody is left to receive the work's outcome, so log a failure
+            # rather than let the loop report it as never retrieved.
+            work.add_done_callback(_log_orphaned_failure)
+            raise
 
     async def _dispatch(
         *,
         query: str,
         filters: dict[str, Any] | None,
         core_call: Callable[
-            [SearchCore, str, SearchFilters | None, str | None], SearchResult
+            [SearchCore, str, SearchFilters | None, str | None, Callable[[], None]],
+            SearchResult,
         ],
         error_event: str,
+        bills_llm: bool,
     ) -> str:
-        """Run a query-shaped billed tool (``semantic_search``/``deep_search``)."""
+        """Run a query-shaped tool (``semantic_search``/``deep_search``)."""
         # Read on the loop: the worker thread does not inherit contextvars.
         raw_asker = mcp_asker.get()
+        cache_hits: list[None] = []
 
         def _build(core: SearchCore) -> str:
             asker = resolve_asker(
@@ -281,13 +329,17 @@ def _register_search_tools(
                 query=query,
                 filters=filters,
                 core_call=lambda text, ui_filters, asker_arg: core_call(
-                    core, text, ui_filters, asker_arg
+                    core,
+                    text,
+                    ui_filters,
+                    asker_arg,
+                    lambda: cache_hits.append(None),
                 ),
                 error_event=error_event,
                 asker=asker,
             )
 
-        return await _run_tool(_build, bills_llm=True)
+        return await _run_tool(_build, bills_llm=bills_llm, cache_hits=cache_hits)
 
     @mcp.tool(
         name="semantic_search",
@@ -308,10 +360,11 @@ def _register_search_tools(
         return await _dispatch(
             query=query,
             filters=filters,
-            core_call=lambda core, text, ui_filters, asker: core.retrieve(
+            core_call=lambda core, text, ui_filters, asker, _hit: core.retrieve(
                 query=text, ui_filters=ui_filters
             ),
             error_event="mcp.semantic_search_error",
+            bills_llm=False,
         )
 
     @mcp.tool(
@@ -333,10 +386,11 @@ def _register_search_tools(
         return await _dispatch(
             query=question,
             filters=filters,
-            core_call=lambda core, text, ui_filters, asker: core.answer(
-                query=text, ui_filters=ui_filters, asker=asker
+            core_call=lambda core, text, ui_filters, asker, hit: core.answer(
+                query=text, ui_filters=ui_filters, asker=asker, on_cache_hit=hit
             ),
             error_event="mcp.deep_search_error",
+            bills_llm=True,
         )
 
     @mcp.tool(
@@ -397,6 +451,10 @@ def _register_search_tools(
         offset: int = 0,
     ) -> str:
         """Call core.keyword_search (FTS/browse, zero LLM) and return JSON."""
+        if query is not None and len(query) > MAX_QUERY_LENGTH:
+            raise ValueError(
+                f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
+            )
         bounded_limit = max(1, min(int(limit), 50))
         bounded_offset = max(0, int(offset))
         ui_filters = _to_search_filters(filters)

@@ -15,7 +15,7 @@ import sqlite_vec  # type: ignore[import-untyped]
 
 from store.migrations import StoreError
 from store.models import ChunkHit, SearchFilters
-from store.reader._filters import build_filters, escape_fts_term
+from store.reader._filters import build_filters, build_match_expr
 
 # No per-row dimension check is needed: StoreWriter.check_embedding_model()
 # wipes every chunk when the model or dimensions change, so all stored
@@ -78,7 +78,7 @@ def keyword_search(
         return []
 
     # The whole MATCH expression is bound as one parameter.
-    match_expr = " AND ".join(f'"{escape_fts_term(term)}"' for term in terms)
+    match_expr = build_match_expr(terms)
 
     where_clause, params = build_filters(filters)
     if where_clause:
@@ -129,7 +129,7 @@ def keyword_document_search(
     if not terms or limit <= 0:
         return [], 0
 
-    match_expr = " AND ".join(f'"{escape_fts_term(term)}"' for term in terms)
+    match_expr = build_match_expr(terms)
     where_clause, params = build_filters(filters)
     if where_clause:
         fts_join = where_clause + " AND fts.text MATCH ?"

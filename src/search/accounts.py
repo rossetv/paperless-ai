@@ -17,6 +17,7 @@ from appdb import users as user_store
 from appdb.connection import transaction
 from appdb.users import Role, User, UserStatus
 from search.errors import RowVanishedError
+from search.sessions import hash_token
 
 
 class GuardError(Exception):
@@ -112,12 +113,16 @@ def apply_guarded_update(
     role: Role | None = None,
     status: UserStatus | None = None,
     password_hash: str | None = None,
+    actor_session_token: str | None = None,
 ) -> User:
     """Apply a partial update to *target_id* with the guard in the same transaction.
 
-    ``None`` fields are left unchanged. Suspending a user also deletes their
+    ``None`` fields are left unchanged. Suspending a user deletes their
     sessions; that runs after the commit, which is safe because
     :func:`~search.sessions.resolve_session` already rejects a suspended user.
+    A new password also deletes the target's sessions, except the one with
+    *actor_session_token* (the acting request's cookie) when actors change their
+    own password, so they stay signed in where they made the change.
     The caller must have confirmed *target_id* exists.
 
     Raises:
@@ -145,4 +150,11 @@ def apply_guarded_update(
         raise RowVanishedError(f"user {target_id} vanished during a guarded update")
     if status == "suspended":
         session_store.delete_for_user(conn, target_id)
+    elif password_hash is not None:
+        keep = actor_session_token if target_id == actor_id else None
+        session_store.delete_for_user(
+            conn,
+            target_id,
+            keep_token_hash=hash_token(keep) if keep is not None else None,
+        )
     return updated
