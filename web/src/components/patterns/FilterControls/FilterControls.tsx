@@ -25,10 +25,20 @@ export interface FilterControlsProps {
   /** Called with the updated filters whenever the user changes one. */
   onFiltersChange: (filters: FilterRequest) => void;
   /**
-   * Whether the "Filters" panel starts expanded. Defaults to true. Library passes
-   * `false` on narrow viewports so the document list is not pushed below the fold.
+   * Whether the "Filters" panel starts expanded. Defaults to true, except on a
+   * narrow viewport, where the rail stacks above the content and would push it
+   * below the fold.
    */
   defaultExpanded?: boolean;
+}
+
+/** True below the 834px breakpoint; matchMedia is missing in some test environments. */
+function isNarrowViewport(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 834px)').matches
+  );
 }
 
 function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
@@ -46,7 +56,7 @@ function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
 export function FilterControls({
   filters,
   onFiltersChange,
-  defaultExpanded = true,
+  defaultExpanded,
 }: FilterControlsProps): React.ReactElement {
   const { data: facets, isLoading, isError } = useFacets();
 
@@ -140,7 +150,7 @@ export function FilterControls({
   const hasTags = facets.tags.length > 0;
 
   return (
-    <FilterPanel title="Filters" defaultExpanded={defaultExpanded}>
+    <FilterPanel title="Filters" defaultExpanded={defaultExpanded ?? !isNarrowViewport()}>
       <Stack direction="vertical" gap={8}>
         {/* Conditional spread: exactOptionalPropertyTypes forbids passing undefined to value. */}
         <Select

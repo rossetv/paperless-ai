@@ -269,4 +269,33 @@ describe('FilterControls', () => {
     );
     expect(screen.queryByRole('combobox', { name: /correspondent/i })).not.toBeInTheDocument();
   });
+
+  describe('on a narrow viewport', () => {
+    beforeEach(() => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(max-width: 834px)',
+      }));
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('starts the Filters panel collapsed when no default is given', () => {
+      render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
+      expect(screen.getByRole('button', { name: /filters/i })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
+    });
+
+    it('starts the Filters panel as the caller asks', () => {
+      render(
+        <FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} defaultExpanded />,
+      );
+      expect(screen.getByRole('button', { name: /filters/i })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+  });
 });
