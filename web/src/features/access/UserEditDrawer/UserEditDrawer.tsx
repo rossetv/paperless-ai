@@ -11,6 +11,7 @@ import {
 import { errorDetail } from '../../../api/client';
 import { validatePassword, validateUsername } from '../../../lib/credentials';
 import type { User, UpdateUserRequest } from '../../../api/types';
+import { useArmedConfirm } from '../useArmedConfirm';
 import styles from './UserEditDrawer.module.css';
 
 const ROLE_OPTIONS = [
@@ -68,7 +69,7 @@ export function UserEditDrawer({
   const [form, setForm] = React.useState<FormState>(() => initialState(user));
   const [fieldError, setFieldError] = React.useState<Partial<Record<keyof FormState, string>>>({});
   const [serverError, setServerError] = React.useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const confirmDelete = useArmedConfirm<true>();
 
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
@@ -177,7 +178,7 @@ export function UserEditDrawer({
           'Could not delete the account. The last admin cannot be removed.',
         ),
       );
-      setConfirmingDelete(false);
+      confirmDelete.disarm();
     }
   }
 
@@ -249,7 +250,7 @@ export function UserEditDrawer({
         )}
 
         <div className={styles['footer']}>
-          <div className={styles['destructive']}>
+          <div className={styles['destructive']} {...confirmDelete.armedProps}>
             {!isCreate && (
               <>
                 <Button
@@ -262,13 +263,16 @@ export function UserEditDrawer({
                   {suspendLabel}
                 </Button>
                 <span className={styles['destructive-separator']} aria-hidden="true" />
-                {confirmingDelete ? (
+                {confirmDelete.armed === true ? (
                   <Button
                     variant="destructive"
                     size="small"
                     type="button"
+                    aria-label={`Confirm delete ${user.username}`}
                     disabled={isSelf || busy}
-                    onClick={() => void handleDelete()}
+                    onClick={() => {
+                      if (confirmDelete.canConfirm()) void handleDelete();
+                    }}
                   >
                     Confirm delete
                   </Button>
@@ -278,7 +282,7 @@ export function UserEditDrawer({
                     size="small"
                     type="button"
                     disabled={isSelf || busy}
-                    onClick={() => setConfirmingDelete(true)}
+                    onClick={() => confirmDelete.arm(true)}
                   >
                     Delete account
                   </Button>
