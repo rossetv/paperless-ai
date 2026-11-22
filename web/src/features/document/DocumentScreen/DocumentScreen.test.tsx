@@ -327,6 +327,16 @@ describe('DocumentScreen', () => {
     expect(mockPatchDocument).not.toHaveBeenCalled();
   });
 
+  it('says the tag list could not be loaded when its refetch fails, and sends nothing', async () => {
+    const stale = ALL_TAGS.filter((t) => t.name !== 'payroll');
+    const refetch = vi.fn().mockResolvedValue({ data: stale, status: 'error', isError: true, error: new Error('down') });
+    mockUseTags.mockReturnValue({ ...queryOk(stale), refetch });
+    renderScreen({ role: 'member' });
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/tag list/i);
+    expect(mockPatchDocument).not.toHaveBeenCalled();
+  });
+
   it('readonly user sees no edit affordances on the title', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.getByRole('heading', { name: 'eBay Payslip 05/2026' })).toBeInTheDocument();

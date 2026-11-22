@@ -315,6 +315,10 @@ export function DocumentScreen({
       return;
     }
     void tags.refetch().then((result) => {
+      if (result.status === 'error') {
+        showToast("Couldn't load the tag list, so the tags weren't changed. Try again.", 'error');
+        return;
+      }
       const fresh = resolveTagIds(latestDoc().tags, [...(result.data ?? []), tag]);
       if (fresh === null) {
         showToast("Couldn't update tags: some of this document's tags are unknown. Reload and try again.", 'error');
