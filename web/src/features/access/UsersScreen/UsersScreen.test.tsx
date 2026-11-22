@@ -108,6 +108,12 @@ describe('UsersScreen', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Users' })).toBeInTheDocument();
   });
 
+  it('names the actions column for screen readers', () => {
+    mockUseUsers.mockReturnValue(usersResult({ isSuccess: true, data: { users: USERS } }));
+    renderScreen();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+
   it('renders a table row for each user', () => {
     mockUseUsers.mockReturnValue(usersResult({ isSuccess: true, data: { users: USERS } }));
     renderScreen();

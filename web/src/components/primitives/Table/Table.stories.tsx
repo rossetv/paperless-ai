@@ -21,7 +21,7 @@ const COLUMNS: Column<Person>[] = [
   { key: 'seen', header: 'Last seen', render: (p) => p.seen },
   {
     key: 'actions',
-    header: '',
+    header: <span className="visually-hidden">Actions</span>,
     align: 'end',
     render: () => <button type="button">Edit</button>,
   },

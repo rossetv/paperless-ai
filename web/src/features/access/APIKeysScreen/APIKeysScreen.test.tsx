@@ -153,6 +153,12 @@ describe('APIKeysScreen', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'API Keys' })).toBeInTheDocument();
   });
 
+  it('names the actions column for screen readers', () => {
+    mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
+    renderScreen();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+
   it('renders a row per key with its name and prefix', () => {
     mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
     renderScreen();

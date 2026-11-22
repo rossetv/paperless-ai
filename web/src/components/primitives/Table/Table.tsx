@@ -12,8 +12,8 @@ export type ColumnAlign = 'start' | 'end';
 export interface Column<Row> {
   /** Stable column identifier — used for React keys, never displayed. */
   key: string;
-  /** Header label. May be an empty string (e.g. an actions column). */
-  header: string;
+  /** Header label. May be an empty string, or visually-hidden text (e.g. an actions column). */
+  header: React.ReactNode;
   /** Optional fixed column width — any CSS width string (e.g. '120px'). */
   width?: string;
   /** Horizontal alignment of this column. Defaults to 'start'. */
