@@ -222,8 +222,8 @@ def register_paperless_exception_handlers(app: FastAPI) -> None:
 
     Upstream 404 and 409 pass through; 5xx, 401, 403 and network errors become
     502 (the server's own token was rejected or lacks permission, which the
-    browser must not read as "log in"). The streaming PDF/thumbnail handlers handle their
-    own errors because they must close their ``httpx`` client first.
+    browser must not read as "log in"). The streaming PDF/thumbnail handlers answer a 404
+    and other upstream statuses themselves, and pass a 401 or 403 on to these handlers.
     """
 
     @app.exception_handler(httpx.HTTPStatusError)
