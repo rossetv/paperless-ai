@@ -24,6 +24,11 @@ def is_shutdown_requested() -> bool:
     return _shutdown_event.is_set()
 
 
+def wait_for_shutdown(timeout: float) -> None:
+    """Sleep up to *timeout* seconds, returning at once if shutdown is requested."""
+    _shutdown_event.wait(timeout)
+
+
 def reset_shutdown() -> None:
     """Clear the shutdown flag; tests that set it must call this in teardown."""
     _shutdown_event.clear()
