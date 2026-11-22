@@ -277,3 +277,21 @@ def test_an_abandoned_attempt_frees_its_slot_and_counts_no_failure() -> None:
         assert throttle.begin_attempt(key) is True
         throttle.abandon_attempt(key)
     assert throttle.begin_attempt(key) is True
+
+
+def test_retry_after_counts_down_the_remaining_lockout_rounded_up() -> None:
+    clock = _FakeClock()
+    throttle = LoginThrottle(clock=clock)
+    key = _key()
+    for _ in range(5):
+        throttle.record_failure(key)
+    assert throttle.retry_after_seconds(key) == 900
+    clock.advance(0.5)
+    assert throttle.retry_after_seconds(key) == 900
+    clock.advance(898.6)
+    assert throttle.retry_after_seconds(key) == 1
+
+
+def test_retry_after_is_at_least_one_second_when_nothing_is_locked() -> None:
+    throttle = LoginThrottle(clock=_FakeClock())
+    assert throttle.retry_after_seconds(_key()) == 1

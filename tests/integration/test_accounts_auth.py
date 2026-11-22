@@ -233,6 +233,7 @@ def test_repeated_failures_lock_the_login_with_429(tmp_path: Path) -> None:
         blocked = login(client, username="alice", password="wrong-password")
         assert blocked.status_code == 429
         assert SESSION_COOKIE_NAME not in blocked.cookies
+        assert 1 <= int(blocked.headers["Retry-After"]) <= 900
     finally:
         store_reader.close()
         app_db.close()

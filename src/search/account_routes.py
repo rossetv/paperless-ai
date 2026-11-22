@@ -242,6 +242,7 @@ def _login(
         raise HTTPException(
             status_code=429,
             detail="Too many failed login attempts. Try again later.",
+            headers={"Retry-After": str(throttle.retry_after_seconds(attempt_key))},
         )
 
     try:
