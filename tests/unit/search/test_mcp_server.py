@@ -438,8 +438,9 @@ def test_api_key_without_mcp_scope_is_rejected_with_401() -> None:
     assert response.status_code == 401
 
 
-def test_authenticated_get_not_accepting_event_stream_gets_406() -> None:
-    """A GET that accepts only ``*/*`` is refused at once, not held open."""
+@pytest.mark.parametrize("accept", ["*/*", "text/event-stream-x"])
+def test_authenticated_get_not_accepting_event_stream_gets_406(accept: str) -> None:
+    """A GET that does not name exactly ``text/event-stream`` is refused at once."""
     core = _make_core()
     settings = _make_settings()
     app_db_path, raw_key = _app_db_with_key(scopes="mcp")
@@ -449,7 +450,7 @@ def test_authenticated_get_not_accepting_event_stream_gets_406() -> None:
 
     response = client.get(
         "/mcp",
-        headers={"Authorization": f"Bearer {raw_key}", "Accept": "*/*"},
+        headers={"Authorization": f"Bearer {raw_key}", "Accept": accept},
     )
 
     assert response.status_code == 406

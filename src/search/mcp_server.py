@@ -156,8 +156,8 @@ class _SseAcceptOnGetMiddleware:
         if scope["type"] == "http" and scope["method"] == "GET":
             accept = Request(scope).headers.get("accept", "")
             if not any(
-                media_type.strip().lower().startswith("text/event-stream")
-                for media_type in accept.split(",")
+                entry.split(";")[0].strip().lower() == "text/event-stream"
+                for entry in accept.split(",")
             ):
                 response = Response(
                     content=json.dumps(
