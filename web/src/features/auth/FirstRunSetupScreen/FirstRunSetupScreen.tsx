@@ -52,6 +52,11 @@ export function FirstRunSetupScreen(): React.ReactElement {
     setup.mutate({ token: token.trim(), username, password }, {});
   }
 
+  // The fields are disabled while creating the account, which drops focus to the page.
+  React.useEffect(() => {
+    if (setup.isError) document.getElementById('setup-token')?.focus();
+  }, [setup.isError]);
+
   const errorMessage =
     setup.isError && setup.error !== null ? setupErrorMessage(setup.error) : null;
 

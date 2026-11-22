@@ -139,6 +139,18 @@ describe('FirstRunSetupScreen', () => {
     expect(screen.getByRole('button', { name: /creating/i })).toBeDisabled();
   });
 
+  it('puts focus back in the setup token field when setup fails', async () => {
+    const { rerender } = renderScreen();
+    await userEvent.type(screen.getByLabelText(/setup token/i), 'wrong');
+    // A browser drops focus to the body when the focused field gets disabled; jsdom does not.
+    (document.activeElement as HTMLElement).blur();
+    mockUseSetup.mockReturnValue(makeSetup({ isPending: true }));
+    rerender(<FirstRunSetupScreen />);
+    mockUseSetup.mockReturnValue(makeSetup({ isError: true, error: new ApiError(403) }));
+    rerender(<FirstRunSetupScreen />);
+    expect(screen.getByLabelText(/setup token/i)).toHaveFocus();
+  });
+
   it('maps ApiError 403 (bad setup token) to a friendly message', () => {
     renderScreen(makeSetup({ isError: true, error: new ApiError(403) }));
     expect(screen.getByRole('alert')).toHaveTextContent(/invalid setup token/i);
