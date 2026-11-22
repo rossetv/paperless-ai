@@ -129,10 +129,13 @@ export function DocumentScreen({
 
   const qc = useQueryClient();
   const canEdit = role !== 'readonly';
-  const [toast, setToast] = React.useState<{ message: string; variant: ToastVariant } | null>(null);
-  const notify = (message: string): void => setToast({ message, variant: 'info' });
+  // Each toast gets its own key, so a new one starts its own timer and role.
+  const [toast, setToast] = React.useState<{ id: number; message: string; variant: ToastVariant } | null>(null);
+  const showToast = (message: string, variant: ToastVariant): void =>
+    setToast((prev) => ({ id: (prev?.id ?? 0) + 1, message, variant }));
+  const notify = (message: string): void => showToast(message, 'info');
   const notifyError = (fallback: string) => (err: Error): void =>
-    setToast({ message: errorDetail(err, fallback), variant: 'error' });
+    showToast(errorDetail(err, fallback), 'error');
 
   // The patch of a failed save; the retry, or the next edit, sends it again.
   const failedRef = React.useRef<DocumentPatch | null>(null);
@@ -271,10 +274,7 @@ export function DocumentScreen({
     void tags.refetch().then((result) => {
       const fresh = resolveTagIds(latestNames(), [...(result.data ?? []), ...known]);
       if (fresh === null) {
-        setToast({
-          message: "Couldn't update tags: some of this document's tags are unknown. Reload and try again.",
-          variant: 'error',
-        });
+        showToast("Couldn't update tags: some of this document's tags are unknown. Reload and try again.", 'error');
         return;
       }
       send(fresh);
@@ -424,6 +424,7 @@ export function DocumentScreen({
 
       {toast !== null && (
         <Toast
+          key={toast.id}
           message={toast.message}
           variant={toast.variant}
           onDismiss={() => setToast(null)}

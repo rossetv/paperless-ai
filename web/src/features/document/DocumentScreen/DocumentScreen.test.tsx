@@ -433,6 +433,25 @@ describe('DocumentScreen', () => {
     expect(await screen.findByText(/re-classif/i, { selector: '[role="status"] *' })).toBeInTheDocument();
   });
 
+  it('a second info toast stays for its own full time', () => {
+    vi.useFakeTimers();
+    try {
+      const succeed = vi.fn((_id: number, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.());
+      const stub = voidMutationStub({ mutate: succeed as unknown as UseMutateFunction<void, Error, number> });
+      mockUseReclassifyDocument.mockReturnValue(stub);
+      mockUseRetranscribeDocument.mockReturnValue(stub);
+      renderScreen({ role: 'member' });
+
+      fireEvent.click(screen.getByRole('button', { name: /re-classify/i }));
+      act(() => vi.advanceTimersByTime(5_000));
+      fireEvent.click(screen.getByRole('button', { name: /re-transcribe/i }));
+      act(() => vi.advanceTimersByTime(1_500));
+      expect(screen.getByText(/re-transcription/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a failed re-transcribe shows the server error', async () => {
     const retranscribeMutate = vi.fn((_id: number, opts?: { onError?: (err: Error) => void }) =>
       opts?.onError?.(new ApiError(503, undefined, 'OCR is turned off')),
