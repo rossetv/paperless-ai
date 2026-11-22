@@ -142,26 +142,42 @@ describe('Table', () => {
       }
     });
 
-    it('scrolls a focused control into view so an edge-clipped one is not left cut off', () => {
+    describe('focused control', () => {
+      const cols: Column<Row>[] = [
+        ...COLUMNS,
+        { key: 'actions', header: '', render: () => <button>Edit</button> },
+      ];
       const scrollIntoView = vi.fn();
-      Object.defineProperty(Element.prototype, 'scrollIntoView', {
-        configurable: true,
-        value: scrollIntoView,
+
+      beforeEach(() => {
+        scrollIntoView.mockClear();
+        Object.defineProperty(Element.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: scrollIntoView,
+        });
       });
-      try {
-        const cols: Column<Row>[] = [
-          ...COLUMNS,
-          { key: 'actions', header: '', render: () => <button>Edit</button> },
-        ];
+
+      afterEach(() => {
+        delete (Element.prototype as unknown as Record<string, unknown>)['scrollIntoView'];
+      });
+
+      it('is scrolled into view on keyboard focus so an edge-clipped one is not left cut off', () => {
         render(<Table columns={cols} rows={ROWS} getRowKey={(r) => r.id} />);
         const [button] = screen.getAllByRole('button', { name: 'Edit' }) as [HTMLElement];
         act(() => button.focus());
         expect(scrollIntoView).toHaveBeenCalledTimes(1);
         expect(scrollIntoView.mock.contexts[0]).toBe(button);
         expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
-      } finally {
-        delete (Element.prototype as unknown as Record<string, unknown>)['scrollIntoView'];
-      }
+      });
+
+      it('stays put on pointer focus so the click is not lost under a moving button', () => {
+        render(<Table columns={cols} rows={ROWS} getRowKey={(r) => r.id} />);
+        const [button] = screen.getAllByRole('button', { name: 'Edit' }) as [HTMLElement];
+        // jsdom treats every focus as keyboard focus; a mouse or touch focus is not :focus-visible.
+        vi.spyOn(button, 'matches').mockImplementation((selector) => selector !== ':focus-visible');
+        act(() => button.focus());
+        expect(scrollIntoView).not.toHaveBeenCalled();
+      });
     });
 
     it('re-measures when the wrapper or table is resized, without a scroll', () => {

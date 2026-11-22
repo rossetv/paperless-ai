@@ -43,9 +43,11 @@ const END_SLACK = 4;
 /**
  * The browser leaves a control that is only partly clipped where it is, so its
  * focus ring is cut off or sits under the edge fade. The wrapper's
- * scroll-padding holds the fade clear.
+ * scroll-padding holds the fade clear. Only keyboard focus moves it: a mouse or
+ * touch focus would slide the control from under the pointer and lose the click.
  */
 function revealFocused(event: React.FocusEvent<HTMLElement>): void {
+  if (!event.target.matches(':focus-visible')) return;
   event.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 }
 
