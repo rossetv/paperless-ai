@@ -39,6 +39,13 @@ const DocumentPage = React.lazy(() =>
 );
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
+import { useRouteAnnounce } from './hooks/useRouteAnnounce';
+
+/** Renders nothing; lives inside Suspense so it acts once the new page has rendered. */
+function RouteAnnouncer({ fallback }: { fallback: React.RefObject<HTMLElement | null> }): null {
+  useRouteAnnounce(fallback);
+  return null;
+}
 
 /**
  * Wraps the protected app. Resolves auth via `useMe`:
@@ -163,9 +170,11 @@ function BootstrapGate({
  */
 function RoutesBody(): React.ReactElement {
   const location = useLocation();
+  const content = React.useRef<HTMLDivElement>(null);
   return (
     <ErrorBoundary resetKeys={[location.pathname]}>
       <Suspense fallback={<FullPageLoading />}>
+        <div ref={content} tabIndex={-1} style={{ outline: 'none' }}>
         <Routes>
           <Route
             path="/setup"
@@ -254,6 +263,8 @@ function RoutesBody(): React.ReactElement {
           {/* Unknown paths fall back to the root, which re-resolves the gate. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </div>
+        <RouteAnnouncer fallback={content} />
       </Suspense>
     </ErrorBoundary>
   );

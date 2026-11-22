@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SetupStatus, MeResponse } from './api/types';
@@ -26,10 +27,10 @@ vi.mock('./pages/SettingsPage', () => ({
   SettingsPage: () => React.createElement('div', { 'data-testid': 'settings-page' }, 'Settings'),
 }));
 vi.mock('./pages/LibraryPage', () => ({
-  LibraryPage: () => React.createElement('div', { 'data-testid': 'library-page' }, 'Library'),
+  LibraryPage: () => React.createElement('div', { 'data-testid': 'library-page' }, React.createElement('h1', null, 'Library')),
 }));
 vi.mock('./pages/IndexPage', () => ({
-  IndexPage: () => React.createElement('div', { 'data-testid': 'index-page' }, 'Index'),
+  IndexPage: () => React.createElement('div', { 'data-testid': 'index-page' }, React.createElement('h1', null, 'Index')),
 }));
 vi.mock('./pages/LibraryDocumentPage', () => ({
   LibraryDocumentPage: () =>
@@ -93,6 +94,18 @@ function Where(): React.ReactElement {
   return <span data-testid="where">{pathname + search + hash}</span>;
 }
 
+function Nav(): React.ReactElement {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button onClick={() => navigate('/library')}>to library</button>
+      <button onClick={() => navigate('/library?q=tax')}>to library search</button>
+      <button onClick={() => navigate('/index')}>to index</button>
+      <button onClick={() => navigate('/')}>to root</button>
+    </>
+  );
+}
+
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function routerTree(entry: string | { pathname: string; state: unknown }) {
@@ -101,6 +114,7 @@ function routerTree(entry: string | { pathname: string; state: unknown }) {
       <MemoryRouter initialEntries={[entry]}>
         <AppRoutes />
         <Where />
+        <Nav />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -317,5 +331,45 @@ describe('AppRoutes', () => {
     mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
     renderAt('/document/42');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+  });
+
+  describe('page title and focus', () => {
+    beforeEach(() => {
+      mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+      mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+      document.title = 'Paperless AI Search';
+    });
+
+    it('titles each page after its name and leaves focus alone on first load', async () => {
+      renderAt('/library');
+      await waitFor(() => expect(screen.getByTestId('library-page')).toBeInTheDocument());
+      expect(document.title).toBe('Library · Paperless AI Search');
+      expect(document.body).toHaveFocus();
+    });
+
+    it('moves focus to the page heading when the pathname changes', async () => {
+      renderAt('/library');
+      await waitFor(() => expect(screen.getByTestId('library-page')).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('button', { name: 'to index' }));
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Index' })).toHaveFocus());
+      expect(document.title).toBe('Index · Paperless AI Search');
+    });
+
+    it('falls back to the content area when a page has no heading or main', async () => {
+      renderAt('/library');
+      await waitFor(() => expect(screen.getByTestId('library-page')).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('button', { name: 'to root' }));
+      await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
+      expect(screen.getByTestId('search-page').parentElement).toHaveFocus();
+    });
+
+    it('keeps focus where it is when only the query string changes', async () => {
+      renderAt('/library');
+      await waitFor(() => expect(screen.getByTestId('library-page')).toBeInTheDocument());
+      const button = screen.getByRole('button', { name: 'to library search' });
+      await userEvent.click(button);
+      await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/library?q=tax'));
+      expect(button).toHaveFocus();
+    });
   });
 });
