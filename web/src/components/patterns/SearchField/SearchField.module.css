@@ -30,6 +30,11 @@
   appearance: none;
 }
 
+/* The browser's default placeholder grey misses AA contrast in both themes. */
+.input::placeholder {
+  color: var(--colour-text-tertiary);
+}
+
 .input::-webkit-search-cancel-button {
   appearance: none;
 }
