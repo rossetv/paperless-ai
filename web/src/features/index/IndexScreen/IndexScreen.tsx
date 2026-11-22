@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '../../../components/primitives/Button/Button';
+import { Icon } from '../../../components/primitives/Icon/Icon';
 import { Link } from '../../../components/primitives/Link/Link';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
@@ -111,7 +112,8 @@ export function IndexScreen(): React.ReactElement {
       {statusQuery.data !== undefined && (
         <div className={styles['body']}>
           {statusQuery.isError && (
-            <p className={styles['section-hint']} role="status">
+            <p className={styles['stale-notice']} role="status">
+              <Icon name="warning" size="small" />
               Could not refresh the index status — showing the last data received.
             </p>
           )}

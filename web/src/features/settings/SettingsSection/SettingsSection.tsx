@@ -4,6 +4,8 @@ import { SettingsCard } from '../../../components/primitives/SettingsCard/Settin
 import { Row } from '../../../components/primitives/Row/Row';
 import { Disclosure } from '../../../components/primitives/Disclosure/Disclosure';
 import { FieldControl } from '../FieldControl/FieldControl';
+import { cn } from '../../../lib/cn';
+import styles from './SettingsSection.module.css';
 import type {
   ConcreteControl,
   ConfigValue,
@@ -124,6 +126,7 @@ export function FieldRow({
       hint={field.hint}
       env={field.key}
       {...(controlId !== undefined ? { controlId } : {})}
+      className={cn(styles['field'])}
       last={last}
       isDefault={isDefault}
       requiresReindex={requiresReindex}

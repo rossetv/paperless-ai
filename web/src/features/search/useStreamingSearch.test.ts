@@ -249,6 +249,54 @@ describe('useStreamingSearch', () => {
       expect(result.current.state.status).toBe('done');
     });
 
+    describe('how long the kept answer lasts', () => {
+      const MINUTE = 60_000;
+
+      async function stayOnAnswerThenLeave(stayMinutes: number) {
+        mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+        mockParseNdjson.mockReturnValueOnce(
+          eventsGen([{ type: 'result', seq: 1, result: makeResponse('kept') }]),
+        );
+        const page = renderHook(() => useStreamingSearch(), { wrapper });
+        await act(async () => {
+          page.result.current.run('q', EMPTY_FILTERS);
+        });
+        await waitFor(() => expect(page.result.current.state.status).toBe('done'));
+        await act(async () => {
+          vi.advanceTimersByTime(stayMinutes * MINUTE);
+        });
+        page.unmount();
+        mockStreamSearch.mockClear();
+      }
+
+      beforeEach(() => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('counts from leaving the page, not from when the answer finished', async () => {
+        await stayOnAnswerThenLeave(7);
+        await act(async () => {
+          vi.advanceTimersByTime(4 * MINUTE);
+        });
+
+        const { result } = renderHook(() => useStreamingSearch(true), { wrapper });
+        expect(result.current.state.status).toBe('done');
+      });
+
+      it('is dropped once the user has been away longer than that', async () => {
+        await stayOnAnswerThenLeave(7);
+        await act(async () => {
+          vi.advanceTimersByTime(6 * MINUTE);
+        });
+
+        const { result } = renderHook(() => useStreamingSearch(true), { wrapper });
+        expect(result.current.state.status).toBe('idle');
+      });
+    });
+
     it('searches for a different query or different filters', async () => {
       await finishSearch('q');
       mockParseNdjson.mockImplementation(() => neverGen());

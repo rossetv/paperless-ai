@@ -1,13 +1,14 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tanstack/react-query';
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { ApiError, patchDocument, getDocument, deleteDocument } from '../../../api/client';
 import { useDocument } from '../../../api/hooks/library';
 import { DocumentScreen } from './DocumentScreen';
+import { RETURN_TO_RESULTS } from '../../search/useStreamingSearch';
 
 // The save queue lives in TanStack's callback timing, so the real update hook
 // runs against a mocked HTTP layer.
@@ -263,6 +264,27 @@ describe('DocumentScreen', () => {
       </QueryClientProvider>,
     );
     expect(screen.getByRole('link', { name: /search results/i })).toHaveAttribute('href', '/?q=invoice');
+  });
+
+  it('the "Search results" link returns to the kept answer instead of searching again', () => {
+    function SearchProbe(): React.ReactElement {
+      return <p data-testid="search-state">{JSON.stringify(useLocation().state)}</p>;
+    }
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/document/934?q=invoice']}>
+          <Routes>
+            <Route
+              path="/document/:id"
+              element={<DocumentScreen document={DOC} parent="search" parentSearch="?q=invoice" role="readonly" />}
+            />
+            <Route path="/" element={<SearchProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('link', { name: /search results/i }));
+    expect(screen.getByTestId('search-state')).toHaveTextContent(JSON.stringify(RETURN_TO_RESULTS));
   });
 
   it('Download anchor carries the document title as the suggested filename', () => {

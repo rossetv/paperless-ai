@@ -43,7 +43,7 @@
 /* Four-column rows for the stat tiles and the daemon cards. */
 .quad-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--spacing-10);
 }
 
@@ -69,6 +69,22 @@
   font-weight: var(--font-weight-caption);
   letter-spacing: var(--letter-spacing-caption);
   color: var(--colour-text-tertiary);
+}
+
+.stale-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-5);
+  margin: 0;
+  padding: var(--spacing-5) var(--spacing-8);
+  border: var(--spacing-1) solid var(--colour-status-warn-fg);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-status-warn-bg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-status-warn-fg);
 }
 
 .split-row {
@@ -98,7 +114,7 @@
   display: flex;
   gap: var(--spacing-8);
   align-items: center;
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .activity-panel-head {
@@ -118,7 +134,7 @@
 
 @media (width <= 834px) {
   .quad-row {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .split-row {

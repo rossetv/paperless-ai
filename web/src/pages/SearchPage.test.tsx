@@ -107,14 +107,18 @@ vi.mock('../features/search/SearchErrorScreen/SearchErrorScreen', () => ({
 // The streaming hook is mocked so each test drives the page into a chosen
 // state. `run` is a spy; the page calls it from an effect on a non-empty query.
 const mockRun = vi.fn();
-vi.mock('../features/search/useStreamingSearch', () => ({
+vi.mock('../features/search/useStreamingSearch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../features/search/useStreamingSearch')>()),
   useStreamingSearch: vi.fn(),
 }));
 vi.mock('../api/hooks', () => ({
   ME_QUERY_KEY: ['auth', 'me'],
 }));
 
-import { useStreamingSearch } from '../features/search/useStreamingSearch';
+import {
+  RETURN_TO_RESULTS,
+  useStreamingSearch,
+} from '../features/search/useStreamingSearch';
 const mockUseStreamingSearch = useStreamingSearch as ReturnType<typeof vi.fn>;
 
 /**
@@ -465,6 +469,30 @@ describe('SearchPage', () => {
     );
     await userEvent.click(screen.getByText('go'));
     expect(mockUseStreamingSearch).toHaveBeenLastCalledWith(false);
+  });
+
+  it('restores the kept answer when the document page links back to the results', async () => {
+    mockUseStreamingSearch.mockReturnValue(streamState({ status: 'idle' }));
+    function DocumentStub(): React.ReactElement {
+      const navigate = useNavigate();
+      return (
+        <button onClick={() => navigate('/?q=invoice', { state: RETURN_TO_RESULTS })}>
+          back to results
+        </button>
+      );
+    }
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={['/document/9823']}>
+          <Routes>
+            <Route path="/document/:id" element={<DocumentStub />} />
+            <Route path="/" element={<SearchPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByText('back to results'));
+    expect(mockUseStreamingSearch).toHaveBeenLastCalledWith(true);
   });
 
   it('mounting at /?q=invoice triggers the search', async () => {
