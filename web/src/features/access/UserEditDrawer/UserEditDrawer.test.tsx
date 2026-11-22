@@ -188,6 +188,19 @@ describe('UserEditDrawer — edit mode', () => {
     expect(screen.getByRole('button', { name: /suspend/i })).toBeDisabled();
   });
 
+  it('explains why delete and suspend are disabled for one\'s own account', () => {
+    render(<UserEditDrawer user={SAMPLE_USER} isSelf onClose={vi.fn()} />);
+    const help = screen.getByText(/can't suspend or delete your own account/i);
+    expect(screen.getByRole('group', { name: /account actions/i })).toHaveAccessibleDescription(
+      help.textContent ?? '',
+    );
+  });
+
+  it('shows no such explanation for another account', () => {
+    render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    expect(screen.queryByText(/your own account/i)).not.toBeInTheDocument();
+  });
+
   it('surfaces a server error message when the mutation rejects', async () => {
     const mutateAsync = vi.fn().mockRejectedValue(new Error('boom'));
     mockUpdate.mockReturnValue(stubMutation(mutateAsync));

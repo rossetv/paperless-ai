@@ -8,6 +8,12 @@
   grid-column: 1 / -1;
 }
 
+@media (width <= 699.98px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .error {
   margin-top: var(--spacing-10);
   padding: var(--spacing-8) var(--spacing-10);
@@ -54,3 +60,11 @@
   gap: var(--spacing-8);
 }
 
+
+.self-help {
+  flex-basis: 100%;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-tertiary);
+}

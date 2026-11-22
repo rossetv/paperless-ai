@@ -250,7 +250,13 @@ export function UserEditDrawer({
         )}
 
         <div className={styles['footer']}>
-          <div className={styles['destructive']} {...confirmDelete.armedProps}>
+          <div
+            className={styles['destructive']}
+            role={isCreate ? undefined : 'group'}
+            aria-label={isCreate ? undefined : 'Account actions'}
+            aria-describedby={isSelf && !isCreate ? 'user-self-help' : undefined}
+            {...confirmDelete.armedProps}
+          >
             {!isCreate && (
               <>
                 <Button
@@ -298,6 +304,11 @@ export function UserEditDrawer({
               {isCreate ? 'Create user' : 'Save'}
             </Button>
           </div>
+          {isSelf && !isCreate && (
+            <p id="user-self-help" className={styles['self-help']}>
+              You can't suspend or delete your own account.
+            </p>
+          )}
         </div>
       </form>
     </Modal>
