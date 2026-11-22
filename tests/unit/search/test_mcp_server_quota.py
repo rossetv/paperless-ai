@@ -1,0 +1,200 @@
+"""The per-key daily token quota on the MCP tools.
+
+Only ``deep_search`` is gated and counted; the other tools are free. Runs
+against a real migrated app.db through the in-memory MCP transport.
+"""
+
+from __future__ import annotations
+
+import threading
+from unittest.mock import MagicMock
+
+import anyio
+import pytest
+
+from appdb.connection import connect
+from appdb.key_usage import add_usage, get_tokens_used, utc_today
+from appdb.schema import ensure_schema
+from search import mcp_server
+from search.mcp_server import build_mcp_app
+from search.offload import LazySemaphore
+from search.spend_quota import mcp_api_key_id
+from tests.helpers.factories import (
+    make_search_result,
+    make_search_settings,
+    make_search_stats,
+)
+
+QUOTA = 100
+
+
+@pytest.fixture()
+def app_db_path(tmp_path) -> str:
+    """A migrated app.db with one user and one API key (id 7)."""
+    path = str(tmp_path / "app.db")
+    conn = connect(path)
+    ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) "
+        "VALUES (1, 'u', 'h', 'member', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO api_keys (id, key_hash, key_prefix, name, owner_user_id, scopes, created_at) "
+        "VALUES (7, 'hash7', 'sk-pls-7', 'k7', 1, 'mcp', 'now')"
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+@pytest.fixture(autouse=True)
+def _as_api_key_7():
+    token = mcp_api_key_id.set(7)
+    yield
+    mcp_api_key_id.reset(token)
+
+
+def _tokens_used(app_db_path: str) -> int:
+    conn = connect(app_db_path)
+    try:
+        return get_tokens_used(conn, 7, utc_today())
+    finally:
+        conn.close()
+
+
+def _use_up_quota(app_db_path: str) -> None:
+    conn = connect(app_db_path)
+    try:
+        add_usage(conn, 7, utc_today(), tokens=QUOTA, calls=1)
+    finally:
+        conn.close()
+
+
+def _make_core(*, max_concurrent: int = 4, answer_tokens: int = 50) -> MagicMock:
+    core = MagicMock()
+    core.settings = make_search_settings(
+        SEARCH_KEY_DAILY_TOKEN_QUOTA=QUOTA, SEARCH_MAX_CONCURRENT=max_concurrent
+    )
+    stats = make_search_stats(total_tokens=answer_tokens)
+    core.answer.return_value = make_search_result(stats=stats)
+    core.retrieve.return_value = make_search_result(stats=stats)
+    return core
+
+
+def _build(core: MagicMock, app_db_path: str):
+    return build_mcp_app(
+        lambda _path: core,
+        app_db_path,
+        search_semaphore=LazySemaphore(core.settings.SEARCH_MAX_CONCURRENT),
+    )
+
+
+def _text(result) -> str:
+    return " ".join(b.text for b in result.content if hasattr(b, "text"))
+
+
+@pytest.mark.anyio
+async def test_semantic_search_still_runs_after_the_quota_is_used_up(
+    app_db_path: str,
+) -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    _use_up_quota(app_db_path)
+    core = _make_core()
+    app = _build(core, app_db_path)
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        result = await client.call_tool("semantic_search", {"query": "invoice"})
+
+    assert result.isError is False
+    core.retrieve.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_semantic_search_does_not_count_against_the_quota(
+    app_db_path: str,
+) -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core()
+    app = _build(core, app_db_path)
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        await client.call_tool("semantic_search", {"query": "invoice"})
+
+    assert _tokens_used(app_db_path) == 0
+
+
+@pytest.mark.anyio
+async def test_deep_search_is_counted_and_then_refused_at_the_quota(
+    app_db_path: str,
+) -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core(answer_tokens=QUOTA)
+    app = _build(core, app_db_path)
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        first = await client.call_tool("deep_search", {"question": "invoice"})
+        second = await client.call_tool("deep_search", {"question": "invoice"})
+
+    assert first.isError is False
+    assert _tokens_used(app_db_path) == QUOTA
+    assert second.isError is True
+    assert "quota" in _text(second).lower()
+    core.answer.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_deep_search_waiting_for_a_slot_is_refused_if_the_quota_ran_out_meanwhile(
+    app_db_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core(max_concurrent=1, answer_tokens=QUOTA)
+    in_answer = threading.Event()
+    release = threading.Event()
+
+    def _blocking_answer(**_kwargs):
+        in_answer.set()
+        release.wait(timeout=5)
+        return make_search_result(stats=make_search_stats(total_tokens=QUOTA))
+
+    core.answer.side_effect = _blocking_answer
+
+    checks = 0
+    all_checks_seen = {}
+    real_check = mcp_server.check_quota
+
+    async def _counting_check(**kwargs):
+        nonlocal checks
+        await real_check(**kwargs)
+        checks += 1
+        if checks in all_checks_seen:
+            all_checks_seen[checks].set()
+
+    monkeypatch.setattr(mcp_server, "check_quota", _counting_check)
+
+    app = _build(core, app_db_path)
+    results = {}
+
+    async def _call(name: str, client) -> None:
+        results[name] = await client.call_tool("deep_search", {"question": "q"})
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        async with anyio.create_task_group() as tg:
+            # The first call passes both checks and holds the only slot.
+            tg.start_soon(_call, "first", client)
+            await anyio.to_thread.run_sync(in_answer.wait)
+            first_call_checks = checks
+            # The second passes its early check, then waits for the slot.
+            all_checks_seen[first_call_checks + 1] = anyio.Event()
+            tg.start_soon(_call, "second", client)
+            with anyio.fail_after(5):
+                await all_checks_seen[first_call_checks + 1].wait()
+            release.set()
+
+    assert results["first"].isError is False
+    assert results["second"].isError is True
+    assert "quota" in _text(results["second"]).lower()
+    core.answer.assert_called_once()

@@ -35,7 +35,12 @@ from search.spend_quota import (
     mcp_api_key_id,
     record_usage,
 )
-from search.wire import FilterRequest, normalise_query, to_search_filters
+from search.wire import (
+    MAX_QUERY_LENGTH,
+    FilterRequest,
+    normalise_query,
+    to_search_filters,
+)
 from store import SearchFilters
 
 if TYPE_CHECKING:
@@ -233,12 +238,14 @@ def _register_search_tools(
         *build_output* runs on a worker thread, which does not inherit
         contextvars, so callers must read any contextvar on the loop and
         capture it. With *bills_llm* the per-key spend quota is checked before
-        the body and the query's tokens are recorded after.
+        the body (again once the slot is held) and the query's tokens are
+        recorded after.
         """
         core = await run_blocking(lambda: resolve_core(app_db_path))
         api_key_id = mcp_api_key_id.get()
         quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
-        if bills_llm:
+
+        async def _enforce_quota() -> None:
             try:
                 await check_quota(
                     api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
@@ -248,16 +255,24 @@ def _register_search_tools(
                     "Daily LLM token quota for this API key has been reached; "
                     "it resets at UTC midnight."
                 ) from exc
+
+        if bills_llm:
+            await _enforce_quota()
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
         async with search_semaphore.acquire():
+            if bills_llm:
+                # Calls queued for a slot passed the first check before any
+                # of them recorded usage; look again now that they have run.
+                await _enforce_quota()
             output = await run_blocking(lambda: build_output(core))
-        if bills_llm:
-            await record_usage(
-                api_key_id=api_key_id,
-                quota=quota,
-                tokens=_total_tokens(output),
-                app_db_path=app_db_path,
-            )
+            if bills_llm:
+                # Still holding the slot, so the next call's check sees this.
+                await record_usage(
+                    api_key_id=api_key_id,
+                    quota=quota,
+                    tokens=_total_tokens(output),
+                    app_db_path=app_db_path,
+                )
         return output
 
     async def _dispatch(
@@ -268,8 +283,9 @@ def _register_search_tools(
             [SearchCore, str, SearchFilters | None, str | None], SearchResult
         ],
         error_event: str,
+        bills_llm: bool,
     ) -> str:
-        """Run a query-shaped billed tool (``semantic_search``/``deep_search``)."""
+        """Run a query-shaped tool (``semantic_search``/``deep_search``)."""
         # Read on the loop: the worker thread does not inherit contextvars.
         raw_asker = mcp_asker.get()
 
@@ -287,7 +303,7 @@ def _register_search_tools(
                 asker=asker,
             )
 
-        return await _run_tool(_build, bills_llm=True)
+        return await _run_tool(_build, bills_llm=bills_llm)
 
     @mcp.tool(
         name="semantic_search",
@@ -312,6 +328,7 @@ def _register_search_tools(
                 query=text, ui_filters=ui_filters
             ),
             error_event="mcp.semantic_search_error",
+            bills_llm=False,
         )
 
     @mcp.tool(
@@ -337,6 +354,7 @@ def _register_search_tools(
                 query=text, ui_filters=ui_filters, asker=asker
             ),
             error_event="mcp.deep_search_error",
+            bills_llm=True,
         )
 
     @mcp.tool(
@@ -397,6 +415,10 @@ def _register_search_tools(
         offset: int = 0,
     ) -> str:
         """Call core.keyword_search (FTS/browse, zero LLM) and return JSON."""
+        if query is not None and len(query) > MAX_QUERY_LENGTH:
+            raise ValueError(
+                f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
+            )
         bounded_limit = max(1, min(int(limit), 50))
         bounded_offset = max(0, int(offset))
         ui_filters = _to_search_filters(filters)
