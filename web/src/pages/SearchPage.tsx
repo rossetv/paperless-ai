@@ -120,7 +120,8 @@ export function SearchPage(): React.ReactElement {
     }
     const field = document.querySelector<HTMLInputElement>(`:is(${MAIN_FIELD_SELECTOR}):not(:disabled)`);
     if (field !== null) {
-      field.focus();
+      // The page is already where the answer is; a short viewport must not jump to the field.
+      field.focus({ preventScroll: true });
       field.setSelectionRange(field.value.length, field.value.length);
     }
     // A field that is not there yet (the loading screen's is disabled) keeps the

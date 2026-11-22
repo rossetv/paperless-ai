@@ -89,6 +89,22 @@ describe('SearchPage focus', () => {
     expect(field()).toHaveFocus();
   });
 
+  it('refocuses the field without scrolling it into view', async () => {
+    streamState = { status: 'streaming', query: 'bills', phaseRecords: [], activePhase: null, result: null, error: null };
+    const { rerender } = render(tree());
+    const field = () => screen.getByRole('searchbox', { name: 'What do you want to know?' });
+    await userEvent.click(field());
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+
+    streamState = { ...streamState, status: 'done', result: RESULT };
+    rerender(tree());
+
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(field()).toHaveFocus();
+    focus.mockRestore();
+  });
+
   it('leaves focus where the person put it while the search ran', async () => {
     streamState = { status: 'streaming', query: 'bills', phaseRecords: [], activePhase: null, result: null, error: null };
     const { rerender } = render(tree());
