@@ -134,6 +134,12 @@ describe('FieldControl', () => {
     expect(screen.getByRole('radio', { name: 'Option B' })).toHaveAttribute('aria-checked', 'false');
   });
 
+  it('selects the segmented option whose value differs only in case', () => {
+    render(<FieldControl field={segmentedField} value="B" onChange={noop} />);
+    expect(screen.getByRole('radio', { name: 'Option B' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Option A' })).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('renders a masked input for kind=secret', () => {
     render(
       <FieldControl
