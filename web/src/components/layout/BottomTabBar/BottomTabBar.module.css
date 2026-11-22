@@ -17,6 +17,8 @@
 }
 
 .tab {
+  --dim: var(--opacity-disabled);
+
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -29,7 +31,7 @@
   font-weight: var(--font-weight-caption);
   letter-spacing: var(--letter-spacing-nano);
   color: var(--colour-text-on-dark);
-  opacity: var(--opacity-disabled);
+  opacity: var(--dim);
   text-decoration: none;
   white-space: nowrap;
   transition: color var(--duration-standard) var(--easing-standard),
@@ -46,6 +48,11 @@
   opacity: 1;
 }
 
+/* Over the light page the dark glass is a lighter grey: more opacity keeps 4.5:1. */
+[data-theme="light"] .tab {
+  --dim: var(--opacity-inactive);
+}
+
 .tab-icon {
   width: var(--spacing-13);  /* 20 px */
   height: var(--spacing-13);
@@ -54,6 +61,11 @@
 .tab-label {
   font-size: var(--font-size-nano);
   line-height: var(--line-height-nano);
+}
+
+/* The accent is too dark for text on the glass bar; the icon keeps it. */
+.tab-active .tab-label {
+  color: var(--colour-text-on-dark);
 }
 
 @media (width <= 699.98px) {

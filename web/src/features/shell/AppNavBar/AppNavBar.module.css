@@ -21,9 +21,21 @@
   letter-spacing: var(--letter-spacing-micro);
 }
 
+/* The bar is dark glass in both themes; over the light page it is a lighter grey,
+   so the dimmed text needs more opacity to keep 4.5:1. */
+.wordmark-dim,
+.link,
+.pill {
+  --dim: var(--opacity-disabled);
+}
+
+[data-theme="light"] :is(.wordmark-dim, .link, .pill) {
+  --dim: var(--opacity-inactive);
+}
+
 .wordmark-dim {
   font-weight: var(--font-weight-nav);
-  opacity: var(--opacity-disabled);
+  opacity: var(--dim);
 }
 
 .link {
@@ -32,7 +44,7 @@
   font-size: var(--font-size-nav);
   font-weight: var(--font-weight-nav);
   text-decoration: none;
-  opacity: var(--opacity-disabled);
+  opacity: var(--dim);
   padding: var(--spacing-2) var(--spacing-1);
   position: relative;
   transition: opacity var(--duration-standard) var(--easing-standard);
@@ -74,7 +86,7 @@
   font-size: var(--font-size-nav);
   font-weight: var(--font-weight-nav);
   color: var(--colour-text-on-dark);
-  opacity: var(--opacity-disabled);
+  opacity: var(--dim);
   white-space: nowrap;
   user-select: none;
 }
