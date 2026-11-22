@@ -46,6 +46,7 @@ from search.appstate import AppState, attach_app_state
 from search.body_limit import BodyLimitMiddleware
 from search.deps import get_current_user, require_api_scope, require_api_scope_member
 from search.document_routes import build_document_router
+from search.fetch_site import FetchSiteMiddleware
 from search.index_routes import build_index_router
 from search.mcp_server import build_mcp_app
 from search.offload import LazySemaphore
@@ -332,6 +333,7 @@ def create_app(
     # The last one added is outermost: security headers wrap everything,
     # including /mcp, the SPA and the body limit's own 413.
     app.add_middleware(BodyLimitMiddleware)
+    app.add_middleware(FetchSiteMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     register_paperless_exception_handlers(app)
