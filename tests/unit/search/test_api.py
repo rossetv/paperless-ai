@@ -380,9 +380,16 @@ def test_search_heartbeat_stop_terminates_the_thread(tmp_path: Path) -> None:
     assert leaked == set()
 
 
-@pytest.mark.parametrize("upstream_status", [401, 403])
+@pytest.mark.parametrize(
+    ("upstream_status", "expected"),
+    [
+        (401, "rejected the server's API token"),
+        (403, "denied the server's API token permission"),
+    ],
+)
 def test_paperless_rejecting_the_server_token_is_a_502_not_a_login_prompt(
     upstream_status: int,
+    expected: str,
 ) -> None:
     """The browser must not read the server's own rejected token as "log in"."""
     import httpx
@@ -405,4 +412,4 @@ def test_paperless_rejecting_the_server_token_is_a_502_not_a_login_prompt(
 
     response = TestClient(app).get("/boom")
     assert response.status_code == 502
-    assert "API token" in response.json()["detail"]
+    assert expected in response.json()["detail"]
