@@ -492,7 +492,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         embedding_provider,
     )
     ollama_base_url = (
-        (source.get("OLLAMA_BASE_URL") or _DEFAULT_OLLAMA_BASE_URL)
+        _get_str_env(source, "OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL)
         if any_ollama
         else None
     )

@@ -239,6 +239,11 @@ class TestOllamaConfig:
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.OLLAMA_BASE_URL == "http://localhost:11434/v1/"
 
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_ollama_base_url_means_the_default(self, mocker, blank):
+        s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": blank})
+        assert s.OLLAMA_BASE_URL == "http://localhost:11434/v1/"
+
     def test_ollama_custom_base_url(self, mocker):
         s = _build(
             mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": "http://gpu:11434/v1/"}
