@@ -35,7 +35,7 @@ export interface SetupResponse {
 export interface LoginRequest {
   username: string;
   password: string;
-  /** "Keep me signed in for 7 days" — extends the session TTL. */
+  /** "Keep me signed in on this device" — extends the session TTL. */
   remember: boolean;
 }
 
