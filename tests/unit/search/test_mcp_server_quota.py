@@ -7,11 +7,13 @@ against a real migrated app.db through the in-memory MCP transport.
 from __future__ import annotations
 
 import asyncio
+import gc
 import threading
 from unittest.mock import MagicMock
 
 import anyio
 import pytest
+import structlog.testing
 
 from appdb.connection import connect
 from appdb.key_usage import add_usage, get_tokens_used, utc_today
@@ -259,3 +261,53 @@ async def test_cancelled_deep_search_keeps_its_slot_until_the_work_ends_and_reco
         async with semaphore.acquire():
             pass
     assert _tokens_used(app_db_path) == 40
+
+
+@pytest.mark.anyio
+async def test_work_of_a_cancelled_deep_search_that_then_fails_is_logged_not_dropped(
+    app_db_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    core = _make_core(max_concurrent=1, answer_tokens=40)
+    in_answer = threading.Event()
+    release = threading.Event()
+
+    def _blocking_answer(**_kwargs):
+        in_answer.set()
+        release.wait(timeout=5)
+        return make_search_result(stats=make_search_stats(total_tokens=40))
+
+    async def _failing_record_usage(**_kwargs):
+        raise RuntimeError("database is locked")
+
+    core.answer.side_effect = _blocking_answer
+    monkeypatch.setattr(mcp_server, "record_usage", _failing_record_usage)
+    app = build_mcp_app(
+        lambda _path: core, app_db_path, search_semaphore=LazySemaphore(1)
+    )
+    unhandled: list[dict] = []
+    asyncio.get_running_loop().set_exception_handler(
+        lambda _loop, context: unhandled.append(context)
+    )
+
+    call = asyncio.ensure_future(
+        app._fastmcp.call_tool("deep_search", {"question": "invoice"})
+    )
+    with structlog.testing.capture_logs() as logs:
+        try:
+            await anyio.to_thread.run_sync(in_answer.wait)
+            call.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await call
+        finally:
+            release.set()
+        with anyio.fail_after(5):
+            while mcp_server._in_flight:
+                await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        gc.collect()
+        await asyncio.sleep(0)
+
+    assert unhandled == []
+    failures = [e for e in logs if e["log_level"] == "error"]
+    assert len(failures) == 1
+    assert "database is locked" in str(failures[0]["exc_info"])

@@ -63,6 +63,11 @@ log = structlog.get_logger(__name__)
 _in_flight: set[asyncio.Task[str]] = set()
 
 
+def _log_orphaned_failure(work: asyncio.Task[str]) -> None:
+    if not work.cancelled() and (exc := work.exception()) is not None:
+        log.error("mcp.tool_failed_after_cancel", exc_info=exc)
+
+
 class _BearerAuthMiddleware:
     """Reject with 401 any request lacking a session cookie or ``mcp``-scoped key.
 
@@ -292,7 +297,13 @@ def _register_search_tools(
         work = asyncio.ensure_future(_run_holding_slot())
         _in_flight.add(work)
         work.add_done_callback(_in_flight.discard)
-        return await asyncio.shield(work)
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            # Nobody is left to receive the work's outcome, so log a failure
+            # rather than let the loop report it as never retrieved.
+            work.add_done_callback(_log_orphaned_failure)
+            raise
 
     async def _dispatch(
         *,
