@@ -43,6 +43,7 @@ from search.account_routes import build_account_router
 from search.api_key_routes import build_api_key_router
 from search.appdb_setup import open_app_db
 from search.appstate import AppState, attach_app_state
+from search.body_limit import BodyLimitMiddleware
 from search.deps import get_current_user, require_api_scope, require_api_scope_member
 from search.document_routes import build_document_router
 from search.index_routes import build_index_router
@@ -314,7 +315,9 @@ def create_app(
         lifespan=lifespan,
     )
 
-    # Registered first so it wraps everything, including /mcp and the SPA.
+    # The last one added is outermost: security headers wrap everything,
+    # including /mcp, the SPA and the body limit's own 413.
+    app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     register_paperless_exception_handlers(app)

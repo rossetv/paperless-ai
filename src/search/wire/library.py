@@ -72,7 +72,7 @@ class DocumentPatchRequest(BaseModel):
     correspondent_id: int | None = None
     document_type_id: int | None = None
     document_date: str | None = None
-    tags: list[int] | None = None
+    tags: list[int] | None = Field(default=None, max_length=1000)
     notes: str | None = Field(default=None, max_length=8192)
     archive_serial_number: int | None = None
 

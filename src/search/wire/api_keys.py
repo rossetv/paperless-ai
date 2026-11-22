@@ -53,7 +53,7 @@ class CreateApiKeyRequest(BaseModel):
     """
 
     name: str = Field(min_length=1, max_length=100)
-    scopes: list[str] = Field(min_length=1)
+    scopes: list[str] = Field(min_length=1, max_length=64)
     expires_at: str | None = None
 
     @field_validator("scopes")
@@ -78,7 +78,7 @@ class UpdateApiKeyRequest(BaseModel):
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    scopes: list[str] | None = Field(default=None, min_length=1)
+    scopes: list[str] | None = Field(default=None, min_length=1, max_length=64)
     expires_at: str | None = None
 
     @field_validator("scopes")
