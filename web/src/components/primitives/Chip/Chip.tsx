@@ -49,6 +49,8 @@ export function Chip({
     removeLabel ??
     (typeof children === 'string' ? `Remove ${children}` : 'Remove');
 
+  const labelTitle = typeof children === 'string' ? children : undefined;
+
   const removeButton = onRemove !== undefined ? (
     <button
       type="button"
@@ -72,7 +74,7 @@ export function Chip({
             onClick={onClick}
             aria-pressed={selected}
           >
-            <span className={styles['chip-label']}>{children}</span>
+            <span className={styles['chip-label']} title={labelTitle}>{children}</span>
           </button>
           {removeButton}
         </span>
@@ -86,14 +88,14 @@ export function Chip({
         onClick={onClick}
         aria-pressed={selected}
       >
-        <span className={styles['chip-label']}>{children}</span>
+        <span className={styles['chip-label']} title={labelTitle}>{children}</span>
       </button>
     );
   }
 
   return (
     <span className={classes}>
-      <span className={styles['chip-label']}>{children}</span>
+      <span className={styles['chip-label']} title={labelTitle}>{children}</span>
       {removeButton}
     </span>
   );

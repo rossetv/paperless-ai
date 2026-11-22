@@ -119,4 +119,9 @@ describe('Chip', () => {
       expect(screen.getByRole('button', { name: 'Inactive' })).toHaveAttribute('aria-pressed', 'false');
     });
   });
+
+  it('shows a text label in full on hover, since the label can be cut', () => {
+    render(<Chip>A very long tag name</Chip>);
+    expect(screen.getByText('A very long tag name')).toHaveAttribute('title', 'A very long tag name');
+  });
 });
