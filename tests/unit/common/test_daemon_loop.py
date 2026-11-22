@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, patch
 
 from common.daemon_loop import _safe_item_summary, run_polling_threadpool
@@ -10,19 +9,24 @@ from common.daemon_loop import _safe_item_summary, run_polling_threadpool
 MODULE = "common.daemon_loop"
 
 
-def _make_shutdown_after(n_iterations: int):
-    """Stand-in for is_shutdown_requested: False for n polls of the loop, then True.
+def _make_shutdown_after(n_polls: int, sleep: MagicMock):
+    """Stand-in for is_shutdown_requested: False until *sleep* ran n_polls times.
 
-    Only the polling loop's own checks count; the batch's per-document checks
-    just report the current state, so a test pins how many polls run.
+    The loop sleeps once per poll, so counting sleeps pins how many polls run
+    however often the loop and its batches check for shutdown. A loop that
+    never ends fails the test instead of hanging it.
     """
-    counter = {"calls": 0}
+    state = {"polls": 0, "checks": 0}
+
+    def _count_poll(_seconds):
+        state["polls"] += 1
+
+    sleep.side_effect = _count_poll
 
     def _is_shutdown():
-        if sys._getframe(1).f_code.co_name != "run_polling_threadpool":
-            return counter["calls"] > n_iterations
-        counter["calls"] += 1
-        return counter["calls"] > n_iterations
+        state["checks"] += 1
+        assert state["checks"] < 10_000, "the loop never saw a shutdown"
+        return state["polls"] >= n_polls
 
     return _is_shutdown
 
@@ -40,7 +44,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -59,7 +65,9 @@ class TestRunPollingThreadpool:
         before_each_batch = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -84,7 +92,9 @@ class TestRunPollingThreadpool:
 
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -101,7 +111,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -118,7 +130,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -137,7 +151,9 @@ class TestRunPollingThreadpool:
         mock_sleep = _make_sleep_noop()
 
         with (
-            patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(2)),
+            patch(
+                f"{MODULE}.is_shutdown_requested", _make_shutdown_after(2, mock_sleep)
+            ),
             patch(f"{MODULE}.log") as mock_log,
         ):
             run_polling_threadpool(
@@ -160,7 +176,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -178,7 +196,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -195,7 +215,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -212,7 +234,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(0)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(0, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -231,7 +255,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -250,7 +276,9 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -267,7 +295,10 @@ class TestRunPollingThreadpool:
         from common.daemon_loop import CycleOutcome
 
         outcomes: list[CycleOutcome] = []
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        mock_sleep = _make_sleep_noop()
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=lambda: [{"id": 1}],
@@ -276,7 +307,7 @@ class TestRunPollingThreadpool:
                 max_workers=1,
                 halt_check=lambda: "halted for a test",
                 on_cycle=outcomes.append,
-                sleep=_make_sleep_noop(),
+                sleep=mock_sleep,
             )
 
         assert len(outcomes) == 1
@@ -339,7 +370,10 @@ class TestHaltMidQueue:
 
         # Single worker so completion order is deterministic; halt_check reads
         # the same flag the daemon's breaker would expose.
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        mock_sleep = _make_sleep_noop()
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -347,7 +381,7 @@ class TestHaltMidQueue:
                 poll_interval_seconds=5,
                 max_workers=1,
                 halt_check=lambda: "halted" if tripped["flag"] else None,
-                sleep=_make_sleep_noop(),
+                sleep=mock_sleep,
             )
 
         # Only the items up to the trip ran; the rest of the queue was skipped
@@ -365,7 +399,10 @@ class TestHaltMidQueue:
             processed.append(item["id"])
             tripped["flag"] = True  # any failure trips it for this test
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        mock_sleep = _make_sleep_noop()
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=MagicMock(return_value=items),
@@ -373,7 +410,7 @@ class TestHaltMidQueue:
                 poll_interval_seconds=5,
                 max_workers=2,
                 halt_check=lambda: "halted" if tripped["flag"] else None,
-                sleep=_make_sleep_noop(),
+                sleep=mock_sleep,
             )
 
         # At most the first sub-batch (2 items) ran; the remaining four were
@@ -397,7 +434,10 @@ class TestHaltMidQueue:
             if len(processed) >= 3:
                 tripped["flag"] = True
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        mock_sleep = _make_sleep_noop()
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=MagicMock(return_value=items),
@@ -406,7 +446,7 @@ class TestHaltMidQueue:
                 max_workers=1,
                 halt_check=lambda: "halted" if tripped["flag"] else None,
                 on_cycle=outcomes.append,
-                sleep=_make_sleep_noop(),
+                sleep=mock_sleep,
             )
 
         assert len(outcomes) == 1
@@ -418,14 +458,17 @@ class TestHaltMidQueue:
         items = [{"id": i} for i in range(7)]
         process_item = MagicMock()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+        mock_sleep = _make_sleep_noop()
+        with patch(
+            f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1, mock_sleep)
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=MagicMock(return_value=items),
                 process_item=process_item,
                 poll_interval_seconds=5,
                 max_workers=3,
-                sleep=_make_sleep_noop(),
+                sleep=mock_sleep,
             )
 
         assert process_item.call_count == 7
