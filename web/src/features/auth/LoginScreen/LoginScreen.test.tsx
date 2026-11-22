@@ -95,6 +95,15 @@ describe('LoginScreen', () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it('clears the previous server error when local validation fails', async () => {
+    const reset = vi.fn();
+    renderScreen(makeLogin({ isError: true, error: new Unauthenticated(), reset }));
+    await userEvent.type(screen.getByLabelText('Username'), 'alex.morgan');
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
+    expect(screen.getByText(/enter your password/i)).toBeInTheDocument();
+    expect(reset).toHaveBeenCalled();
+  });
+
   it('does not call the login mutation when validation fails', async () => {
     const mutate = vi.fn();
     renderScreen(makeLogin({ mutate }));

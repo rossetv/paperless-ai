@@ -42,6 +42,8 @@ export function LoginScreen(): React.ReactElement {
     setUsernameError(uErr);
     setPasswordError(pErr);
     if (uErr !== undefined || pErr !== undefined) {
+      // Drop the earlier server error so only the current one shows.
+      login.reset();
       return;
     }
     login.mutate({ username, password, remember }, {});
