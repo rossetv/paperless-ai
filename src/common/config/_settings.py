@@ -690,10 +690,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_SERVER_PORT=_resolve_server_port(source),
         # Peers whose X-Forwarded-For/-Proto uvicorn trusts. "*" is right only
         # when the proxy is the sole route in; otherwise pin it to the proxy
-        # CIDR so a client cannot spoof its IP or the cookie Secure flag.
-        SEARCH_FORWARDED_ALLOW_IPS=_get_str_env(
-            source, "SEARCH_FORWARDED_ALLOW_IPS", "*"
-        ),
+        # CIDR so a client cannot spoof its IP or the cookie Secure flag. Blank is
+        # kept as set: it means trust no proxy, never the permissive default.
+        SEARCH_FORWARDED_ALLOW_IPS=source.get("SEARCH_FORWARDED_ALLOW_IPS", "*"),
         SEARCH_SESSION_TTL=_require_at_least_one(
             "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
         ),

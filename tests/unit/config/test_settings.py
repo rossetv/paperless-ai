@@ -109,3 +109,14 @@ class TestBlankAndPaddedValues:
 
     def test_blank_refusal_markers_still_disable_detection(self) -> None:
         assert _make_settings(OCR_REFUSAL_MARKERS="").OCR_REFUSAL_MARKERS == []
+
+
+class TestForwardedAllowIps:
+    def test_default_trusts_any_proxy(self) -> None:
+        assert _make_settings().SEARCH_FORWARDED_ALLOW_IPS == "*"
+
+    def test_blank_stays_blank_so_no_proxy_is_trusted(self) -> None:
+        assert (
+            _make_settings(SEARCH_FORWARDED_ALLOW_IPS="").SEARCH_FORWARDED_ALLOW_IPS
+            == ""
+        )
