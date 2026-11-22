@@ -7,8 +7,6 @@
   height: var(--height-nav);
   background-color: var(--colour-nav-bg);
   backdrop-filter: var(--backdrop-nav);
-  /* stylelint-disable-next-line property-no-vendor-prefix */
-  -webkit-backdrop-filter: var(--backdrop-nav);
   color: var(--colour-text-on-dark);
   font-family: var(--font-text);
   font-size: var(--font-size-nav);

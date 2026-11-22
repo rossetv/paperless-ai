@@ -12,8 +12,6 @@
   padding: var(--spacing-10) var(--spacing-14);
   background: var(--colour-savebar-bg);
   backdrop-filter: var(--backdrop-nav);
-  /* stylelint-disable-next-line property-no-vendor-prefix */
-  -webkit-backdrop-filter: var(--backdrop-nav);
   border-top: var(--spacing-1) solid var(--colour-hairline-strong);
   transform: translateY(0);
   visibility: visible;
