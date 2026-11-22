@@ -32,7 +32,14 @@ function isoDateParts(iso: string | null): { day: number; monthIndex: number; ye
   if (monthIndex < 0 || monthIndex > 11) {
     return null;
   }
-  return { day: Number(match[3]), monthIndex, year: match[1]! };
+  const day = Number(match[3]);
+  const year = Number(match[1]);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = monthIndex === 1 ? (leap ? 29 : 28) : [3, 5, 8, 10].includes(monthIndex) ? 30 : 31;
+  if (day < 1 || day > daysInMonth) {
+    return null;
+  }
+  return { day, monthIndex, year: match[1]! };
 }
 
 /**
