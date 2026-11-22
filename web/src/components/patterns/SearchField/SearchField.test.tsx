@@ -44,6 +44,14 @@ describe('SearchField', () => {
     expect(handleSubmit).not.toHaveBeenCalled();
   });
 
+  it('fires onSubmit with an empty value when allowEmpty is set', async () => {
+    const handleSubmit = vi.fn();
+    render(<SearchField id="q" onSubmit={handleSubmit} allowEmpty />);
+    await userEvent.click(screen.getByRole('searchbox'));
+    await userEvent.keyboard('{Enter}');
+    expect(handleSubmit).toHaveBeenCalledWith('');
+  });
+
   it('shows a placeholder when provided', () => {
     render(<SearchField id="q" onSubmit={vi.fn()} placeholder="Search your documents…" />);
     expect(screen.getByPlaceholderText('Search your documents…')).toBeInTheDocument();

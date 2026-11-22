@@ -139,11 +139,11 @@ describe('LibraryScreen', () => {
     expect(screen.getByText(/showing/i)).toBeInTheDocument();
   });
 
-  it('shows an empty state when no documents match', () => {
+  it('shows an empty state when no documents match the filters', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
     );
-    renderScreen();
+    renderScreen('/library?q=nothing');
     // Both the EmptyState title and description match.
     expect(screen.getAllByText(/no documents/i)[0]).toBeInTheDocument();
   });
@@ -158,6 +158,81 @@ describe('LibraryScreen', () => {
     const lastCall = mockUseDocuments.mock.calls.at(-1)![0];
     expect(lastCall.query).toBe('energy');
     expect(lastCall.page).toBe(1);
+  });
+
+  it('shows the text query in the field and as a chip, and clears it from either', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?q=energy&tag=5');
+    expect(screen.getByRole('searchbox')).toHaveValue('energy');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove “energy”' }));
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library?tag=5');
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+  });
+
+  it('Clear all also clears the text query', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?q=energy&tag=5');
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library');
+  });
+
+  it('submitting an emptied field clears the text query', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?q=energy');
+    await userEvent.clear(screen.getByRole('searchbox'));
+    await userEvent.type(screen.getByRole('searchbox'), '{Enter}');
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library');
+  });
+
+  it('says the library is empty when nothing is filtered and nothing is indexed', () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen();
+    expect(screen.getByText('The library is empty')).toBeInTheDocument();
+    expect(screen.queryByText(/match the current filters/i)).not.toBeInTheDocument();
+  });
+
+  it('goes to the last page, replacing history, when the page is past the end', () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 50, page: 99, page_size: 24 }),
+    );
+    renderScreen('/library?page=99');
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library?page=3');
+  });
+
+  it('goes to page 1 when a past-the-end page has no results at all', () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 4, page_size: 24 }),
+    );
+    renderScreen('/library?page=4');
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library');
+  });
+
+  it('shows date filter chips as formatted dates', () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?from=2025-01-05&to=2025-03-09');
+    expect(screen.getByText('From 5 Jan 2025')).toBeInTheDocument();
+    expect(screen.getByText('To 9 Mar 2025')).toBeInTheDocument();
+  });
+
+  it('retries the request from the error state', async () => {
+    const refetch = vi.fn();
+    mockUseDocuments.mockReturnValue({
+      ...documentsResult(undefined, { isError: true }),
+      refetch,
+    });
+    renderScreen();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it('changes the sort field and resets to page 1', async () => {

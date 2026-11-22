@@ -23,15 +23,17 @@ export interface SearchFieldProps {
   /**
    * Called with the current query string when the user submits.
    * Fires on Enter keypress and on submit button click.
-   * Does NOT fire when the value is empty.
+   * Does NOT fire when the value is empty, unless `allowEmpty` is set.
    */
   onSubmit: (query: string) => void;
+  /** Let an empty submit through, so a caller can clear what the field filters. */
+  allowEmpty?: boolean;
   className?: string;
 }
 
 /**
  * Search input with a leading icon and a submit button. Calls `onSubmit` on Enter
- * or a submit click, never with an empty value.
+ * or a submit click, never with an empty value unless `allowEmpty`.
  */
 export function SearchField({
   id,
@@ -42,6 +44,7 @@ export function SearchField({
   disabled = false,
   onChange,
   onSubmit,
+  allowEmpty = false,
   className,
 }: SearchFieldProps): React.ReactElement {
   // Uncontrolled state, seeded from `defaultValue`; ignored when `value` is set.
@@ -65,7 +68,7 @@ export function SearchField({
 
   function submit(): void {
     const val = inputRef.current?.value ?? currentValue;
-    if (val.trim() === '') return;
+    if (!allowEmpty && val.trim() === '') return;
     onSubmit(val);
   }
 
