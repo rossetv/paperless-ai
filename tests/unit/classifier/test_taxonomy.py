@@ -127,7 +127,12 @@ class TestGetOrCreateCorrespondentId:
 
     @pytest.mark.parametrize(
         ("existing", "name"),
-        [("Neon Energy", "Eon"), ("AS", "Vasco"), ("EE", "Deere")],
+        [
+            ("Neon Energy", "Eon"),
+            ("AS", "Vasco"),
+            ("EE", "Deere"),
+            ("Neon Energy", "E.ON"),
+        ],
     )
     def test_partial_word_does_not_match(self, existing, name):
         cache = _make_cache(correspondents=[_corr(7, existing)])
@@ -138,6 +143,23 @@ class TestGetOrCreateCorrespondentId:
         result = cache.get_or_create_correspondent_id(name)
 
         assert result == 99
+
+    @pytest.mark.parametrize(
+        ("existing", "name"),
+        [
+            ("Amazon.co.uk", "Amazon"),
+            ("Amazon", "Amazon.co.uk"),
+            ("Booking.com", "Booking"),
+            ("Coca-Cola", "Cola"),
+            ("AT&T Mobility", "AT&T"),
+            ("E.ON UK", "EON"),
+        ],
+    )
+    def test_punctuation_separates_words_for_containment(self, existing, name):
+        cache = _make_cache(correspondents=[_corr(7, existing)])
+        cache.refresh()
+
+        assert cache.get_or_create_correspondent_id(name) == 7
 
     def test_whole_word_containment_matches(self):
         cache = _make_cache(correspondents=[_corr(7, "Neon Energy")])

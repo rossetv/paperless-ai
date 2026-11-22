@@ -66,6 +66,21 @@ def normalise_name(value: str) -> str:
     >>> normalise_name("Müller GmbH")
     'muller'
     """
+    return _fold_name(value, punctuation="")
+
+
+def name_words(value: str) -> str:
+    """
+    Normalise an organisation name like :func:`normalise_name`, but with
+    punctuation as a word break, for whole-word containment.
+
+    >>> name_words("Amazon.co.uk")
+    'amazon co uk'
+    """
+    return _fold_name(value, punctuation=" ")
+
+
+def _fold_name(value: str, punctuation: str) -> str:
     # Symbols and superscripts go first: NFKD would turn "™" into "TM", "²" into "2".
     kept = "".join(ch for ch in value if not _is_symbol_or_other_number(ch))
     folded = unicodedata.normalize("NFKD", kept).casefold()
@@ -77,10 +92,8 @@ def normalise_name(value: str) -> str:
                 chars.append(ch)
             continue
         base = ch
-        if ch.isalnum() or ch.isspace():
-            chars.append(ch)
-    cleaned = "".join(chars)
-    parts = cleaned.split()
+        chars.append(ch if ch.isalnum() or ch.isspace() else punctuation)
+    parts = "".join(chars).split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
         parts.pop()
     return " ".join(parts)

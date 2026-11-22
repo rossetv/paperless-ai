@@ -9,7 +9,7 @@ from typing import Callable, Iterable, NamedTuple
 import structlog
 
 from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient, PaperlessItem
-from .normalisers import normalise_name, normalise_simple
+from .normalisers import name_words, normalise_name, normalise_simple
 from .tag_filters import dedupe_tags
 
 log = structlog.get_logger(__name__)
@@ -52,7 +52,9 @@ def _match_item(
     """Find a Paperless item by normalised name, optionally allowing substrings.
 
     Substring matching lets a *"Neon"* correspondent find *"Neon Energy"*; it
-    compares whole words only, so *"Eon"* does not.
+    compares whole words only, so *"Eon"* does not. Words are compared both
+    with punctuation removed (*"E.ON"* is *"eon"*) and with punctuation as a
+    word break (*"Amazon.co.uk"* holds *"amazon"*).
     """
     normalised = normaliser(name)
     if not normalised:
@@ -66,12 +68,18 @@ def _match_item(
     if matched:
         return matched
     if allow_substring:
-        padded = f" {normalised} "
+        wanted = {normalised, name_words(name)}
         for key, item in mapping.items():
-            padded_key = f" {key} "
-            if padded in padded_key or padded_key in padded:
+            have = {key, name_words(str(item.get("name", "")))}
+            if any(_contains_words(a, b) for a in wanted for b in have if a and b):
                 return item
     return None
+
+
+def _contains_words(a: str, b: str) -> bool:
+    """Whether either string holds the other as a run of whole words."""
+    padded_a, padded_b = f" {a} ", f" {b} "
+    return padded_a in padded_b or padded_b in padded_a
 
 
 def _get_usage_count(item: PaperlessItem) -> int:
