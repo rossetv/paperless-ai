@@ -40,7 +40,7 @@ export function TagEditor({
     .map((t) => ({
       value: t.id,
       label: t.name,
-      meta: `${t.document_count} docs`,
+      meta: `${t.document_count} ${t.document_count === 1 ? 'doc' : 'docs'}`,
     }));
 
   // Suppresses "Create …" when the query matches an already-selected tag, which
