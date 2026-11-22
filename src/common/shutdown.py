@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import signal
-import threading
+import time
 from typing import TYPE_CHECKING
 
 import structlog
@@ -13,25 +13,36 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-_shutdown_event = threading.Event()
+# A plain flag, not a threading.Event: Event.set() takes a lock the main thread
+# may hold while waiting, which would deadlock a signal handler running there.
+_shutdown_requested = False
+
+_WAIT_SLICE_SECONDS = 0.5
 
 
 def request_shutdown() -> None:
-    _shutdown_event.set()
+    global _shutdown_requested
+    _shutdown_requested = True
 
 
 def is_shutdown_requested() -> bool:
-    return _shutdown_event.is_set()
+    return _shutdown_requested
 
 
 def wait_for_shutdown(timeout: float) -> None:
-    """Sleep up to *timeout* seconds, returning at once if shutdown is requested."""
-    _shutdown_event.wait(timeout)
+    """Sleep up to *timeout* seconds, returning within half a second of a shutdown request."""
+    deadline = time.monotonic() + timeout
+    while not _shutdown_requested:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(_WAIT_SLICE_SECONDS, remaining))
 
 
 def reset_shutdown() -> None:
     """Clear the shutdown flag; tests that set it must call this in teardown."""
-    _shutdown_event.clear()
+    global _shutdown_requested
+    _shutdown_requested = False
 
 
 def register_signal_handlers() -> None:
