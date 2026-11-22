@@ -368,9 +368,9 @@ describe('DocumentScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/view only/i);
   });
 
-  it('shows "Saved" status pill when role is member and mutation is idle', () => {
+  it('shows no "Saved" before anything has been saved', () => {
     renderScreen({ role: 'member' });
-    expect(screen.getByRole('status')).toHaveTextContent(/saved/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent(/saved/i);
   });
 
   it('admin role sees ActionsCard with Delete button', () => {
