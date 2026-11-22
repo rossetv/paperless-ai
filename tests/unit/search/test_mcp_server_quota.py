@@ -6,6 +6,7 @@ against a real migrated app.db through the in-memory MCP transport.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from unittest.mock import MagicMock
 
@@ -220,3 +221,41 @@ async def test_deep_search_waiting_for_a_slot_is_refused_if_the_quota_ran_out_me
     assert results["second"].isError is True
     assert "quota" in _text(results["second"]).lower()
     core.answer.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_cancelled_deep_search_keeps_its_slot_until_the_work_ends_and_records_its_tokens(
+    app_db_path: str,
+) -> None:
+    core = _make_core(max_concurrent=1, answer_tokens=40)
+    in_answer = threading.Event()
+    release = threading.Event()
+
+    def _blocking_answer(**_kwargs):
+        in_answer.set()
+        release.wait(timeout=5)
+        return make_search_result(stats=make_search_stats(total_tokens=40))
+
+    core.answer.side_effect = _blocking_answer
+    semaphore = LazySemaphore(1)
+    app = build_mcp_app(lambda _path: core, app_db_path, search_semaphore=semaphore)
+
+    call = asyncio.ensure_future(
+        app._fastmcp.call_tool("deep_search", {"question": "invoice"})
+    )
+    try:
+        await anyio.to_thread.run_sync(in_answer.wait)
+        call.cancel()
+        with anyio.fail_after(1):
+            with pytest.raises(asyncio.CancelledError):
+                await call
+
+        assert semaphore.acquire().locked()  # type: ignore[attr-defined]
+        assert _tokens_used(app_db_path) == 0
+    finally:
+        release.set()
+
+    with anyio.fail_after(5):
+        async with semaphore.acquire():
+            pass
+    assert _tokens_used(app_db_path) == 40
