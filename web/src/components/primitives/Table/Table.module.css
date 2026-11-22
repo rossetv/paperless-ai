@@ -17,9 +17,47 @@
   }
 
   .table {
-    /* Widest caller (API Keys): fixed columns sum to ≈530 px, leaving ≈70 px
-       for the flex Name column — enough to read the key name at a scroll. */
-    min-width: var(--width-table-min-scroll);
+    /* Widest caller (API Keys): fixed columns sum to ≈530 px; the extra width
+       leaves the flex Name column room to read a key name without clipping. */
+    min-width: calc(var(--width-table-min-scroll) + var(--width-col-date));
+  }
+
+  .cell {
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * Edge fade cues the columns scrolled out of view; the Table sets the data
+   * attributes only for edges that have more content beyond them.
+   */
+  .wrapper[data-fade-start='true'],
+  .wrapper[data-fade-end='true'] {
+    --table-fade-start: 0px;
+    --table-fade-end: 0px;
+
+    /* stylelint-disable-next-line property-no-vendor-prefix */
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--table-fade-start),
+      #000 calc(100% - var(--table-fade-end)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--table-fade-start),
+      #000 calc(100% - var(--table-fade-end)),
+      transparent 100%
+    );
+  }
+
+  .wrapper[data-fade-start='true'] {
+    --table-fade-start: var(--spacing-16);
+  }
+
+  .wrapper[data-fade-end='true'] {
+    --table-fade-end: var(--spacing-16);
   }
 }
 

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Table } from './Table';
 import type { Column } from './Table';
 
@@ -85,5 +85,43 @@ describe('Table', () => {
       <Table columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} className="extra" />,
     );
     expect(screen.getByRole('table').className).toContain('extra');
+  });
+
+  describe('scroll hint', () => {
+    function sizeWrapper(wrapper: HTMLElement, scrollWidth: number, clientWidth: number): void {
+      Object.defineProperty(wrapper, 'scrollWidth', { configurable: true, value: scrollWidth });
+      Object.defineProperty(wrapper, 'clientWidth', { configurable: true, value: clientWidth });
+    }
+
+    it('marks the end edge when the table is wider than its container', () => {
+      const proto = HTMLElement.prototype;
+      const sw = Object.getOwnPropertyDescriptor(proto, 'scrollWidth');
+      const cw = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
+      Object.defineProperty(proto, 'scrollWidth', { configurable: true, value: 600 });
+      Object.defineProperty(proto, 'clientWidth', { configurable: true, value: 300 });
+      try {
+        render(<Table columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />);
+        const wrapper = screen.getByRole('table').parentElement as HTMLElement;
+        expect(wrapper.dataset['fadeEnd']).toBe('true');
+        expect(wrapper.dataset['fadeStart']).toBeUndefined();
+      } finally {
+        if (sw) Object.defineProperty(proto, 'scrollWidth', sw);
+        else delete (proto as unknown as Record<string, unknown>)['scrollWidth'];
+        if (cw) Object.defineProperty(proto, 'clientWidth', cw);
+        else delete (proto as unknown as Record<string, unknown>)['clientWidth'];
+      }
+    });
+
+    it('marks the start edge once scrolled and drops the end edge at the far end', () => {
+      render(<Table columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />);
+      const wrapper = screen.getByRole('table').parentElement as HTMLElement;
+      expect(wrapper.dataset['fadeStart']).toBeUndefined();
+      expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+      sizeWrapper(wrapper, 600, 300);
+      wrapper.scrollLeft = 300;
+      fireEvent.scroll(wrapper);
+      expect(wrapper.dataset['fadeStart']).toBe('true');
+      expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+    });
   });
 });

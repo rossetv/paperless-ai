@@ -49,8 +49,34 @@ export function Table<Row>({
   emptyMessage = 'Nothing to show.',
   className,
 }: TableProps<Row>): React.ReactElement {
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = React.useState({ start: false, end: false });
+
+  // Track which edges have more content beyond them so CSS can fade those edges.
+  React.useEffect(() => {
+    const el = wrapperRef.current;
+    if (el === null) return undefined;
+    const update = (): void => {
+      const start = el.scrollLeft > 1;
+      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [rows.length, columns.length]);
+
   return (
-    <div className={styles['wrapper']}>
+    <div
+      ref={wrapperRef}
+      className={styles['wrapper']}
+      data-fade-start={edges.start ? 'true' : undefined}
+      data-fade-end={edges.end ? 'true' : undefined}
+    >
       <table className={cn(styles['table'], className)}>
         <thead className={styles['head']}>
           <tr>
