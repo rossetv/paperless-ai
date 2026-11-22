@@ -76,7 +76,6 @@
 .item:hover,
 .item:focus-visible {
   background-color: var(--colour-button-light-bg);
-  outline: none;
 }
 
 .item-selected {
