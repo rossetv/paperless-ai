@@ -9,7 +9,7 @@ import openai
 from PIL import Image
 
 from common.content_checks import is_error_content
-from ocr.provider import OcrProvider, _is_model_refusal
+from ocr.provider import OcrProvider, is_model_refusal
 
 
 def _make_settings(**overrides):
@@ -574,13 +574,13 @@ class TestIsModelRefusal:
         )
         assert len(long_body) > 200
 
-        assert _is_model_refusal(long_body, self._MARKERS, self._SENTINEL) is False
+        assert is_model_refusal(long_body, self._MARKERS, self._SENTINEL) is False
 
     def test_short_genuine_refusal_is_detected(self):
         short_refusal = "I cannot assist with this request."
         assert len(short_refusal) < 200
 
-        assert _is_model_refusal(short_refusal, self._MARKERS, self._SENTINEL) is True
+        assert is_model_refusal(short_refusal, self._MARKERS, self._SENTINEL) is True
 
     def test_hard_sentinel_is_always_a_refusal_regardless_of_length(self):
         # The hard sentinel must be detected even when surrounded by other text
@@ -593,11 +593,11 @@ class TestIsModelRefusal:
         )
         assert len(long_text) > 200
 
-        assert _is_model_refusal(long_text, self._MARKERS, self._SENTINEL) is True
+        assert is_model_refusal(long_text, self._MARKERS, self._SENTINEL) is True
 
     def test_hard_sentinel_case_insensitive(self):
         assert (
-            _is_model_refusal(
+            is_model_refusal(
                 "chatgpt refused to transcribe", self._MARKERS, self._SENTINEL
             )
             is True
@@ -605,7 +605,7 @@ class TestIsModelRefusal:
 
     def test_empty_markers_with_short_text_not_a_refusal(self):
         # No markers configured — only the sentinel should fire.
-        assert _is_model_refusal("Short response.", [], self._SENTINEL) is False
+        assert is_model_refusal("Short response.", [], self._SENTINEL) is False
 
     def test_provider_does_not_treat_long_document_as_refusal(self):
         # End-to-end: a long OCR result containing a refusal phrase is accepted

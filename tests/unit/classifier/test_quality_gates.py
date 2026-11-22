@@ -36,3 +36,20 @@ class TestNeedsErrorTag:
 
     def test_empty_string(self):
         assert needs_error_tag("") is False
+
+    def test_long_document_quoting_a_soft_phrase_is_not_flagged(self):
+        letter = (
+            "Dear Mr Smith, regarding your application of 3 March: I cannot assist "
+            "you with this request at this time due to regulatory requirements. "
+            "Please contact your local office for further information about the "
+            "matter described in your application."
+        )
+        assert len(letter) > 200
+
+        assert needs_error_tag(letter) is False
+
+    def test_hard_markers_flag_a_long_document(self):
+        letter = "Dear Mr Smith, please find the details of your account below. " * 5
+
+        assert needs_error_tag(f"{letter} Name: [REDACTED]") is True
+        assert needs_error_tag(f"{letter} CHATGPT REFUSED TO TRANSCRIBE") is True

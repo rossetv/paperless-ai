@@ -21,14 +21,15 @@ log = structlog.get_logger(__name__)
 _REFUSAL_DOMINANCE_THRESHOLD_CHARS = 200
 
 
-def _is_model_refusal(
+def is_model_refusal(
     text: str, refusal_markers: Iterable[str], refusal_mark: str
 ) -> bool:
     """Return ``True`` only when *text* is a genuine model refusal.
 
     *refusal_mark*, the sentinel the prompt asks for, matches anywhere. A soft
     phrase (e.g. ``"i cannot assist"``) counts only in a short response, so a
-    document that merely contains such language is not discarded.
+    document that merely contains such language is not discarded. Also applied
+    to a whole document's text, where redaction markers are checked separately.
     """
     text_lower = text.lower()
 
@@ -138,7 +139,7 @@ class OcrProvider(OpenAIChatMixin):
 
             text = (response.choices[0].message.content or "").strip()
 
-            if _is_model_refusal(
+            if is_model_refusal(
                 text,
                 self.settings.OCR_REFUSAL_MARKERS,
                 self.settings.REFUSAL_MARK,
