@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SortControl } from './SortControl';
 
@@ -133,6 +133,17 @@ describe('SortControl', () => {
       await userEvent.click(screen.getByRole('button'));
       await userEvent.tab();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it.each(['Tab', 'Shift+Tab'])('%s from an item focuses the trigger and closes the menu without preventing the default', async (combo) => {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      const item = screen.getByRole('menuitemradio', { name: 'Title' });
+      expect(item).toHaveFocus();
+      const notPrevented = fireEvent.keyDown(item, { key: 'Tab', shiftKey: combo === 'Shift+Tab' });
+      expect(notPrevented).toBe(true);
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
     });
   });
 

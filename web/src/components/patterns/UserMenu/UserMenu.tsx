@@ -76,6 +76,8 @@ export function UserMenu({
       return;
     }
     if (event.key === 'Tab') {
+      // Focus the trigger before the menu unmounts so the browser's Tab moves on from it.
+      triggerRef.current?.focus();
       setOpen(false);
       return;
     }

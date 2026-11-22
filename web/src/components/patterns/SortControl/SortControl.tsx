@@ -87,6 +87,8 @@ export function SortControl<T extends string = string>({
       return;
     }
     if (event.key === 'Tab') {
+      // Focus the trigger before the menu unmounts so the browser's Tab moves on from it.
+      triggerRef.current?.focus();
       setIsOpen(false);
       return;
     }

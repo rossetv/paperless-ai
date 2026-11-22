@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UserMenu } from './UserMenu';
 
@@ -122,6 +122,16 @@ describe('UserMenu', () => {
       await open();
       await userEvent.tab();
       expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it.each(['Tab', 'Shift+Tab'])('%s from the item focuses the trigger and closes the menu without preventing the default', async (combo) => {
+      const { trigger } = await open();
+      const item = screen.getByRole('menuitem', { name: 'Sign out' });
+      expect(item).toHaveFocus();
+      const notPrevented = fireEvent.keyDown(item, { key: 'Tab', shiftKey: combo === 'Shift+Tab' });
+      expect(notPrevented).toBe(true);
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
     });
   });
 });
