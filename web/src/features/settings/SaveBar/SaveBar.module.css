@@ -131,6 +131,9 @@
 @media (width <= 699.98px) {
   .bar {
     bottom: calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0%));
+
+    /* One step under the tab bar, so the bar never slides out in front of its icons. */
+    z-index: calc(var(--z-nav) - 1);
   }
 
   /* Clear the raised position too, so the exit never slides over the tab bar. */
@@ -140,10 +143,22 @@
     );
   }
 
-  /* In-flow room under the page so the last field scrolls clear of the raised bar. */
+  /* In-flow room under the page so the last field scrolls clear of the raised bar;
+     it collapses with the bar's slide, so the page does not jump while it leaves. */
   .spacer {
     display: block;
     padding-top: calc(2 * var(--height-mobile-tab-bar));
+    transition: padding-top var(--duration-panel) var(--easing-decelerate);
+  }
+
+  .spacer-hidden {
+    padding-top: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spacer {
+      transition: none;
+    }
   }
 }
 

@@ -71,7 +71,7 @@ export function SaveBar({
           </Button>
         </div>
       </div>
-      {!isHidden && <div className={styles['spacer']} aria-hidden="true" />}
+      <div className={cn(styles['spacer'], isHidden && styles['spacer-hidden'])} aria-hidden="true" />
     </>
   );
 }
