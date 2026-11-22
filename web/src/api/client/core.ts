@@ -29,17 +29,54 @@ export class Unauthenticated extends Error {
 /**
  * Thrown when the server returns a non-2xx, non-401 response.
  *
- * Carries the HTTP status code for the caller to inspect.
+ * Carries the HTTP status code for the caller to inspect. When the body held a
+ * FastAPI `detail`, `detail` and `message` are that text; otherwise `detail`
+ * is undefined and `message` is the generic one.
  */
 export class ApiError extends Error {
   readonly status: number;
+  readonly detail: string | undefined;
 
-  constructor(status: number, message = `API error ${status}`) {
-    super(message);
+  constructor(status: number, message?: string, detail?: string) {
+    super(detail ?? message ?? `API error ${status}`);
     this.name = 'ApiError';
     this.status = status;
+    this.detail = detail;
     Object.setPrototypeOf(this, new.target.prototype);
   }
+}
+
+/**
+ * The server's message for a failed `ApiError`, or `fallback` for any other
+ * error or a response that carried no `detail`.
+ */
+export function errorDetail(error: unknown, fallback: string): string {
+  return error instanceof ApiError && error.detail !== undefined ? error.detail : fallback;
+}
+
+/**
+ * Read the FastAPI `{"detail": ...}` of a failed response: a string as is, a
+ * 422 list of `{loc, msg, type}` joined from each `msg`. Anything else
+ * (non-JSON body, no usable detail) is `undefined`.
+ */
+export async function readErrorDetail(response: Response): Promise<string | undefined> {
+  let body: unknown;
+  try {
+    body = JSON.parse(await response.text());
+  } catch {
+    return undefined;
+  }
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === 'string') {
+    return detail.trim() === '' ? undefined : detail;
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item: unknown) => (item as { msg?: unknown } | null)?.msg)
+      .filter((msg): msg is string => typeof msg === 'string' && msg !== '');
+    return messages.length > 0 ? messages.join('; ') : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -59,7 +96,7 @@ export async function request<T>(url: string, init: RequestInit): Promise<T> {
     if (response.status === 401) {
       throw new Unauthenticated();
     }
-    throw new ApiError(response.status);
+    throw new ApiError(response.status, undefined, await readErrorDetail(response));
   }
 
   if (response.status === 202 || response.status === 204) {

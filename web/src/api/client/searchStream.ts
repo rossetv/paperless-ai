@@ -4,7 +4,7 @@
  */
 
 import type { SearchRequest, StreamEvent } from '../types';
-import { ApiError, BASE_URL, Unauthenticated } from './core';
+import { ApiError, BASE_URL, readErrorDetail, Unauthenticated } from './core';
 
 /**
  * Thrown when the stream itself is malformed — a missing response body, or a
@@ -25,12 +25,9 @@ export class StreamError extends Error {
  *
  * A non-OK initial response throws before any body is read, with the same errors
  * as `request`: 401 → `Unauthenticated`, otherwise `ApiError` with the status
- * (503 drives the "index not ready" screen).
+ * and the server's `detail` (503 drives the "index not ready" screen).
  */
-export async function streamSearch(
-  body: SearchRequest,
-  signal?: AbortSignal,
-): Promise<Response> {
+export async function streamSearch(body: SearchRequest, signal?: AbortSignal): Promise<Response> {
   const response = await fetch(`${BASE_URL}/api/search/stream`, {
     method: 'POST',
     credentials: 'include',
@@ -43,7 +40,7 @@ export async function streamSearch(
     if (response.status === 401) {
       throw new Unauthenticated();
     }
-    throw new ApiError(response.status);
+    throw new ApiError(response.status, undefined, await readErrorDetail(response));
   }
 
   return response;

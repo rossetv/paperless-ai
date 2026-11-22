@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { UserResponse } from '../../../api/types';
+import { ApiError } from '../../../api/client';
 import { UserEditDrawer } from './UserEditDrawer';
 
 vi.mock('../../../api/hooks', () => ({
@@ -192,6 +193,51 @@ describe('UserEditDrawer — edit mode', () => {
     await userEvent.click(screen.getByRole('button', { name: /^save/i }));
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(/could not save/i),
+    );
+  });
+
+  it('shows the server message when a username is taken', async () => {
+    const mutateAsync = vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, undefined, 'That username is already taken.'));
+    mockCreate.mockReturnValue(stubMutation(mutateAsync));
+    render(<UserEditDrawer user={null} isSelf={false} onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    await userEvent.type(screen.getByLabelText(/^username/i), 'sam.patel');
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'a-long-enough-pass1');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'a-long-enough-pass1');
+    await userEvent.click(screen.getByRole('button', { name: /create user/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('That username is already taken.'),
+    );
+  });
+
+  it('shows the server message when a delete is refused and keeps the fallback otherwise', async () => {
+    mockDelete.mockReturnValue(
+      stubMutation(async () => {
+        throw new ApiError(409, undefined, 'The last admin cannot be deleted.');
+      }),
+    );
+    const { unmount } = render(
+      <UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('The last admin cannot be deleted.'),
+    );
+    unmount();
+
+    mockDelete.mockReturnValue(
+      stubMutation(async () => {
+        throw new ApiError(500);
+      }),
+    );
+    render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/could not delete/i),
     );
   });
 });

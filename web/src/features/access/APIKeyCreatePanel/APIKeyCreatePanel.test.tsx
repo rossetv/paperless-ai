@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { CreateApiKeyResponse } from '../../../api/types';
+import { ApiError } from '../../../api/client';
 import { APIKeyCreatePanel } from './APIKeyCreatePanel';
 
 vi.mock('../../../api/hooks', () => ({ useCreateApiKey: vi.fn() }));
@@ -157,6 +158,19 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
     );
     // The key text must still be visible so the user can copy manually.
     expect(screen.getByText('sk-pls-bQ94XfullSECRETvalue1234567890')).toBeInTheDocument();
+  });
+
+  it('shows the server message when the mint is rejected with one', async () => {
+    mockCreate.mockReturnValue(
+      stub(() => Promise.reject(new ApiError(400, undefined, 'Unknown scope: x'))),
+    );
+    render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
+    await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Unknown scope: x'),
+    );
   });
 
   it('surfaces an error when the mint fails', async () => {
