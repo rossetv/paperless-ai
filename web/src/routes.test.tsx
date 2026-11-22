@@ -383,6 +383,25 @@ describe('AppRoutes', () => {
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 
+  describe('main landmark', () => {
+    it.each([
+      ['the sign-in screen', '/login', { needed: false }, false, 'login-page'],
+      ['the setup screen', '/setup', { needed: true }, false, 'setup-page'],
+      ['a signed-in page', '/library', { needed: false }, true, 'library-page'],
+    ])('holds exactly one main on %s', async (_name, path, setup, signedIn, testId) => {
+      mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: setup }));
+      mockUseMe.mockReturnValue(
+        signedIn
+          ? meResult({ isSuccess: true, data: { user: SAMPLE_USER } })
+          : meResult({ isError: true, error: new Unauthenticated() }),
+      );
+      renderAt(path);
+      await waitFor(() => expect(screen.getByTestId(testId)).toBeInTheDocument());
+      expect(screen.getAllByRole('main')).toHaveLength(1);
+      expect(screen.getByRole('main')).toContainElement(screen.getByTestId(testId));
+    });
+  });
+
   describe('page title and focus', () => {
     beforeEach(() => {
       mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));

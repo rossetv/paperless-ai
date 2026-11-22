@@ -181,11 +181,11 @@ function BootstrapGate({
  */
 function RoutesBody(): React.ReactElement {
   const location = useLocation();
-  const content = React.useRef<HTMLDivElement>(null);
+  const content = React.useRef<HTMLElement>(null);
   return (
     <ErrorBoundary resetKeys={[location.pathname]}>
       <Suspense fallback={<FullPageLoading />}>
-        <div ref={content} tabIndex={-1} style={{ outline: 'none' }}>
+        <main ref={content} tabIndex={-1} style={{ outline: 'none' }}>
           <Routes>
             <Route
               path="/setup"
@@ -274,7 +274,7 @@ function RoutesBody(): React.ReactElement {
             {/* Unknown paths fall back to the root, which re-resolves the gate. */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </div>
+        </main>
         <RouteAnnouncer fallback={content} />
       </Suspense>
     </ErrorBoundary>

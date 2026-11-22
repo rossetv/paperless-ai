@@ -374,7 +374,7 @@ export function DocumentScreen({
   }
 
   return (
-    <main className={styles['page']}>
+    <div className={styles['page']}>
       <Link
         to={breadcrumbHref}
         state={parent === 'search' ? RETURN_TO_RESULTS : undefined}
@@ -507,6 +507,6 @@ export function DocumentScreen({
           {...(toast.variant === 'info' ? { dismissAfterMs: 6_000 } : {})}
         />
       )}
-    </main>
+    </div>
   );
 }

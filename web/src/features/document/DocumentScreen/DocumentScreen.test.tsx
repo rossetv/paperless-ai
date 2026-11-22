@@ -239,6 +239,11 @@ describe('DocumentScreen', () => {
     expect(screen.getByTitle(/ebay payslip 05\/2026 pdf/i)).toBeInTheDocument();
   });
 
+  it('leaves the main landmark to the shared layout', () => {
+    renderScreen({ role: 'readonly' });
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
+  });
+
   it('breadcrumb says "Library" linking to /library when parent is library and no parent search', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.getByRole('link', { name: /library/i })).toHaveAttribute('href', '/library');
