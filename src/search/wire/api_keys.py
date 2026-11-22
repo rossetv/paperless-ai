@@ -33,7 +33,10 @@ def _normalise_expires_at(value: str | None) -> str | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     else:
-        parsed = parsed.astimezone(timezone.utc)
+        try:
+            parsed = parsed.astimezone(timezone.utc)
+        except OverflowError as exc:
+            raise ValueError("expires_at is outside the supported date range") from exc
     return parsed.isoformat()
 
 
