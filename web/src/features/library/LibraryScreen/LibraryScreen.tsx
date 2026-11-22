@@ -239,15 +239,20 @@ export function LibraryScreen(): React.ReactElement {
       <div className={styles['heading-block']}>
         <h1 className={styles['heading']}>Library</h1>
         <p className={styles['subheading']}>
-          Every indexed document.{' '}
-          <strong>{total.toLocaleString('en-GB')}</strong> total
-          {total > 0 && (
+          Every indexed document.
+          {documents.data !== undefined && (
             <>
-              {' '}· showing {rangeStart.toLocaleString('en-GB')}–
-              {rangeEnd.toLocaleString('en-GB')}
+              {' '}
+              <strong>{total.toLocaleString('en-GB')}</strong> total
+              {total > 0 && (
+                <>
+                  {' '}· showing {rangeStart.toLocaleString('en-GB')}–
+                  {rangeEnd.toLocaleString('en-GB')}
+                </>
+              )}
+              .
             </>
           )}
-          .
         </p>
       </div>
       <div className={styles['header-controls']}>

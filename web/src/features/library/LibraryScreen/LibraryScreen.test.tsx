@@ -145,6 +145,17 @@ describe('LibraryScreen', () => {
     expect(screen.getByText(/showing/i)).toBeInTheDocument();
   });
 
+  it('shows no count while the list is loading or after it failed', () => {
+    mockUseDocuments.mockReturnValue(documentsResult(undefined, { isLoading: true }));
+    const { unmount } = renderScreen();
+    expect(screen.queryByText(/total/i)).not.toBeInTheDocument();
+    unmount();
+
+    mockUseDocuments.mockReturnValue(documentsResult(undefined, { isError: true }));
+    renderScreen();
+    expect(screen.queryByText(/total/i)).not.toBeInTheDocument();
+  });
+
   it('shows an empty state when no documents match the filters', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
