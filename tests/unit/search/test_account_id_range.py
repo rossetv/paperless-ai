@@ -23,7 +23,33 @@ from tests.unit.search.conftest import build_test_client
         ("DELETE", "/api/api-keys/{id}"),
     ],
 )
+@pytest.mark.parametrize("bad_id", [2**63, -(2**63) - 1])
 def test_an_id_beyond_the_index_id_range_is_rejected(
+    tmp_path: Path, method: str, path: str, bad_id: int
+) -> None:
+    settings = make_search_settings(INDEX_DB_PATH=str(tmp_path / "index.db"))
+    client = build_test_client(settings)
+    conn = connect(settings.APP_DB_PATH)
+    try:
+        user = create_user(conn, username="admin", password_hash="h", role="admin")
+        token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
+    finally:
+        conn.close()
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    response = client.request(method, path.format(id=bad_id), json={"name": "n"})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PATCH", "/api/users/{id}"),
+        ("DELETE", "/api/users/{id}"),
+        ("PATCH", "/api/api-keys/{id}"),
+        ("DELETE", "/api/api-keys/{id}"),
+    ],
+)
+def test_a_small_negative_id_is_still_not_found(
     tmp_path: Path, method: str, path: str
 ) -> None:
     settings = make_search_settings(INDEX_DB_PATH=str(tmp_path / "index.db"))
@@ -35,5 +61,5 @@ def test_an_id_beyond_the_index_id_range_is_rejected(
     finally:
         conn.close()
     client.cookies.set(SESSION_COOKIE_NAME, token)
-    response = client.request(method, path.format(id=2**63), json={"name": "n"})
-    assert response.status_code == 422
+    response = client.request(method, path.format(id=-5), json={"name": "n"})
+    assert response.status_code == 404

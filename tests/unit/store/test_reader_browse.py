@@ -6,6 +6,7 @@ import sqlite3
 
 import pytest
 
+from store import SchemaNotReadyError
 from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
 from store.reader._lookups import _resolve_tag_names
 from tests.helpers.store import open_reader, open_writer
@@ -220,6 +221,27 @@ def test_empty_index_yields_empty_page(db_path: str) -> None:
     reader.close()
     assert page.documents == ()
     assert page.total == 0
+
+
+def test_list_documents_raises_schema_not_ready_on_schemaless_db(db_path: str) -> None:
+    """A missing index schema is SchemaNotReadyError, which the API turns into a 503."""
+    reader = open_reader(db_path)
+    try:
+        with pytest.raises(SchemaNotReadyError):
+            reader.list_documents(_query())
+    finally:
+        reader.close()
+
+
+def test_get_document_summary_raises_schema_not_ready_on_schemaless_db(
+    db_path: str,
+) -> None:
+    reader = open_reader(db_path)
+    try:
+        with pytest.raises(SchemaNotReadyError):
+            reader.get_document_summary(1)
+    finally:
+        reader.close()
 
 
 def test_corrupted_tag_ids_falls_back_to_empty_tags(populated_db: str) -> None:

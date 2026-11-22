@@ -60,7 +60,8 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The app database stores ids as SQLite INTEGER; a larger one can name no row.
+# The app database stores ids as SQLite INTEGER; one outside this range can name no row.
+_MIN_ROW_ID = -(2**63)
 _MAX_ROW_ID = 2**63 - 1
 
 
@@ -172,7 +173,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
 
     @router.patch("/api/users/{user_id}")
     def update_user(
-        user_id: Annotated[int, Path(le=_MAX_ROW_ID)],
+        user_id: Annotated[int, Path(ge=_MIN_ROW_ID, le=_MAX_ROW_ID)],
         body: UpdateUserRequest,
         request: Request,
         app_db: sqlite3.Connection = Depends(get_app_db),
@@ -194,7 +195,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
 
     @router.delete("/api/users/{user_id}", status_code=204)
     def delete_user(
-        user_id: Annotated[int, Path(le=_MAX_ROW_ID)],
+        user_id: Annotated[int, Path(ge=_MIN_ROW_ID, le=_MAX_ROW_ID)],
         app_db: sqlite3.Connection = Depends(get_app_db),
         admin: CurrentUser = Depends(require_admin),
     ) -> Response:

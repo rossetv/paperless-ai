@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 
-from store.migrations import StoreError
+from store.migrations import SchemaNotReadyError, StoreError, _is_missing_table_error
 from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
 from store.reader._filters import build_browse_where
 from store.reader._lookups import _names_for_tag_ids, _parse_tag_ids, _resolve_tag_names
@@ -51,7 +51,8 @@ def list_documents(
 
     Raises:
         ValueError: ``query.sort`` is not a recognised sort column.
-        StoreError: On SQLite error.
+        SchemaNotReadyError: The index schema is not present.
+        StoreError: On any other SQLite error.
     """
     order_by = _order_by(query.sort, query.descending)
     where_clause, params = build_browse_where(query)
@@ -98,6 +99,10 @@ def list_documents(
                 all_tag_ids.extend(tag_ids)
             tag_name_by_id = _resolve_tag_names(conn, list(dict.fromkeys(all_tag_ids)))
     except sqlite3.Error as exc:
+        if _is_missing_table_error(exc):
+            raise SchemaNotReadyError(
+                "list_documents query failed: the index schema is not present"
+            ) from exc
         raise StoreError("list_documents query failed") from exc
 
     documents: list[DocumentSummary] = []

@@ -48,7 +48,8 @@ from search.wire import (
 
 log = structlog.get_logger(__name__)
 
-# The app database stores ids as SQLite INTEGER; a larger one can name no row.
+# The app database stores ids as SQLite INTEGER; one outside this range can name no row.
+_MIN_ROW_ID = -(2**63)
 _MAX_ROW_ID = 2**63 - 1
 
 
@@ -75,7 +76,7 @@ def build_api_key_router() -> APIRouter:
 
     @router.patch("/api/api-keys/{api_key_id}")
     def update_api_key(
-        api_key_id: Annotated[int, Path(le=_MAX_ROW_ID)],
+        api_key_id: Annotated[int, Path(ge=_MIN_ROW_ID, le=_MAX_ROW_ID)],
         body: UpdateApiKeyRequest,
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
@@ -85,7 +86,7 @@ def build_api_key_router() -> APIRouter:
 
     @router.delete("/api/api-keys/{api_key_id}", status_code=204)
     def delete_api_key(
-        api_key_id: Annotated[int, Path(le=_MAX_ROW_ID)],
+        api_key_id: Annotated[int, Path(ge=_MIN_ROW_ID, le=_MAX_ROW_ID)],
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
     ) -> Response:
