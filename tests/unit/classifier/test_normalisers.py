@@ -81,6 +81,9 @@ class TestNormaliseName:
     def test_keeps_marks_in_scripts_that_write_vowels_as_marks(self):
         assert normalise_name("दिल्ली") == "दिल्ली"
 
+    def test_drops_accents_only_after_latin_greek_or_cyrillic_letters(self):
+        assert normalise_name("Café 1\u093f") == "cafe 1\u093f"
+
     @pytest.mark.parametrize(
         ("value", "expected"),
         [

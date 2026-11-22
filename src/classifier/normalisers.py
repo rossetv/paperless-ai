@@ -44,12 +44,9 @@ def _is_symbol_or_other_number(ch: str) -> bool:
     return category.startswith("S") or category == "No"
 
 
-def _is_letter_with_word_marks(ch: str) -> bool:
-    """Whether marks on *ch* spell the word (Devanagari vowel signs) rather
-    than accent it (the umlaut in "Müller", which is folded away)."""
-    return ch.isalpha() and not unicodedata.name(ch, "").startswith(
-        ("LATIN", "GREEK", "CYRILLIC")
-    )
+# Accent marks are dropped only on these scripts. In others (Indic, Thai,
+# Arabic, ...) the marks carry vowels, so dropping them merges distinct names.
+_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC")
 
 
 def normalise_name(value: str) -> str:
@@ -85,13 +82,13 @@ def _fold_name(value: str, punctuation: str) -> str:
     kept = "".join(ch for ch in value if not _is_symbol_or_other_number(ch))
     folded = unicodedata.normalize("NFKD", kept).casefold()
     chars: list[str] = []
-    base = ""
+    base_is_accentable = False
     for ch in folded:
         if unicodedata.category(ch).startswith("M"):
-            if _is_letter_with_word_marks(base):
+            if not base_is_accentable:
                 chars.append(ch)
             continue
-        base = ch
+        base_is_accentable = unicodedata.name(ch, "").startswith(_ACCENT_SCRIPTS)
         chars.append(ch if ch.isalnum() or ch.isspace() else punctuation)
     parts = "".join(chars).split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
