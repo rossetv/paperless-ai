@@ -6,8 +6,7 @@ import { SettingsScreen } from '../features/settings/SettingsScreen/SettingsScre
 /** Full-page configuration view at `/settings`; admin-gated in `routes.tsx`. */
 export function SettingsPage(): React.ReactElement {
   return (
-    <Page>
-      <AppNavBar />
+    <Page nav={<AppNavBar />}>
       <SettingsScreen />
     </Page>
   );

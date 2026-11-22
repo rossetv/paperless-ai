@@ -32,4 +32,16 @@ describe('Page', () => {
     const { container } = render(<Page className="custom">Content</Page>);
     expect((container.firstChild as Element).className).toContain('custom');
   });
+
+  it('puts the content in a main landmark and keeps the nav outside it', () => {
+    render(<Page nav={<nav aria-label="Primary">Links</nav>}>Page content</Page>);
+    const main = screen.getByRole('main');
+    expect(main).toContainElement(screen.getByText('Page content'));
+    expect(main).not.toContainElement(screen.getByRole('navigation', { name: 'Primary' }));
+  });
+
+  it('puts the content in a main landmark when there is no nav', () => {
+    render(<Page>Page content</Page>);
+    expect(screen.getByRole('main')).toContainElement(screen.getByText('Page content'));
+  });
 });
