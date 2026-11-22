@@ -126,6 +126,14 @@ describe('UserMenu', () => {
       expect(screen.getByRole('menuitem')).toHaveFocus();
     });
 
+    it.each(['{ArrowDown}', '{Home}', '{ArrowUp}', '{End}'])('%s moves into the menu after a click on its header', async (key) => {
+      await open();
+      await userEvent.click(screen.getByText('Alex Morgan'));
+      expect(screen.getByRole('menuitem')).not.toHaveFocus();
+      await userEvent.keyboard(key);
+      expect(screen.getByRole('menuitem')).toHaveFocus();
+    });
+
     it('Tab closes the menu', async () => {
       await open();
       await userEvent.tab();

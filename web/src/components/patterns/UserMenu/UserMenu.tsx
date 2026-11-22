@@ -85,10 +85,11 @@ export function UserMenu({
       menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
     );
     const current = items.indexOf(document.activeElement as HTMLElement);
-    if (items.length === 0 || current === -1) return;
+    if (items.length === 0) return;
     let next: number;
+    // With no item focused (a click landed on the menu itself), Down goes to the first and Up to the last.
     if (event.key === 'ArrowDown') next = (current + 1) % items.length;
-    else if (event.key === 'ArrowUp') next = (current - 1 + items.length) % items.length;
+    else if (event.key === 'ArrowUp') next = current === -1 ? items.length - 1 : (current - 1 + items.length) % items.length;
     else if (event.key === 'Home') next = 0;
     else if (event.key === 'End') next = items.length - 1;
     else return;
