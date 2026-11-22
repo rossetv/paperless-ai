@@ -718,6 +718,14 @@ class TestImageMaxSide:
         assert page.size == (500, 250) and page.mode == "L"
         assert max(converted) <= 500 * 250
 
+    @pytest.mark.parametrize("fmt", ["PNG", "WEBP"])
+    def test_unreadable_exif_block_leaves_the_image_openable(self, fmt):
+        buf = BytesIO()
+        Image.new("RGB", (30, 20)).save(buf, format=fmt, exif=b"garbage")
+
+        with open_page_source(buf.getvalue(), "image/x") as source:
+            assert source.load_page(0).size == (30, 20)
+
     @pytest.mark.parametrize(
         ("orientation", "size"), [(1, (30, 20)), (6, (20, 30)), (3, (30, 20))]
     )

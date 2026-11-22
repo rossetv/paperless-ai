@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import struct
 import tempfile
 from io import BytesIO
 from types import TracebackType
@@ -213,7 +214,12 @@ def _check_pixel_cap(image: Image.Image) -> None:
 
 def _apply_exif_orientation(image: Image.Image) -> Image.Image:
     """Return *image* itself, or a rotated/flipped copy when EXIF says it is not upright."""
-    if image.getexif().get(_EXIF_ORIENTATION, 1) in (2, 3, 4, 5, 6, 7, 8):
+    try:
+        orientation = image.getexif().get(_EXIF_ORIENTATION, 1)
+    except (SyntaxError, ValueError, struct.error):
+        # A junk EXIF block means "upright", not an undecodable image.
+        return image
+    if orientation in (2, 3, 4, 5, 6, 7, 8):
         return ImageOps.exif_transpose(image) or image
     return image
 
