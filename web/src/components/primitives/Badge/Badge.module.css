@@ -1,7 +1,6 @@
 .badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
+  text-align: center;
   border-radius: var(--radius-micro);
   padding: var(--spacing-1) var(--spacing-6);
   font-family: var(--font-text);
@@ -10,6 +9,11 @@
   line-height: var(--line-height-micro);
   letter-spacing: var(--letter-spacing-micro);
   white-space: nowrap;
+
+  /* A long label truncates inside its container instead of widening the page. */
+  max-width: 100%;
+  overflow: clip;
+  text-overflow: ellipsis;
 }
 
 .neutral {
