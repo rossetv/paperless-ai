@@ -4,41 +4,17 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
-from typing import Iterable
 
 import structlog
 from PIL import Image
 
 from common.config import Settings
+from common.content_checks import is_model_refusal
 from common.llm import OpenAIChatMixin, service_tier_params, unique_models
 from .prompts import TRANSCRIPTION_PROMPT
 from .text_assembly import PageResult
 
 log = structlog.get_logger(__name__)
-
-# Only a response shorter than this counts as a refusal on a soft phrase; a
-# longer one may be real content that contains it (e.g. a denial letter).
-_REFUSAL_DOMINANCE_THRESHOLD_CHARS = 200
-
-
-def is_model_refusal(
-    text: str, refusal_markers: Iterable[str], refusal_mark: str
-) -> bool:
-    """Return ``True`` only when *text* is a genuine model refusal.
-
-    *refusal_mark*, the sentinel the prompt asks for, matches anywhere. A soft
-    phrase (e.g. ``"i cannot assist"``) counts only in a short response, so a
-    document that merely contains such language is not discarded. Also applied
-    to a whole document's text, where redaction markers are checked separately.
-    """
-    text_lower = text.lower()
-
-    if refusal_mark.lower() in text_lower:
-        return True
-
-    if len(text) >= _REFUSAL_DOMINANCE_THRESHOLD_CHARS:
-        return False
-    return any(phrase.lower() in text_lower for phrase in refusal_markers)
 
 
 def is_blank(image: Image.Image, threshold: int = 5) -> bool:

@@ -9,7 +9,8 @@ import openai
 from PIL import Image
 
 from common.content_checks import is_error_content
-from ocr.provider import OcrProvider, is_model_refusal
+from common.content_checks import is_model_refusal
+from ocr.provider import OcrProvider
 
 
 def _make_settings(**overrides):

@@ -10,6 +10,7 @@ from typing import Literal
 import structlog
 
 from ..constants import REFUSAL_PHRASES
+from ..content_checks import REFUSAL_MARK
 from ._catalogue import SECRET_KEYS
 from ._parsers import (
     _DEFAULT_OLLAMA_BASE_URL,
@@ -45,9 +46,6 @@ _ai_models_deprecation_warned: bool = False
 _DEFAULT_INDEX_DB_PATH = "/data/index.db"
 _DEFAULT_APP_DB_PATH = "/data/app.db"
 _DEFAULT_PAPERLESS_URL = "http://paperless:8000"
-
-# Written into a document's content when every vision model refuses it.
-_REFUSAL_MARK = "CHATGPT REFUSED TO TRANSCRIBE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,7 +580,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             for marker in _get_csv_env(
                 source,
                 "OCR_REFUSAL_MARKERS",
-                [*REFUSAL_PHRASES, _REFUSAL_MARK],
+                [*REFUSAL_PHRASES, REFUSAL_MARK],
             )
         ],
         OCR_INCLUDE_PAGE_MODELS=_get_bool_env(source, "OCR_INCLUDE_PAGE_MODELS", False),
@@ -633,7 +631,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         DOCUMENT_WORKERS=max(1, _get_int_env(source, "DOCUMENT_WORKERS", 4)),
         LOG_LEVEL=_get_str_env(source, "LOG_LEVEL", "INFO").upper(),
         LOG_FORMAT=_resolve_log_format(source),
-        REFUSAL_MARK=_REFUSAL_MARK,
+        REFUSAL_MARK=REFUSAL_MARK,
         CLASSIFY_PERSON_FIELD_ID=_get_optional_int_env(
             source, "CLASSIFY_PERSON_FIELD_ID"
         ),

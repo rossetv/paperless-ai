@@ -23,10 +23,10 @@ from common.tags import (
     get_latest_tags,
     release_processing_tag,
 )
-from common.content_checks import contains_redacted_marker
+from common.content_checks import contains_redacted_marker, is_model_refusal
 from .born_digital import classify_original
 from .image_converter import ImageConversionError, PageSource, open_page_source
-from .provider import OcrProvider, is_model_refusal
+from .provider import OcrProvider
 from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 
 log = structlog.get_logger(__name__)
