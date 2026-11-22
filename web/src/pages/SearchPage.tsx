@@ -94,6 +94,13 @@ export function SearchPage(): React.ReactElement {
     [navigate, searchString],
   );
 
+  // The idle hero brings its own h1; every other screen needs the hidden one.
+  const showsIdleHero =
+    query.trim().length === 0 ||
+    (state.query === query.trim() &&
+      state.status === 'error' &&
+      state.error?.status === 401);
+
   /** Pick the screen to render from the query and the stream state. */
   function renderScreen(): React.ReactElement {
     if (query.trim().length === 0) {
@@ -177,6 +184,7 @@ export function SearchPage(): React.ReactElement {
   return (
     <Page>
       <AppNavBar />
+      {!showsIdleHero && <h1 className="visually-hidden">Search</h1>}
       {renderScreen()}
     </Page>
   );

@@ -170,6 +170,14 @@
   position: absolute;
   right: var(--spacing-6);
 
+  /* IconButton reads theme tokens; pin dark values for the dark card. */
+  --colour-overlay: var(--colour-dark-control-bg);
+  --colour-text-tertiary: var(--colour-dark-text-secondary);
+  --colour-text-primary: var(--colour-dark-text-primary);
+  --colour-surface: #272729;
+  --colour-button-light-bg: #272729;
+  --colour-button-active-bg: #1d1d1f;
+
   /* The input's vertical centre from the wrap top (padding 8px + half line-height
        12.5px + border 2px = 22.5px). Measuring from the top, not centring in the
        wrap, keeps an error message below from shifting the toggle. */
@@ -205,7 +213,7 @@
 .error {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
-  color: var(--colour-status-danger-fg);
+  color: var(--colour-dark-danger);
 }
 
 /* Stack hero above the card. Collapses early so a 1024px desktop never shows

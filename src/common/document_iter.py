@@ -26,7 +26,8 @@ def iter_documents_by_pipeline_tag(
     *post* tag (removing their stale queue tag), and documents claimed by
     another worker. *context* labels log lines.
     """
-    for doc in client.get_documents_by_tag(pre_tag_id):
+    # Collected up front: removing the queue tag while paging shifts later pages.
+    for doc in list(client.get_documents_by_tag(pre_tag_id)):
         doc_id = doc.get("id")
         if not isinstance(doc_id, int):
             log.warning("Skipping document without integer id", doc_id=doc_id)

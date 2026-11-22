@@ -49,7 +49,7 @@ export function FirstRunSetupScreen(): React.ReactElement {
     if (tErr !== undefined || uErr !== undefined || pErr !== undefined || cErr !== undefined) {
       return;
     }
-    setup.mutate({ token, username, password }, {});
+    setup.mutate({ token: token.trim(), username, password }, {});
   }
 
   const errorMessage =

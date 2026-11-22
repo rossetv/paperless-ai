@@ -802,9 +802,8 @@ class TestPostRetryBehaviour:
             assert route.call_count == 2
         client.close()
 
-    def test_post_is_retried_on_5xx_server_error(self):
-        # A 5xx means the server refused to process the request, so re-sending
-        # is safe.
+    def test_add_note_is_not_retried_on_5xx_server_error(self):
+        # A 5xx may have stored the note, so re-sending could duplicate it.
         with respx.mock:
             route = respx.post(f"{BASE}/api/documents/42/notes/")
             route.side_effect = [
@@ -813,8 +812,9 @@ class TestPostRetryBehaviour:
             ]
             client = _make_client()
 
-            client.add_note(42, "hi")
-            assert route.call_count == 2
+            with pytest.raises(httpx.HTTPStatusError):
+                client.add_note(42, "hi")
+            assert route.call_count == 1
         client.close()
 
 

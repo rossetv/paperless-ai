@@ -130,3 +130,37 @@ class TestSkipsClaimedDocs:
         )
 
         assert result == []
+
+
+class TestListingIsCollectedFirst:
+    def test_tag_removal_during_iteration_does_not_skip_documents(self):
+        queue = [{"id": i, "tags": [443]} for i in range(1, 5)]
+        fetched = []
+
+        def lazy_listing(_tag_id):
+            # Offset paging over a shrinking result set: page size 2.
+            offset = 0
+            while True:
+                page = queue[offset : offset + 2]
+                if not page:
+                    return
+                for doc in page:
+                    fetched.append(doc["id"])
+                    yield doc
+                offset += 2
+
+        client = MagicMock()
+        client.get_documents_by_tag.side_effect = lazy_listing
+
+        seen = []
+        for doc in iter_documents_by_pipeline_tag(
+            client,
+            pre_tag_id=443,
+            post_tag_id=444,
+            processing_tag_id=None,
+            context="test",
+        ):
+            seen.append(doc["id"])
+            queue.remove(doc)  # the caller's processing drops the queue tag
+
+        assert seen == [1, 2, 3, 4]

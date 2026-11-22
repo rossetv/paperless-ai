@@ -39,10 +39,10 @@ log = structlog.get_logger(__name__)
 # 5xx HTTPStatusError raised by _raise_for_status_if_server_error.
 RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
 
-# A POST is not idempotent (re-sending ``add_note`` duplicates the note), so it
-# retries only when the request provably was not applied: a failed or timed-out
-# connect, or a 5xx. ReadTimeout and RemoteProtocolError are excluded because
-# the server may already have applied the write.
+# A POST is not idempotent, so it retries only when the request provably was not
+# applied: a failed or timed-out connect, or a 5xx. ReadTimeout and
+# RemoteProtocolError are excluded because the server may already have applied
+# the write. add_note is stricter still (see _post_note): a 5xx may have stored it.
 RETRYABLE_POST_EXCEPTIONS = (
     httpx.ConnectError,
     httpx.ConnectTimeout,
@@ -141,6 +141,14 @@ class PaperlessClient:
     # POST uses the narrower retry set; see RETRYABLE_POST_EXCEPTIONS.
     @retry(retryable_exceptions=RETRYABLE_POST_EXCEPTIONS)
     def _post(self, url: str, **kwargs: Any) -> httpx.Response:
+        response = self._client.post(url, **kwargs)
+        self._raise_for_status_if_server_error(response)
+        return response
+
+    # A 5xx may have stored the note already, so only a request that never
+    # reached the server is retried.
+    @retry(retryable_exceptions=(httpx.ConnectError, httpx.ConnectTimeout))
+    def _post_note(self, url: str, **kwargs: Any) -> httpx.Response:
         response = self._client.post(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
@@ -577,7 +585,7 @@ class PaperlessClient:
         """
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/notes/"
         log.info("paperless.add_note", doc_id=doc_id, length=len(text))
-        response = self._post(url, json={"note": text})
+        response = self._post_note(url, json={"note": text})
         response.raise_for_status()
 
     def delete_note(self, doc_id: int, note_id: int) -> None:
