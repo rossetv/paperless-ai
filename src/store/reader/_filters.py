@@ -5,6 +5,7 @@ Only fixed SQL and ``?`` placeholders are interpolated; every value is bound.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, timedelta
 
 from store.models import DocumentBrowseQuery, SearchFilters
@@ -125,3 +126,17 @@ def build_browse_where(
     if not clauses:
         return "", params
     return "WHERE " + " AND ".join(clauses), params
+
+
+# Bounds the MATCH expression; the AND of more terms than this adds cost, not precision.
+MAX_FTS_TERMS = 64
+
+
+def build_match_expr(terms: Sequence[str]) -> str:
+    """AND-combine *terms* into a quoted FTS5 MATCH expression.
+
+    Exact repeats are dropped (first occurrence wins) and at most
+    :data:`MAX_FTS_TERMS` distinct terms are kept.
+    """
+    distinct = list(dict.fromkeys(terms))[:MAX_FTS_TERMS]
+    return " AND ".join(f'"{escape_fts_term(term)}"' for term in distinct)

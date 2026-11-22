@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable, Sequence
+import time
+from collections.abc import Callable, Iterable, Sequence
 
 from common.config import Settings
 from store.models import (
@@ -25,6 +26,11 @@ from store.reader import _browse, _lookups, _ranked
 from store.schema import connect
 
 
+# Health probes are frequent and unauthenticated; a full integrity scan per probe
+# would contend with searches for the query lock.
+_QUICK_CHECK_TTL_SECONDS = 30.0
+
+
 class StoreReader:
     """Read API for the SQLite search index.
 
@@ -34,10 +40,15 @@ class StoreReader:
     re-raised as :class:`StoreError`.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, *, clock: Callable[[], float] = time.monotonic
+    ) -> None:
         """Open a connection to the index database."""
         self._conn = connect(settings.INDEX_DB_PATH)
         self._query_lock = threading.Lock()
+        self._clock = clock
+        self._quick_check_lock = threading.Lock()
+        self._quick_check_cache: tuple[float, bool] | None = None
 
     def vector_search(
         self,
@@ -148,11 +159,19 @@ class StoreReader:
         return _lookups.get_failed_documents(self._conn, self._query_lock)
 
     def quick_check(self) -> bool:
-        """Run ``PRAGMA quick_check`` on the database.
+        """Run ``PRAGMA quick_check`` on the database, cached for 30 seconds.
 
-        See :func:`store.reader._lookups.quick_check`.
+        See :func:`store.reader._lookups.quick_check`. A failing result is
+        cached like a passing one; an error raised by the check is not.
         """
-        return _lookups.quick_check(self._conn, self._query_lock)
+        with self._quick_check_lock:
+            now = self._clock()
+            cached = self._quick_check_cache
+            if cached is not None and now - cached[0] < _QUICK_CHECK_TTL_SECONDS:
+                return cached[1]
+            result = _lookups.quick_check(self._conn, self._query_lock)
+            self._quick_check_cache = (now, result)
+            return result
 
     def list_documents(self, query: DocumentBrowseQuery) -> DocumentPage:
         """List documents for the Library with pagination, sorting and filters.
