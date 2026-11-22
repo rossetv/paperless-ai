@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ApiError, Unauthenticated, login, logout } from './api/client';
+import { ApiError, Unauthenticated, login, logout, setup as setupCall } from './api/client';
 import { queryKeys } from './api/hooks/keys';
 import { createQueryClient, shouldRetry } from './queryClient';
 
@@ -7,6 +7,7 @@ vi.mock('./api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api/client')>()),
   login: vi.fn(() => Promise.reject(new Unauthenticated())),
   logout: vi.fn(() => Promise.reject(new Unauthenticated())),
+  setup: vi.fn(() => Promise.reject(new Unauthenticated())),
 }));
 
 describe('shouldRetry', () => {
@@ -66,20 +67,30 @@ describe('createQueryClient', () => {
     it('from the session check itself does not loop', async () => {
       const { client, invalidate } = setup();
       await client
-        .fetchQuery({ queryKey: queryKeys.me(), queryFn: () => Promise.reject(new Unauthenticated()) })
+        .fetchQuery({ queryKey: queryKeys.me(), meta: { skipSessionCheck: true }, queryFn: () => Promise.reject(new Unauthenticated()) })
         .catch(() => undefined);
       expect(invalidate).not.toHaveBeenCalled();
     });
 
-    it('from sign-in or sign-out (a wrong password) is left alone', async () => {
+    it('from sign-in, sign-out or setup (a wrong password) is left alone', async () => {
       const { client, invalidate } = setup();
-      for (const mutationFn of [login, logout]) {
+      for (const mutationFn of [login, logout, setupCall]) {
         await client
           .getMutationCache()
-          .build(client, { mutationFn: mutationFn as () => Promise<unknown> })
+          .build(client, { mutationFn: mutationFn as () => Promise<unknown>, meta: { skipSessionCheck: true } })
           .execute(undefined)
           .catch(() => undefined);
       }
+      expect(invalidate).not.toHaveBeenCalled();
+    });
+
+    it('from a wrapped mutation function is left alone when it carries the marker', async () => {
+      const { client, invalidate } = setup();
+      await client
+        .getMutationCache()
+        .build(client, { mutationFn: () => login({} as never), meta: { skipSessionCheck: true } })
+        .execute(undefined)
+        .catch(() => undefined);
       expect(invalidate).not.toHaveBeenCalled();
     });
 

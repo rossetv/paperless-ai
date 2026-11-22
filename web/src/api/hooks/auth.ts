@@ -21,6 +21,9 @@ import type {
 } from '../types';
 import { queryKeys } from './keys';
 
+/** Marks requests whose 401 is an answer, not a lapsed session; the query client skips its session re-check. */
+const skipSessionCheck = { skipSessionCheck: true };
+
 /**
  * The current authenticated user — GET /api/auth/me. `useAuth` is built on it.
  *
@@ -32,6 +35,7 @@ export function useMe({ enabled = true }: { enabled?: boolean } = {}): UseQueryR
   return useQuery({
     queryKey: queryKeys.me(),
     queryFn: me,
+    meta: skipSessionCheck,
     retry: false,
     staleTime: 0,
     enabled,
@@ -77,6 +81,7 @@ export function useLogin(): UseMutationResult<LoginResponse, Error, LoginRequest
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: login,
+    meta: skipSessionCheck,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
@@ -88,6 +93,7 @@ export function useLogout(): UseMutationResult<void, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: logout,
+    meta: skipSessionCheck,
     // onSettled, not onSuccess: AppNavBar goes to /login either way, and a stale
     // `me` entry after a failed logout would bounce that redirect back into the app.
     onSettled: () => {
@@ -108,6 +114,7 @@ export function useSetup(): UseMutationResult<SetupResponse, Error, SetupRequest
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: setup,
+    meta: skipSessionCheck,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
