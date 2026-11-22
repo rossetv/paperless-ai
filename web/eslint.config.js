@@ -51,11 +51,9 @@ export default [
         { type: 'hooks',                 pattern: 'src/hooks/**' },
         { type: 'features',              pattern: 'src/features/**' },
         { type: 'pages',                 pattern: 'src/pages/**' },
-        {
-          type: 'app',
-          mode: 'full',
-          pattern: ['src/App.tsx', 'src/routes.tsx', 'src/main.tsx'],
-        },
+      ],
+      'boundaries/files': [
+        { category: 'app', pattern: ['src/App.tsx', 'src/routes.tsx', 'src/main.tsx'] },
       ],
     },
     rules: {
@@ -72,73 +70,64 @@ export default [
       // Imports flow downward only; within components/ the tiers stack as
       // patterns → layout → primitives. hooks/, styles/ and lib/ are leaves
       // every component tier may use.
-      'boundaries/element-types': [
+      // Imports flow downward only; within components/ the tiers stack as
+      // patterns → layout → primitives. hooks/, styles/ and lib/ are leaves
+      // every component tier may use.
+      'boundaries/dependencies': [
         'error',
         {
           default: 'disallow',
           message:
-            'Layer-boundary violation: ${file.type} cannot import from ${dependency.type}. ' +
+            'Layer-boundary violation: {{ from.element.type }} cannot import from {{ to.element.type }}. ' +
             'Dependencies must flow downward only.',
-          rules: [
-            { from: 'styles', allow: [] },
-
+          policies: [
+            // styles/ has no policy: under the default it imports nothing.
             // api/ for type-only deps (parseSearchParams returns FilterRequest).
-            { from: 'lib', allow: ['api'] },
-
             {
-              from: 'components-primitives',
-              allow: ['components-primitives', 'hooks', 'styles', 'lib'],
+              from: { element: { type: 'lib' } },
+              allow: { to: { element: { types: ['api'] } } },
             },
             {
-              from: 'components-layout',
-              allow: ['components-layout', 'components-primitives', 'hooks', 'styles', 'lib'],
+              from: { element: { type: 'components-primitives' } },
+              allow: { to: { element: { types: ['components-primitives', 'hooks', 'styles', 'lib'] } } },
             },
             {
-              from: 'components-patterns',
-              allow: [
-                'components-patterns',
-                'components-layout',
-                'components-primitives',
-                'hooks',
-                'styles',
-                'lib',
-                // Narrow exception: connected patterns such as FilterControls
-                // use their own api hooks and types.
-                'api',
-              ],
+              from: { element: { type: 'components-layout' } },
+              allow: { to: { element: { types: ['components-layout', 'components-primitives', 'hooks', 'styles', 'lib'] } } },
             },
-
-            { from: 'api', allow: ['api', 'lib'] },
-
+            // Narrow exception: connected patterns such as FilterControls
+            // use their own api hooks and types, so api is last.
+            {
+              from: { element: { type: 'components-patterns' } },
+              allow: { to: { element: { types: ['components-patterns', 'components-layout', 'components-primitives', 'hooks', 'styles', 'lib', 'api'] } } },
+            },
+            {
+              from: { element: { type: 'api' } },
+              allow: { to: { element: { types: ['api', 'lib'] } } },
+            },
             // api/ so domain hooks such as useAuth can wrap its query hooks.
-            { from: 'hooks', allow: ['hooks', 'api', 'lib'] },
-
             {
-              from: 'features',
-              allow: [
-                'features',
-                'components-patterns',
-                'components-layout',
-                'components-primitives',
-                'api',
-                'hooks',
-                'styles',
-                'lib',
-              ],
+              from: { element: { type: 'hooks' } },
+              allow: { to: { element: { types: ['hooks', 'api', 'lib'] } } },
             },
-
+            {
+              from: { element: { type: 'features' } },
+              allow: { to: { element: { types: ['features', 'components-patterns', 'components-layout', 'components-primitives', 'api', 'hooks', 'styles', 'lib'] } } },
+            },
             // No primitives or patterns: a missing visual becomes a feature
             // rather than being built on the page, which prevents design drift.
             {
-              from: 'pages',
-              allow: ['pages', 'features', 'components-layout', 'api', 'hooks', 'lib'],
+              from: { element: { type: 'pages' } },
+              allow: { to: { element: { types: ['pages', 'features', 'components-layout', 'api', 'hooks', 'lib'] } } },
             },
-
             // components-layout for the FullPageLoading screen shown before any
             // page mounts.
             {
-              from: 'app',
-              allow: ['app', 'pages', 'features', 'components-layout', 'api', 'hooks', 'styles', 'lib'],
+              from: { file: { categories: 'app' } },
+              allow: [
+                { to: { file: { categories: 'app' } } },
+                { to: { element: { types: ['pages', 'features', 'components-layout', 'api', 'hooks', 'styles', 'lib'] } } },
+              ],
             },
           ],
         },
