@@ -6,6 +6,9 @@
  * explicit choice and the system preference; no `@media` copy is needed.
  */
 [data-theme="dark"] {
+  /* Native controls and scrollbars follow the theme. */
+  color-scheme: dark;
+
   /* Page background */
   --colour-bg:              #000;
 
@@ -66,4 +69,8 @@
   --colour-status-violet-fg:  #a5a3ff;
   --colour-status-neutral-bg: rgb(255 255 255 / 10%);
   --colour-status-neutral-fg: rgb(255 255 255 / 70%);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
 }
