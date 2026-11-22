@@ -120,4 +120,32 @@ describe('TagEditor', () => {
     expect(screen.getByText('1 doc')).toBeInTheDocument();
     expect(screen.getByText('30 docs')).toBeInTheDocument();
   });
+
+  describe('focus after removing a tag', () => {
+    function Harness({ initial }: { initial: number[] }): React.ReactElement {
+      const [ids, setIds] = React.useState(initial);
+      return (
+        <TagEditor selectedIds={ids} availableTags={ALL} canEdit={true} onAdd={vi.fn()}
+          onRemove={(id) => setIds((cur) => cur.filter((x) => x !== id))} onCreate={vi.fn()} />
+      );
+    }
+
+    it('moves to the next chip', () => {
+      render(<Harness initial={[10, 11, 12]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 2026' }));
+      expect(screen.getByRole('button', { name: 'Remove invoice' })).toHaveFocus();
+    });
+
+    it('moves to the previous chip when the last one is removed', () => {
+      render(<Harness initial={[10, 11, 12]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove paye' }));
+      expect(screen.getByRole('button', { name: 'Remove invoice' })).toHaveFocus();
+    });
+
+    it('moves to the Add tag button when no chip is left', () => {
+      render(<Harness initial={[10]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 2026' }));
+      expect(screen.getByRole('button', { name: /add tag/i })).toHaveFocus();
+    });
+  });
 });

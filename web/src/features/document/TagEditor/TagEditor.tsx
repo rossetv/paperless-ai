@@ -29,6 +29,20 @@ export function TagEditor({
   onCreate,
 }: TagEditorProps): React.ReactElement {
   const uid = useId();
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  // Index of the chip just removed; focus is placed once the chip is gone.
+  const removedIndex = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    const index = removedIndex.current;
+    if (index === null) return;
+    removedIndex.current = null;
+    // Buttons are the remove buttons in chip order, then the Add tag trigger.
+    const buttons = wrapRef.current?.querySelectorAll('button');
+    if (buttons === undefined || buttons.length === 0) return;
+    const chipCount = buttons.length - 1;
+    buttons[chipCount === 0 ? 0 : Math.min(index, chipCount - 1)]?.focus();
+  }, [selectedIds]);
 
   const selectedRows = selectedIds.map((id) => {
     const found = availableTags.find((t) => t.id === id);
@@ -48,12 +62,15 @@ export function TagEditor({
   const allTagNames: string[] = availableTags.map((t) => t.name);
 
   return (
-    <div className={styles['wrap']}>
-      {selectedRows.map((t) =>
+    <div ref={wrapRef} className={styles['wrap']}>
+      {selectedRows.map((t, index) =>
         canEdit ? (
           <Chip
             key={t.id}
-            onRemove={() => onRemove(t.id)}
+            onRemove={() => {
+              removedIndex.current = index;
+              onRemove(t.id);
+            }}
             removeLabel={`Remove ${t.name}`}
           >
             {t.name}
