@@ -8,7 +8,7 @@ version = "1.0.0"
 requires-python = ">=3.11"
 dependencies = [
     "httpx~=0.28",
-    "openai>=2,<3",
+    "openai~=2.54",
     "Pillow~=13.0",
     "pdf2image~=1.17",
     "structlog~=26.1",
