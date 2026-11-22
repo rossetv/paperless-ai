@@ -239,11 +239,19 @@ export function useStreamingSearch(restore = false): UseStreamingSearch {
               break;
             case 'result':
               dispatch({ type: 'result', result: event.result });
+              // The server records the search; refresh the idle screen's list.
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.recentSearches(),
+              });
               return;
             case 'error':
               dispatch({
                 type: 'error',
-                error: { message: event.message },
+                error: {
+                  // Same state as a 503 on the initial response.
+                  ...(event.kind === 'index_not_ready' ? { status: 503 } : {}),
+                  message: event.message,
+                },
               });
               return;
             default:
@@ -267,7 +275,7 @@ export function useStreamingSearch(restore = false): UseStreamingSearch {
         dispatch({ type: 'error', error: toFailure(err) });
       }
     })();
-  }, []);
+  }, [queryClient]);
 
   // Abort on unmount so a late frame can't dispatch and the request is released.
   useEffect(() => {

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { ViewToggle } from '../../../components/patterns/ViewToggle/ViewToggle';
@@ -66,6 +66,24 @@ function isNarrowViewport(): boolean {
   );
 }
 
+/** Where the list was scrolled to, per history entry, for the way back from a document. */
+const scrollKey = (locationKey: string): string => `library-scroll:${locationKey}`;
+
+// Only the first screen of a page load can be a fresh visit or a reload; later ones are in-app.
+let firstScreenOfLoad = true;
+
+/**
+ * How the page was loaded (navigate, reload, back_forward) when this is the first screen of
+ * that load, else null. A load on another screen, then Back to this one, is in-app.
+ */
+function pageLoadType(): string | null {
+  const first = firstScreenOfLoad;
+  firstScreenOfLoad = false;
+  if (!first) return null;
+  const [nav] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+  if (!nav || new URL(nav.name).pathname !== window.location.pathname) return null;
+  return nav.type;
+}
 
 /**
  * The Library browse screen. All state lives in the URL (`useLibraryUrlState`).
@@ -77,6 +95,13 @@ function isNarrowViewport(): boolean {
 export function LibraryScreen(): React.ReactElement {
   const { query, view, setQuery, setView, searchString } = useLibraryUrlState();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  // A reload is left to the browser; a fresh visit or load starts at the top.
+  const [isReturn] = React.useState(() => {
+    const loadType = pageLoadType();
+    return navigationType === 'POP' && (loadType === null || loadType === 'back_forward');
+  });
 
   const documents = useDocuments(query);
   const facets = useFacets();
@@ -188,12 +213,46 @@ export function LibraryScreen(): React.ReactElement {
     return chips;
   }, [facetData, query, setQuery]);
 
+  // The browser restores scroll before an uncached list has loaded, when the page is
+  // still short, so it lands near the top. Put it back once the list has rendered.
+  // Only Back or Forward returns to a place; a fresh visit starts at the top. The entry is
+  // kept so the next Back to it restores again.
+  const scrollRestored = useRef(false);
+  useLayoutEffect(() => {
+    if (scrollRestored.current || documents.data === undefined) return;
+    scrollRestored.current = true;
+    if (!isReturn) return;
+    try {
+      const saved = Number(sessionStorage.getItem(scrollKey(location.key)));
+      if (saved > 0) window.scrollTo({ top: saved, behavior: 'instant' });
+    } catch {
+      // Storage can be blocked; the browser's own restore is then all there is.
+    }
+  }, [documents.data, location.key, isReturn]);
+
+  // Every page load's first entry is "default", so a position saved for an earlier load
+  // would otherwise come back on a later reload.
+  const [mountKey] = React.useState(location.key);
+  useEffect(() => {
+    if (isReturn) return;
+    try {
+      sessionStorage.removeItem(scrollKey(mountKey));
+    } catch {
+      // Storage can be blocked; there is then nothing saved to drop.
+    }
+  }, [isReturn, mountKey]);
+
   // Stable so LibraryCard's React.memo is not defeated by a new arrow each render.
   const handleOpen = useCallback(
     (id: number) => {
+      try {
+        sessionStorage.setItem(scrollKey(location.key), String(window.scrollY));
+      } catch {
+        // Storage can be blocked; Back then relies on the browser's own restore.
+      }
       void navigate(`/library/document/${id}${searchString}`);
     },
-    [navigate, searchString],
+    [navigate, searchString, location.key],
   );
 
   // Prefer the server-echoed page_size so the pager matches what was returned.
@@ -239,15 +298,20 @@ export function LibraryScreen(): React.ReactElement {
       <div className={styles['heading-block']}>
         <h1 className={styles['heading']}>Library</h1>
         <p className={styles['subheading']}>
-          Every indexed document.{' '}
-          <strong>{total.toLocaleString('en-GB')}</strong> total
-          {total > 0 && (
+          Every indexed document.
+          {documents.data !== undefined && (
             <>
-              {' '}· showing {rangeStart.toLocaleString('en-GB')}–
-              {rangeEnd.toLocaleString('en-GB')}
+              {' '}
+              <strong>{total.toLocaleString('en-GB')}</strong> total
+              {total > 0 && (
+                <>
+                  {' '}· showing {rangeStart.toLocaleString('en-GB')}–
+                  {rangeEnd.toLocaleString('en-GB')}
+                </>
+              )}
+              .
             </>
           )}
-          .
         </p>
       </div>
       <div className={styles['header-controls']}>

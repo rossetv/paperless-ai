@@ -81,6 +81,13 @@ function renderResults(overrides = {}) {
 }
 
 describe('ResultsScreen', () => {
+  it('names the search field for assistive tech', () => {
+    renderResults();
+    expect(
+      screen.getByRole('searchbox', { name: 'What do you want to know?' }),
+    ).toBeInTheDocument();
+  });
+
   it('recaps the query', () => {
     renderResults();
     expect(

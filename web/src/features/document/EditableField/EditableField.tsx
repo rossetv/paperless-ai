@@ -42,6 +42,16 @@ export function EditableField({
     if (!editing) setDraft(value);
   }, [value, editing]);
 
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+  // Set by Enter and Escape; a blur commit leaves focus where the person put it.
+  const restoreFocus = React.useRef(false);
+
+  React.useEffect(() => {
+    if (editing || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    buttonRef.current?.focus();
+  }, [editing]);
+
   function commit(): void {
     setEditing(false);
     if (draft !== value) onCommit(draft);
@@ -72,8 +82,10 @@ export function EditableField({
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
+              restoreFocus.current = true;
               commit();
             } else if (e.key === 'Escape') {
+              restoreFocus.current = true;
               setDraft(value);
               setEditing(false);
             }
@@ -87,6 +99,7 @@ export function EditableField({
     <div className={styles['row']}>
       <div className={styles['label']}>{label}</div>
       <button
+        ref={buttonRef}
         type="button"
         className={styles['value-button']}
         onClick={() => {

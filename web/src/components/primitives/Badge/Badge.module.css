@@ -10,6 +10,16 @@
   line-height: var(--line-height-micro);
   letter-spacing: var(--letter-spacing-micro);
   white-space: nowrap;
+
+  /* A long label truncates inside its container instead of widening the page. */
+  max-width: 100%;
+}
+
+/* text-overflow does not apply to a flex container, so the label carries it. */
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .neutral {

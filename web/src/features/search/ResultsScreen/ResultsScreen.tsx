@@ -78,6 +78,7 @@ export function ResultsScreen({
         {/* Keyed by `query` so it re-seeds whenever a fresh search lands. */}
         <SearchField
           key={query}
+          ariaLabel="What do you want to know?"
           id="results-search"
           defaultValue={query}
           onSubmit={onSearch}

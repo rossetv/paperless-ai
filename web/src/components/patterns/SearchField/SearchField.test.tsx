@@ -3,6 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { SearchField } from './SearchField';
 
 describe('SearchField', () => {
+  it('uses ariaLabel as the input name', () => {
+    render(<SearchField id="q" ariaLabel="Find a thing" onSubmit={vi.fn()} />);
+    expect(screen.getByRole('searchbox', { name: 'Find a thing' })).toBeInTheDocument();
+  });
+
   it('renders a search input', () => {
     render(<SearchField id="q" onSubmit={vi.fn()} />);
     expect(screen.getByRole('searchbox')).toBeInTheDocument();

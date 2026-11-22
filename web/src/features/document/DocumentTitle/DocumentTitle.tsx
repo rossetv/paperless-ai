@@ -58,6 +58,15 @@ export function DocumentTitle({
     if (!editing) setDraft(title ?? '');
   }, [title, editing]);
 
+  // Set by Enter and Escape; a blur commit leaves focus where the person put it.
+  const restoreFocus = React.useRef(false);
+
+  React.useEffect(() => {
+    if (editing || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    headingRef.current?.focus();
+  }, [editing]);
+
   function commit(): void {
     setEditing(false);
     const next = draft.trim();
@@ -74,8 +83,8 @@ export function DocumentTitle({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          if (e.key === 'Escape') { setDraft(title ?? ''); setEditing(false); }
+          if (e.key === 'Enter') { e.preventDefault(); restoreFocus.current = true; commit(); }
+          if (e.key === 'Escape') { restoreFocus.current = true; setDraft(title ?? ''); setEditing(false); }
         }}
       />
     );

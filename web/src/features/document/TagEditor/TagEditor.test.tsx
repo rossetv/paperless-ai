@@ -120,4 +120,67 @@ describe('TagEditor', () => {
     expect(screen.getByText('1 doc')).toBeInTheDocument();
     expect(screen.getByText('30 docs')).toBeInTheDocument();
   });
+
+  describe('focus after removing a tag', () => {
+    function Harness({ initial }: { initial: number[] }): React.ReactElement {
+      const [ids, setIds] = React.useState(initial);
+      return (
+        <TagEditor selectedIds={ids} availableTags={ALL} canEdit={true} onAdd={vi.fn()}
+          onRemove={(id) => setIds((cur) => cur.filter((x) => x !== id))} onCreate={vi.fn()} />
+      );
+    }
+
+    it('moves to the next chip', () => {
+      render(<Harness initial={[10, 11, 12]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 2026' }));
+      expect(screen.getByRole('button', { name: 'Remove invoice' })).toHaveFocus();
+    });
+
+    it('moves to the previous chip when the last one is removed', () => {
+      render(<Harness initial={[10, 11, 12]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove paye' }));
+      expect(screen.getByRole('button', { name: 'Remove invoice' })).toHaveFocus();
+    });
+
+    it('moves to the Add tag button when no chip is left', () => {
+      render(<Harness initial={[10]} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 2026' }));
+      expect(screen.getByRole('button', { name: /add tag/i })).toHaveFocus();
+    });
+
+    it('does not move focus on a later add when the removal changed nothing', () => {
+      function Failing(): React.ReactElement {
+        const [ids, setIds] = React.useState([10, 11]);
+        return (
+          <>
+            <button onClick={() => setIds((cur) => [...cur, 12])}>outside add</button>
+            <TagEditor selectedIds={ids} availableTags={ALL} canEdit={true} onAdd={vi.fn()}
+              onRemove={vi.fn()} onCreate={vi.fn()} />
+          </>
+        );
+      }
+      render(<Failing />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 2026' }));
+      fireEvent.click(screen.getByRole('button', { name: 'outside add' }));
+      expect(document.body).toHaveFocus();
+    });
+
+    it('leaves focus where it moved on its own after a removal', () => {
+      function Moving(): React.ReactElement {
+        const [ids, setIds] = React.useState([10, 11]);
+        const ref = React.useRef<HTMLInputElement>(null);
+        return (
+          <>
+            <input ref={ref} aria-label="elsewhere" />
+            <TagEditor selectedIds={ids} availableTags={ALL} canEdit={true} onAdd={vi.fn()}
+              onRemove={(id) => { ref.current?.focus(); setIds((cur) => cur.filter((x) => x !== id)); }}
+              onCreate={vi.fn()} />
+          </>
+        );
+      }
+      render(<Moving />);
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 2026' }));
+      expect(screen.getByLabelText('elsewhere')).toHaveFocus();
+    });
+  });
 });

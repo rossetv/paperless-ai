@@ -114,4 +114,25 @@ describe('EditableField', () => {
     expect(screen.getByText('No date')).toBeInTheDocument();
     expect(screen.queryByText('ignored')).not.toBeInTheDocument();
   });
+
+  it('returns focus to the field button after Enter and after Escape', () => {
+    render(<EditableField label="ASN" value="123" canEdit={true} onCommit={vi.fn()} />);
+    for (const key of ['Enter', 'Escape']) {
+      fireEvent.click(screen.getByRole('button', { name: '123' }));
+      fireEvent.keyDown(screen.getByRole('textbox'), { key });
+      expect(screen.getByRole('button', { name: '123' })).toHaveFocus();
+    }
+  });
+
+  it('does not pull focus back when blur commits because focus moved elsewhere', () => {
+    render(
+      <div>
+        <EditableField label="ASN" value="123" canEdit={true} onCommit={vi.fn()} />
+        <button type="button">elsewhere</button>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '123' }));
+    screen.getByRole('button', { name: 'elsewhere' }).focus();
+    expect(screen.getByRole('button', { name: 'elsewhere' })).toHaveFocus();
+  });
 });
