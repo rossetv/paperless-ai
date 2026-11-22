@@ -90,7 +90,10 @@
   margin-top: var(--spacing-10);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
-  color: var(--colour-status-danger-fg);
+
+  --colour-error-on-dark: #ff8a80; /* the dark theme's danger-fg; legible on the dark card in both themes */
+
+  color: var(--colour-error-on-dark);
 }
 
 .note {
