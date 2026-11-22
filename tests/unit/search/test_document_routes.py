@@ -1011,3 +1011,25 @@ def test_paperless_network_error_returns_502(
     paperless_stub.raise_on_get_document = httpx.ConnectError("connection refused")
     r = api_client.post("/api/documents/42/reclassify")
     assert r.status_code == 502
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix"),
+    [
+        ("GET", ""),
+        ("GET", "/pdf"),
+        ("GET", "/thumb"),
+        ("PATCH", ""),
+        ("POST", "/reclassify"),
+        ("POST", "/retranscribe"),
+        ("DELETE", ""),
+    ],
+)
+def test_a_document_id_beyond_the_index_id_range_is_rejected(
+    admin_client, method, suffix
+) -> None:
+    """An id no stored document can have answers 422, not an upstream error."""
+    response = admin_client.request(
+        method, f"/api/documents/{2**63}{suffix}", json={"title": "t"}
+    )
+    assert response.status_code == 422

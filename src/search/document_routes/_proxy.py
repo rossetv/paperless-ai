@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import StreamingResponse
 
 from search.deps import require_api_scope
+from search.document_routes._documents import DocumentId
 from search.offload import run_blocking
 
 if TYPE_CHECKING:
@@ -72,7 +73,7 @@ def register_proxy_routes(
         dependencies=[reader_auth],
         response_class=StreamingResponse,
     )
-    async def document_pdf(document_id: int) -> StreamingResponse:
+    async def document_pdf(document_id: DocumentId) -> StreamingResponse:
         """Stream a document's original PDF from Paperless-ngx.
 
         404 for an unknown document; 502 when Paperless is unreachable or errors.
@@ -85,7 +86,7 @@ def register_proxy_routes(
         dependencies=[reader_auth],
         response_class=StreamingResponse,
     )
-    async def document_thumb(document_id: int) -> StreamingResponse:
+    async def document_thumb(document_id: DocumentId) -> StreamingResponse:
         """Stream a document's first-page thumbnail from Paperless-ngx.
 
         404 for an unknown document; 502 when Paperless is unreachable, errors,
