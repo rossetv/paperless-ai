@@ -120,6 +120,20 @@ describe('FirstRunSetupScreen', () => {
     );
   });
 
+  it('sends the setup token without surrounding whitespace', async () => {
+    const mutate = vi.fn();
+    renderScreen(makeSetup({ mutate }));
+    await userEvent.type(screen.getByLabelText(/setup token/i), '  the-setup-token \n');
+    await userEvent.type(screen.getByLabelText(/^username/i), 'admin');
+    await userEvent.type(screen.getByLabelText(/^password/i), 'longenoughpw12');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenoughpw12');
+    await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'the-setup-token' }),
+      expect.anything(),
+    );
+  });
+
   it('disables the submit button while the mutation is pending', () => {
     renderScreen(makeSetup({ isPending: true }));
     expect(screen.getByRole('button', { name: /creating/i })).toBeDisabled();
