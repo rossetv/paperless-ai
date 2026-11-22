@@ -888,3 +888,30 @@ class TestDamagedTiffTags:
         assert damaged != good
         with pytest.raises(ImageConversionError):
             open_page_source(bytes(damaged), "image/tiff")
+
+
+class TestDamagedGif:
+    def test_a_damaged_multi_frame_gif_only_ever_fails_as_an_image_conversion_error(
+        self,
+    ):
+        frames = [
+            Image.frombytes(
+                "L",
+                (8, 8),
+                bytes(
+                    (i * 37 + j * 91 + f * 13) % 256 for i in range(8) for j in range(8)
+                ),
+            )
+            for f in range(3)
+        ]
+        good = _encode(frames, "GIF")
+
+        for offset in range(len(good)):
+            damaged = bytearray(good)
+            damaged[offset] = 0xFF
+            try:
+                with open_page_source(bytes(damaged), "image/gif") as source:
+                    for page in range(len(source)):
+                        source.load_page(page).close()
+            except ImageConversionError:
+                pass
