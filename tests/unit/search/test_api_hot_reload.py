@@ -116,6 +116,52 @@ def test_result_cache_is_dropped_when_config_version_moves(tmp_path) -> None:
         assert result_cache._search_result_cache is None
 
 
+def test_core_rebuilt_on_config_change_uses_the_fresh_result_cache(
+    tmp_path,
+) -> None:
+    """The core built for a new config belongs to the cache generation that
+    follows the drop, so its answers are cached again."""
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from common.config import _SETTINGS_CACHE
+    from search import cache as result_cache
+    from search.api import _reset_core_cache_for_test, _resolve_search_core
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    conn.close()
+    env = {
+        "APP_DB_PATH": app_db,
+        "INDEX_DB_PATH": str(tmp_path / "index.db"),
+        "PAPERLESS_TOKEN": "t",
+        "OPENAI_API_KEY": "k",
+    }
+    built_under: list[int] = []
+
+    def fake_resolve_components(settings, core, store_reader):
+        del settings, core, store_reader
+        built_under.append(result_cache.cache_generation())
+        return "core", "store_reader"
+
+    with (
+        patch.dict(os.environ, env, clear=True),
+        patch("search.api._resolve_components", side_effect=fake_resolve_components),
+        patch("search.api.setup_libraries"),
+        patch("search.api.llm_limiter"),
+    ):
+        _SETTINGS_CACHE.pop(app_db, None)
+        _reset_core_cache_for_test()
+        _resolve_search_core(app_db)
+        c = connect(app_db)
+        config_store.set_value(c, "SEARCH_TOP_K", "25")
+        c.close()
+        _resolve_search_core(app_db)
+
+    assert built_under[-1] == result_cache.cache_generation()
+
+
 def test_resolve_search_core_reinitialises_openai_client_on_config_change(
     tmp_path,
 ) -> None:

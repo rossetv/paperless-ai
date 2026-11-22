@@ -468,14 +468,16 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
         # reads could stamp a newer version onto an older core and pin the stale
         # core in the cache.
         cache_version, settings = current_settings_with_version(app_db_path)
+        # A config change can alter the answer to an identical query (model,
+        # top-k, prompts, ...), and the result cache is keyed only on the index
+        # version, so drop it rather than serve pre-change answers until the TTL.
+        # Dropped before the build: a core stamps the cache generation it is
+        # built under and uses the cache only while that generation holds.
+        reset_search_result_cache()
         setup_libraries(settings)
         llm_limiter.init(settings.LLM_MAX_CONCURRENT)
         core, _store_reader = _resolve_components(settings, None, None)
         _CORE_CACHE[app_db_path] = (cache_version, core)
-        # A config change can alter the answer to an identical query (model,
-        # top-k, prompts, ...), and the result cache is keyed only on the index
-        # version, so drop it rather than serve pre-change answers until the TTL.
-        reset_search_result_cache()
         return core
 
 

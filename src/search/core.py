@@ -35,7 +35,12 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from search.cache import build_cache_key, get_search_result_cache, is_cacheable
+from search.cache import (
+    build_cache_key,
+    cache_generation,
+    get_search_result_cache,
+    is_cacheable,
+)
 from search.errors import LlmBudgetExceededError
 from search.judge import RelevanceJudge
 from search.models import (
@@ -184,6 +189,9 @@ class SearchCore:
         self._retriever = retriever
         self._synthesizer = synthesizer
         self._judge = judge
+        # A search queued under this core can finish after a settings save has
+        # replaced it; its answer must not land in the cache built since.
+        self._cache_generation = cache_generation()
 
     @property
     def settings(self) -> Settings:
@@ -244,6 +252,7 @@ class SearchCore:
         cache_key = (
             self._cache_key(query, ui_filters, asker)
             if self._settings.SEARCH_CACHE_TTL_SECONDS > 0
+            and self._cache_generation == cache_generation()
             else None
         )
         if cache_key is not None:

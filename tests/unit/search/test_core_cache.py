@@ -192,6 +192,39 @@ class TestIndexChangeBustsCache:
         assert llm_client.total_calls == 2
 
 
+class TestSettingsChangeRetiresCore:
+    def test_a_core_replaced_by_a_settings_save_does_not_fill_the_new_cache(
+        self,
+    ) -> None:
+        """A search queued under the old settings finishes after the save; the
+        next search under the new settings must still compute its own answer."""
+        reset_search_result_cache()
+        old_client = _answered_client()
+        old_core = _core(_store_reader(), old_client)
+
+        # A settings save drops the cache before the new core is built.
+        reset_search_result_cache()
+        new_client = _answered_client()
+        new_core = _core(_store_reader(), new_client)
+
+        old_core.answer("a query")
+        new_core.answer("a query")
+
+        assert new_client.total_calls == 2
+
+    def test_a_core_built_after_the_save_still_caches(self) -> None:
+        reset_search_result_cache()
+        _core(_store_reader(), _answered_client())
+        reset_search_result_cache()
+        llm_client = _answered_client()
+        core = _core(_store_reader(), llm_client)
+
+        core.answer("a query")
+        core.answer("a query")
+
+        assert llm_client.total_calls == 2
+
+
 class TestNoMatchCached:
     def _no_match_core(self):
         store_reader = MagicMock()

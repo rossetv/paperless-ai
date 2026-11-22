@@ -135,6 +135,9 @@ class SearchResultCache:
 
 _search_result_cache: SearchResultCache | None = None
 _search_result_cache_lock = threading.Lock()
+# Bumped by every reset, so a core built before a settings save can tell its
+# answers belong to a cache that has since been dropped.
+_cache_generation = 0
 
 
 def get_search_result_cache(ttl_seconds: int) -> SearchResultCache:
@@ -152,12 +155,18 @@ def get_search_result_cache(ttl_seconds: int) -> SearchResultCache:
         return _search_result_cache
 
 
+def cache_generation() -> int:
+    """Return the number of resets so far; it moves on every settings change."""
+    return _cache_generation
+
+
 def reset_search_result_cache() -> None:
-    """Drop the cache singleton; the next get rebuilds it.
+    """Drop the cache singleton and bump the generation; the next get rebuilds it.
 
     Called on a settings change so answers made under the old model, prompt or
     TTL are not served on.
     """
-    global _search_result_cache
+    global _search_result_cache, _cache_generation
     with _search_result_cache_lock:
         _search_result_cache = None
+        _cache_generation += 1
