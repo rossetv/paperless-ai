@@ -96,12 +96,18 @@ export function FilterableListbox<T extends string | number = string>({
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Set when the pointer moved the highlight, so the list is not scrolled under it.
+  const pointerMoved = useRef(false);
+  // Last pointer position seen over the list; a scroll under a resting pointer repeats it.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  // Set by close(true); the trigger is not mounted while open, so focus waits for it.
+  const restoreFocus = useRef(false);
 
   // Unique suffix so two instances sharing the same `id` prop never collide on
   // the generated option/listbox ids.
   const uid = useId();
   const listboxId = `${id}-listbox-${uid}`;
-  const optionId = (key: string): string => `${id}-option-${key}-${uid}`;
+  const optionId = (index: number): string => `${id}-option-${uid}-${index}`;
 
   const selectedValues = useMemo<ReadonlyArray<T>>(() => {
     if (value === null || value === undefined) return [];
@@ -157,16 +163,46 @@ export function FilterableListbox<T extends string | number = string>({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open]);
 
+  useEffect(() => {
+    if (open || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    triggerRef.current?.focus();
+  }, [open]);
+
+  // Keep the keyboard-highlighted row visible in a long, scrolling list.
+  useEffect(() => {
+    if (!open || highlight < 0) return;
+    if (pointerMoved.current) {
+      pointerMoved.current = false;
+      return;
+    }
+    const el = document.getElementById(optionId(highlight));
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- optionId only depends on id and uid
+  }, [open, highlight]);
+
+  // Set on mousemove, not mouseenter: a keyboard scroll moves rows under a resting pointer.
+  function highlightFromPointer(event: React.MouseEvent, index: number): void {
+    const last = lastPointer.current;
+    lastPointer.current = { x: event.clientX, y: event.clientY };
+    if (!last || (last.x === event.clientX && last.y === event.clientY)) return;
+    if (index === highlight) return;
+    pointerMoved.current = true;
+    setHighlight(index);
+  }
+
   function openList(): void {
+    pointerMoved.current = false;
+    lastPointer.current = null;
     setOpen(true);
     setHighlight(-1);
   }
 
-  function close(restoreFocus: boolean): void {
+  function close(refocus: boolean): void {
     setOpen(false);
     setQuery('');
     setHighlight(-1);
-    if (restoreFocus) triggerRef.current?.focus();
+    restoreFocus.current = refocus;
   }
 
   function activateRow(row: Row): void {
@@ -195,6 +231,7 @@ export function FilterableListbox<T extends string | number = string>({
   }
 
   function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>): void {
+    pointerMoved.current = false;
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
@@ -208,14 +245,28 @@ export function FilterableListbox<T extends string | number = string>({
         break;
       case 'Enter': {
         event.preventDefault();
-        if (highlight >= 0 && highlight < rows.length) {
-          const activeRow = rows[highlight];
-          if (activeRow !== undefined) activateRow(activeRow);
-        }
+        // With no highlight, pick the first offered item only for typed text that
+        // has no Create row (never the clear or create row); a stray Enter does nothing.
+        const activeRow =
+          highlight >= 0 && highlight < rows.length
+            ? rows[highlight]
+            : q !== '' && !showCreate
+              ? rows.find((r) => r.kind === 'item')
+              : undefined;
+        if (activeRow !== undefined) activateRow(activeRow);
         break;
       }
-      case 'Escape':
+      case 'Home':
+      case 'End':
+        // Until a row is highlighted these keys stay with the text caret.
+        if (highlight < 0 || rows.length === 0) return;
         event.preventDefault();
+        setHighlight(event.key === 'Home' ? 0 : rows.length - 1);
+        break;
+      case 'Escape':
+        // Handled here, so a dialog around the list must not also close.
+        event.preventDefault();
+        event.stopPropagation();
         close(true);
         break;
       default:
@@ -225,11 +276,7 @@ export function FilterableListbox<T extends string | number = string>({
 
   const activeDescendant = ((): string | undefined => {
     if (!open || highlight < 0 || highlight >= rows.length) return undefined;
-    const row = rows[highlight];
-    if (row === undefined) return undefined;
-    if (row.kind === 'clear') return optionId('clear');
-    if (row.kind === 'create') return optionId('create');
-    return optionId(String(row.item.value));
+    return optionId(highlight);
   })();
 
   return (
@@ -274,20 +321,39 @@ export function FilterableListbox<T extends string | number = string>({
               setHighlight(-1);
             }}
             onKeyDown={handleInputKeyDown}
+            onBlur={(event) => {
+              // Focus left the control (Tab, programmatic): close without picking.
+              if (!rootRef.current?.contains(event.relatedTarget)) close(false);
+            }}
           />
-          <ul id={listboxId} role="listbox" className={styles['listbox']}>
-            {rows.length === 0 && (
-              <li className={styles['empty']} aria-disabled="true">
-                No matches
-              </li>
-            )}
+          {rows.length === 0 && (
+            <div
+              role="status"
+              className={cn(styles['listbox'], styles['empty'])}
+              // Keeps focus on the input so clicking the text is not a blur.
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              No matches
+            </div>
+          )}
+          <ul
+            id={listboxId}
+            role="listbox"
+            aria-multiselectable={multiple || undefined}
+            hidden={rows.length === 0}
+            className={styles['listbox']}
+            // A scrolling box is a Tab stop in browsers; focus must stay on the input.
+            tabIndex={-1}
+            // Keeps focus on the input so clicking a row or the scrollbar is not a blur.
+            onMouseDown={(e) => e.preventDefault()}
+          >
             {rows.map((row, index) => {
               const highlighted = index === highlight;
               if (row.kind === 'clear') {
                 return (
                   <li
                     key="__clear"
-                    id={optionId('clear')}
+                    id={optionId(index)}
                     role="option"
                     aria-selected={false}
                     className={cn(
@@ -295,10 +361,7 @@ export function FilterableListbox<T extends string | number = string>({
                       styles['clear'],
                       highlighted && styles['highlighted'],
                     )}
-                    // onMouseDown+preventDefault keeps the input focused so its
-                    // blur does not race the click.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setHighlight(index)}
+                    onMouseMove={(event) => highlightFromPointer(event, index)}
                     onClick={() => activateRow(row)}
                   >
                     {clearOption?.label}
@@ -309,7 +372,7 @@ export function FilterableListbox<T extends string | number = string>({
                 return (
                   <li
                     key="__create"
-                    id={optionId('create')}
+                    id={optionId(index)}
                     role="option"
                     aria-selected={false}
                     className={cn(
@@ -317,8 +380,7 @@ export function FilterableListbox<T extends string | number = string>({
                       styles['create'],
                       highlighted && styles['highlighted'],
                     )}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setHighlight(index)}
+                    onMouseMove={(event) => highlightFromPointer(event, index)}
                     onClick={() => activateRow(row)}
                   >
                     Create &ldquo;{query.trim()}&rdquo;
@@ -329,7 +391,7 @@ export function FilterableListbox<T extends string | number = string>({
               return (
                 <li
                   key={row.item.value}
-                  id={optionId(String(row.item.value))}
+                  id={optionId(index)}
                   role="option"
                   aria-selected={isSelected}
                   className={cn(
@@ -337,8 +399,7 @@ export function FilterableListbox<T extends string | number = string>({
                     isSelected && styles['selected'],
                     highlighted && styles['highlighted'],
                   )}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setHighlight(index)}
+                  onMouseMove={(event) => highlightFromPointer(event, index)}
                   onClick={() => activateRow(row)}
                 >
                   <span className={styles['option-label']}>{row.item.label}</span>

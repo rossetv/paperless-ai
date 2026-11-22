@@ -82,4 +82,31 @@ describe('Segmented', () => {
     );
     expect(screen.getByRole('radiogroup').className).toContain('extra');
   });
+
+  it('keeps only the checked radio in the tab order', () => {
+    render(
+      <Segmented options={OPTIONS} value="ollama" onChange={() => {}} label="Provider" />,
+    );
+    expect(screen.getByRole('radio', { name: 'Ollama' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('radio', { name: 'OpenAI' })).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('arrow keys move focus to the next enabled option, wrap, and select it', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const options = [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', disabled: true },
+      { value: 'c', label: 'C' },
+    ];
+    render(<Segmented options={options} value="a" onChange={onChange} label="L" />);
+    screen.getByRole('radio', { name: 'A' }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'C' })).toHaveFocus();
+    expect(onChange).toHaveBeenLastCalledWith('c');
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('radio', { name: 'A' })).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('radio', { name: 'C' })).toHaveFocus();
+  });
 });

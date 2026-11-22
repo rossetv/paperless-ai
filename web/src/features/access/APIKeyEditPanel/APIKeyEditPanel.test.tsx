@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { ApiKey, ApiKeyEnvelope, UpdateApiKeyRequest } from '../../../api/types';
+import { ApiError } from '../../../api/client';
 import { APIKeyEditPanel } from './APIKeyEditPanel';
 
 vi.mock('../../../api/hooks', () => ({ useUpdateApiKey: vi.fn() }));
@@ -144,6 +145,17 @@ describe('APIKeyEditPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(/could not save/i),
+    );
+  });
+
+  it('shows the server message when the save is rejected with one', async () => {
+    mockUpdate.mockReturnValue(
+      stub(() => Promise.reject(new ApiError(400, undefined, 'Unknown scope: x'))),
+    );
+    render(<APIKeyEditPanel apiKey={KEY} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Unknown scope: x'),
     );
   });
 

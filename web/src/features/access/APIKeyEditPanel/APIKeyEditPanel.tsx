@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal } from '../../../components/patterns/Modal/Modal';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
+import { errorDetail } from '../../../api/client';
 import { useUpdateApiKey } from '../../../api/hooks';
 import type { ApiKey, ApiScope } from '../../../api/types';
 import { expiryIso } from '../apiKeyFormData';
@@ -83,8 +84,8 @@ export function APIKeyEditPanel({
         },
       });
       onClose();
-    } catch {
-      setServerError('Could not save the changes. Try again.');
+    } catch (error) {
+      setServerError(errorDetail(error, 'Could not save the changes. Try again.'));
     }
   }
 

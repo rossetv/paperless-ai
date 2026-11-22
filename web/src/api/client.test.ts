@@ -181,6 +181,52 @@ describe('401 response surfaces as Unauthenticated', () => {
   });
 });
 
+describe('ApiError carries the server detail', () => {
+  async function failure(status: number, body: unknown): Promise<ApiError> {
+    mockFetch(status, body);
+    return (await search({ query: 'test' }).catch((e) => e)) as ApiError;
+  }
+
+  it('uses a string detail as the message', async () => {
+    const err = await failure(409, { detail: 'That username is already taken.' });
+    expect(err.message).toBe('That username is already taken.');
+    expect(err.detail).toBe('That username is already taken.');
+    expect(err.status).toBe(409);
+  });
+
+  it('joins the msg of each item of a 422 detail list', async () => {
+    const err = await failure(422, {
+      detail: [
+        { loc: ['body', 'query'], msg: 'Field required', type: 'missing' },
+        { loc: ['body', 'top_k'], msg: 'Input should be at most 50', type: 'x' },
+      ],
+    });
+    expect(err.message).toBe('Field required; Input should be at most 50');
+  });
+
+  it('keeps the generic message when the body has no usable detail', async () => {
+    for (const body of [{ other: 1 }, { detail: '' }, { detail: [] }, null]) {
+      const err = await failure(500, body);
+      expect(err.message).toBe('API error 500');
+      expect(err.detail).toBeUndefined();
+    }
+  });
+
+  it('keeps the generic message when the body is not JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        headers: new Headers(),
+        text: () => Promise.resolve('<html>Bad Gateway</html>'),
+      }),
+    );
+    const err = (await search({ query: 'test' }).catch((e) => e)) as ApiError;
+    expect(err.message).toBe('API error 502');
+  });
+});
+
 describe('non-2xx non-401 responses throw ApiError', () => {
   it('500 response throws ApiError', async () => {
     mockFetch(500, { detail: 'Internal Server Error' });

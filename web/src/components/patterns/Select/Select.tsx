@@ -48,9 +48,14 @@ export function Select<T extends string = string>({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   const listboxId = `${id}-listbox`;
+  const optionId = (index: number): string => `${id}-option-${index}`;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Set when the pointer moved the highlight, so the list is not scrolled under it.
+  const pointerMoved = useRef(false);
+  // Last pointer position seen over the list; a scroll under a resting pointer repeats it.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
 
   // Close on outside pointer-down (bound only while open).
   // This also ensures a second dropdown opening dismisses this one, because
@@ -67,11 +72,25 @@ export function Select<T extends string = string>({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [isOpen]);
 
+  // Keep the keyboard-highlighted option visible in a long, scrolling list.
+  useEffect(() => {
+    if (!isOpen || highlightedIndex < 0) return;
+    if (pointerMoved.current) {
+      pointerMoved.current = false;
+      return;
+    }
+    const el = document.getElementById(optionId(highlightedIndex));
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- optionId only depends on id
+  }, [isOpen, highlightedIndex]);
+
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption?.label ?? placeholder;
 
   function open(initialHighlight?: number): void {
     if (disabled) return;
+    pointerMoved.current = false;
+    lastPointer.current = null;
     setIsOpen(true);
     // Pre-highlight the currently selected option so arrow keys start from there.
     // If an initial highlight index is supplied (e.g. ArrowDown → first item),
@@ -97,6 +116,7 @@ export function Select<T extends string = string>({
   }
 
   function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+    pointerMoved.current = false;
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
@@ -116,7 +136,7 @@ export function Select<T extends string = string>({
         if (!isOpen) {
           open();
         } else {
-          const highlighted = highlightedIndex >= 0 ? options[highlightedIndex] : undefined;
+          const highlighted = options[highlightedIndex >= 0 ? highlightedIndex : 0];
           if (highlighted !== undefined) {
             selectOption(highlighted.value);
           }
@@ -130,9 +150,18 @@ export function Select<T extends string = string>({
           setHighlightedIndex((prev) => Math.max(prev - 1, 0));
         }
         break;
-      case 'Escape':
+      case 'Home':
+      case 'End':
         if (isOpen) {
           event.preventDefault();
+          setHighlightedIndex(event.key === 'Home' ? 0 : options.length - 1);
+        }
+        break;
+      case 'Escape':
+        if (isOpen) {
+          // Handled here, so a dialog around the list must not also close.
+          event.preventDefault();
+          event.stopPropagation();
           close();
         }
         break;
@@ -144,7 +173,17 @@ export function Select<T extends string = string>({
   const wrapperClasses = cn(styles['select'], className);
 
   return (
-    <div ref={rootRef} className={wrapperClasses}>
+    <div
+      ref={rootRef}
+      className={wrapperClasses}
+      onBlur={(event) => {
+        // Focus left the control (Tab, programmatic): close without picking or refocusing.
+        if (isOpen && !rootRef.current?.contains(event.relatedTarget)) {
+          setIsOpen(false);
+          setHighlightedIndex(-1);
+        }
+      }}
+    >
       {label !== undefined && (
         <span id={`${id}-label`} className={styles['label']}>
           {label}
@@ -162,7 +201,7 @@ export function Select<T extends string = string>({
         aria-label={label === undefined ? displayLabel : undefined}
         aria-activedescendant={
           isOpen && highlightedIndex >= 0
-            ? `${id}-option-${options[highlightedIndex]?.value ?? ''}`
+            ? optionId(highlightedIndex)
             : undefined
         }
         disabled={disabled}
@@ -182,6 +221,10 @@ export function Select<T extends string = string>({
           role="listbox"
           aria-labelledby={label !== undefined ? `${id}-label` : undefined}
           className={styles['listbox']}
+          // A scrolling box is a Tab stop in browsers; focus must stay on the trigger.
+          tabIndex={-1}
+          // Keeps focus on the trigger so clicking an option or the scrollbar is not a blur.
+          onMouseDown={(e) => e.preventDefault()}
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;
@@ -189,7 +232,7 @@ export function Select<T extends string = string>({
             return (
               <li
                 key={option.value}
-                id={`${id}-option-${option.value}`}
+                id={optionId(index)}
                 role="option"
                 aria-selected={isSelected}
                 className={cn(
@@ -198,7 +241,15 @@ export function Select<T extends string = string>({
                   isHighlighted ? styles['highlighted'] : undefined,
                 )}
                 onClick={() => selectOption(option.value)}
-                onMouseEnter={() => setHighlightedIndex(index)}
+                // Not mouseenter: a keyboard scroll moves rows under a resting pointer.
+                onMouseMove={(event) => {
+                  const last = lastPointer.current;
+                  lastPointer.current = { x: event.clientX, y: event.clientY };
+                  if (!last || (last.x === event.clientX && last.y === event.clientY)) return;
+                  if (index === highlightedIndex) return;
+                  pointerMoved.current = true;
+                  setHighlightedIndex(index);
+                }}
               >
                 {option.label}
               </li>

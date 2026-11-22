@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Select } from './Select';
 
@@ -232,14 +232,188 @@ describe('Select', () => {
 
     // Open and highlight the first item
     await userEvent.keyboard('{ArrowDown}');
-    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-apple');
+    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-0');
 
     // Move to second item
     await userEvent.keyboard('{ArrowDown}');
-    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-banana');
+    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-1');
 
     // Move back to first
     await userEvent.keyboard('{ArrowUp}');
-    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-apple');
+    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-0');
+  });
+});
+
+describe('Select keyboard and semantics', () => {
+  function setup(extra: { onChange?: (v: string) => void } = {}) {
+    const onChange = extra.onChange ?? vi.fn();
+    render(
+      <>
+        <Select id="fruit" options={OPTIONS} onChange={onChange} placeholder="Pick" />
+        <button type="button">after</button>
+      </>,
+    );
+    return { onChange, trigger: screen.getByRole('combobox') };
+  }
+
+  it('Escape on an open list closes it, is default-prevented and does not reach the document', () => {
+    const { trigger } = setup();
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    fireEvent.click(trigger);
+    const escape = createEvent.keyDown(trigger, { key: 'Escape' });
+    fireEvent(trigger, escape);
+    document.removeEventListener('keydown', seen);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(escape.defaultPrevented).toBe(true);
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it('Escape on a closed list is left alone', () => {
+    const { trigger } = setup();
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    const escape = createEvent.keyDown(trigger, { key: 'Escape' });
+    fireEvent(trigger, escape);
+    document.removeEventListener('keydown', seen);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(seen).toHaveBeenCalled();
+  });
+
+  it('Enter with nothing highlighted picks the first option', async () => {
+    const { onChange, trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledWith('apple');
+  });
+
+  it('Tab away closes the list without picking', async () => {
+    const { onChange, trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.tab();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus();
+  });
+
+  it('clicking an option still picks it', async () => {
+    const { onChange, trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('option', { name: 'Banana' }));
+    expect(onChange).toHaveBeenCalledWith('banana');
+  });
+
+  it('Home and End move the highlight to the first and last option', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{End}');
+    expect(screen.getByRole('option', { name: 'Cherry' }).id).toBe(
+      trigger.getAttribute('aria-activedescendant'),
+    );
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByRole('option', { name: 'Apple' }).id).toBe(
+      trigger.getAttribute('aria-activedescendant'),
+    );
+  });
+
+  it('scrolls the highlighted option into view', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+      expect(scroll).toHaveBeenLastCalledWith({ block: 'nearest' });
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
+  it('does not scroll the list when the pointer hovers an option', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      const cherry = screen.getByRole('option', { name: 'Cherry' });
+      fireEvent.mouseMove(cherry, { clientX: 1, clientY: 1 });
+      fireEvent.mouseMove(cherry, { clientX: 2, clientY: 1 });
+      expect(trigger.getAttribute('aria-activedescendant')).toBe(
+        screen.getByRole('option', { name: 'Cherry' }).id,
+      );
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
+  it('keeps the list out of the Tab order', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    expect(screen.getByRole('listbox')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('a resting pointer entering a row under a keyboard scroll does not move the highlight', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    const before = trigger.getAttribute('aria-activedescendant');
+    fireEvent.mouseEnter(screen.getByRole('option', { name: 'Cherry' }));
+    fireEvent.mouseOver(screen.getByRole('option', { name: 'Cherry' }));
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
+  it('the first mousemove after opening does not take the highlight, the next at new coordinates does', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{End}');
+    const cherry = screen.getByRole('option', { name: 'Cherry' });
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(apple.id);
+  });
+
+  it('a mousemove at the same coordinates after a keyboard move keeps the keyboard highlight', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    await userEvent.keyboard('{End}');
+    const cherry = screen.getByRole('option', { name: 'Cherry' });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(apple.id);
+  });
+
+  it('scrolls to the selected option when reopened after hovering it', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      render(<Select id="fruit" options={OPTIONS} value="banana" onChange={vi.fn()} />);
+      await userEvent.click(screen.getByRole('combobox'));
+      scroll.mockClear();
+      await userEvent.hover(screen.getByRole('option', { name: 'Banana' }));
+      await userEvent.click(screen.getByRole('option', { name: 'Banana' }));
+      await userEvent.click(screen.getByRole('combobox'));
+      expect(scroll).toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
+  it('builds option ids from the instance id and index, not the raw value', async () => {
+    render(
+      <Select id="odd" options={[{ value: 'a b/c', label: 'Odd' }]} onChange={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option').id).toBe('odd-option-0');
   });
 });

@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal } from '../../../components/patterns/Modal/Modal';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
+import { errorDetail } from '../../../api/client';
 import { useCreateApiKey } from '../../../api/hooks';
 import type { ApiScope } from '../../../api/types';
 import { expiryIso } from '../apiKeyFormData';
@@ -123,8 +124,8 @@ export function APIKeyCreatePanel({
         expires_at: expiryIso(expiryDays),
       });
       setSecret(result.secret);
-    } catch {
-      setServerError('Could not create the key. Try again.');
+    } catch (error) {
+      setServerError(errorDetail(error, 'Could not create the key. Try again.'));
     }
   }
 

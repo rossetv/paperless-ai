@@ -240,6 +240,7 @@
    *   nav      — the sticky navigation bar
    *   dropdown — popout listboxes (Select)
    *   tooltip  — supplementary hover labels, above dropdowns
+   *   toast    — transient notices, above tooltips and below modals
    *   modal    — the full-viewport modal overlay, above everything
    */
 
@@ -247,6 +248,7 @@
   --z-nav:      100;
   --z-dropdown: 200;
   --z-tooltip:  300;
+  --z-toast:    350;
   --z-modal:    400;
 
   /* Breakpoints — reference values only: custom properties cannot be used

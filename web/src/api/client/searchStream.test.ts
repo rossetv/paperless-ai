@@ -133,6 +133,23 @@ describe('streamSearch', () => {
     expect((err as ApiError).status).toBe(503);
   });
 
+  it('puts the server detail in the ApiError message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({ detail: [{ loc: ['body'], msg: 'Field required', type: 'missing' }] }),
+          ),
+      }),
+    );
+    const err = await streamSearch({ query: 'q' }).catch((e) => e);
+    expect((err as ApiError).status).toBe(422);
+    expect((err as ApiError).message).toBe('Field required');
+  });
+
   it('throws ApiError on any other non-OK status', async () => {
     mockFetch(500, null);
     const err = await streamSearch({ query: 'q' }).catch((e) => e);

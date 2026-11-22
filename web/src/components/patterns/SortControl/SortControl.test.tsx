@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SortControl } from './SortControl';
 
@@ -73,6 +73,101 @@ describe('SortControl', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  describe('menu keyboard model', () => {
+    function setup(onChange = vi.fn()) {
+      render(
+        <SortControl id="sort" label="Sort" options={OPTIONS} value="title" onChange={onChange} />,
+      );
+      return { trigger: screen.getByRole('button'), onChange };
+    }
+
+    it('moves focus to the checked item on open', async () => {
+      setup();
+      await userEvent.click(screen.getByRole('button'));
+      expect(screen.getByRole('menuitemradio', { name: 'Title' })).toHaveFocus();
+    });
+
+    it('Arrow Down and Up move between items and wrap', async () => {
+      setup();
+      await userEvent.click(screen.getByRole('button'));
+      await userEvent.keyboard('{ArrowDown}');
+      expect(screen.getByRole('menuitemradio', { name: 'Correspondent' })).toHaveFocus();
+      await userEvent.keyboard('{ArrowDown}');
+      expect(screen.getByRole('menuitemradio', { name: 'Date added' })).toHaveFocus();
+      await userEvent.keyboard('{ArrowUp}');
+      expect(screen.getByRole('menuitemradio', { name: 'Correspondent' })).toHaveFocus();
+    });
+
+    it.each([
+      ['{ArrowDown}', 'Date added'],
+      ['{Home}', 'Date added'],
+      ['{ArrowUp}', 'Correspondent'],
+      ['{End}', 'Correspondent'],
+    ])('%s moves into the menu after a click on its padding', async (key, name) => {
+      setup();
+      await userEvent.click(screen.getByRole('button'));
+      await userEvent.click(screen.getByRole('menu'));
+      expect(screen.getByRole('menu')).toHaveFocus();
+      await userEvent.keyboard(key);
+      expect(screen.getByRole('menuitemradio', { name })).toHaveFocus();
+    });
+
+    it('Home and End jump to the first and last item', async () => {
+      setup();
+      await userEvent.click(screen.getByRole('button'));
+      await userEvent.keyboard('{End}');
+      expect(screen.getByRole('menuitemradio', { name: 'Correspondent' })).toHaveFocus();
+      await userEvent.keyboard('{Home}');
+      expect(screen.getByRole('menuitemradio', { name: 'Date added' })).toHaveFocus();
+    });
+
+    it('Escape closes the menu, returns focus to the trigger and is default-prevented', async () => {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      screen.getByRole('menuitemradio', { name: 'Title' }).dispatchEvent(event);
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+      expect(trigger).toHaveFocus();
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('Escape still closes the menu after a click on the menu padding', async () => {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      await userEvent.click(screen.getByRole('menu'));
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
+    it('picking with Enter calls onChange and returns focus to the trigger', async () => {
+      const { trigger, onChange } = setup();
+      await userEvent.click(trigger);
+      await userEvent.keyboard('{ArrowUp}{Enter}');
+      expect(onChange).toHaveBeenCalledWith('created');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
+    it('Tab closes the menu', async () => {
+      setup();
+      await userEvent.click(screen.getByRole('button'));
+      await userEvent.tab();
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it.each(['Tab', 'Shift+Tab'])('%s from an item focuses the trigger and closes the menu without preventing the default', async (combo) => {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      const item = screen.getByRole('menuitemradio', { name: 'Title' });
+      expect(item).toHaveFocus();
+      const notPrevented = fireEvent.keyDown(item, { key: 'Tab', shiftKey: combo === 'Shift+Tab' });
+      expect(notPrevented).toBe(true);
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
   });
 
   it('merges a caller className onto the root', () => {

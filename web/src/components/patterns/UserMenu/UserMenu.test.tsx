@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UserMenu } from './UserMenu';
 
@@ -79,5 +79,75 @@ describe('UserMenu', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'outside' }));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  describe('menu keyboard model', () => {
+    async function open() {
+      const onSignOut = vi.fn();
+      render(<UserMenu initials="AM" displayName="Alex Morgan" email="alex@home.lan" onSignOut={onSignOut} />);
+      const trigger = screen.getByRole('button', { name: /account menu/i });
+      await userEvent.click(trigger);
+      return { trigger, onSignOut };
+    }
+
+    it('moves focus to the first item on open', async () => {
+      await open();
+      expect(screen.getByRole('menuitem', { name: /sign out/i })).toHaveFocus();
+    });
+
+    it('Escape closes the menu, returns focus to the trigger and is default-prevented', async () => {
+      const { trigger } = await open();
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      screen.getByRole('menuitem').dispatchEvent(event);
+      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+      expect(trigger).toHaveFocus();
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('Escape still closes the menu after a click on its non-focusable header', async () => {
+      const { trigger } = await open();
+      await userEvent.click(screen.getByText('Alex Morgan'));
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
+    it('Enter on the item signs out and returns focus to the trigger', async () => {
+      const { trigger, onSignOut } = await open();
+      await userEvent.keyboard('{Enter}');
+      expect(onSignOut).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
+    it('arrow keys and Home/End keep focus on the only item', async () => {
+      await open();
+      await userEvent.keyboard('{ArrowDown}{ArrowUp}{End}{Home}');
+      expect(screen.getByRole('menuitem')).toHaveFocus();
+    });
+
+    it.each(['{ArrowDown}', '{Home}', '{ArrowUp}', '{End}'])('%s moves into the menu after a click on its header', async (key) => {
+      await open();
+      await userEvent.click(screen.getByText('Alex Morgan'));
+      expect(screen.getByRole('menuitem')).not.toHaveFocus();
+      await userEvent.keyboard(key);
+      expect(screen.getByRole('menuitem')).toHaveFocus();
+    });
+
+    it('Tab closes the menu', async () => {
+      await open();
+      await userEvent.tab();
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it.each(['Tab', 'Shift+Tab'])('%s from the item focuses the trigger and closes the menu without preventing the default', async (combo) => {
+      const { trigger } = await open();
+      const item = screen.getByRole('menuitem', { name: 'Sign out' });
+      expect(item).toHaveFocus();
+      const notPrevented = fireEvent.keyDown(item, { key: 'Tab', shiftKey: combo === 'Shift+Tab' });
+      expect(notPrevented).toBe(true);
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
   });
 });

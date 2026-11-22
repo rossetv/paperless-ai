@@ -8,6 +8,7 @@ import {
   useUpdateUser,
   useDeleteUser,
 } from '../../../api/hooks';
+import { errorDetail } from '../../../api/client';
 import { validatePassword, validateUsername } from '../../../lib/credentials';
 import type { User, UpdateUserRequest } from '../../../api/types';
 import styles from './UserEditDrawer.module.css';
@@ -125,11 +126,14 @@ export function UserEditDrawer({
         await updateUser.mutateAsync({ id: user.id, body: changedFields() });
       }
       onClose();
-    } catch {
+    } catch (error) {
       setServerError(
-        isCreate
-          ? 'Could not create the user. Check the details and try again.'
-          : 'Could not save the changes. The server rejected the request.',
+        errorDetail(
+          error,
+          isCreate
+            ? 'Could not create the user. Check the details and try again.'
+            : 'Could not save the changes. The server rejected the request.',
+        ),
       );
     }
   }
@@ -154,8 +158,8 @@ export function UserEditDrawer({
     try {
       await updateUser.mutateAsync({ id: user.id, body: { status: next } });
       onClose();
-    } catch {
-      setServerError('Could not change the account status.');
+    } catch (error) {
+      setServerError(errorDetail(error, 'Could not change the account status.'));
     }
   }
 
@@ -166,9 +170,12 @@ export function UserEditDrawer({
     try {
       await deleteUser.mutateAsync(user.id);
       onClose();
-    } catch {
+    } catch (error) {
       setServerError(
-        'Could not delete the account. The last admin cannot be removed.',
+        errorDetail(
+          error,
+          'Could not delete the account. The last admin cannot be removed.',
+        ),
       );
       setConfirmingDelete(false);
     }

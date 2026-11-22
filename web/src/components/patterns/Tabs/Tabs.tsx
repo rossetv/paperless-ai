@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { cn } from '../../../lib/cn';
 import styles from './Tabs.module.css';
 
@@ -21,7 +21,7 @@ export interface TabsProps {
 
 /**
  * Accessible tabs (WAI-ARIA Tabs pattern) with automatic activation: arrow keys
- * move focus, wrap at the ends, and activate the focused tab.
+ * move focus, wrap at the ends, Home/End jump to the ends, and activate the focused tab.
  *
  * Only the active panel is mounted, so inactive panels do not keep state such as
  * scroll position.
@@ -31,6 +31,7 @@ export function Tabs({
   defaultActiveId,
   className,
 }: TabsProps): React.ReactElement {
+  const baseId = useId();
   const firstId = tabs[0]?.id ?? '';
   const [activeId, setActiveId] = useState(
     defaultActiveId !== undefined ? defaultActiveId : firstId,
@@ -71,6 +72,15 @@ export function Tabs({
         if (prevTab !== undefined) activateTab(prevTab.id);
         break;
       }
+      case 'Home':
+      case 'End': {
+        event.preventDefault();
+        const edgeIndex = event.key === 'Home' ? 0 : count - 1;
+        focusTab(edgeIndex);
+        const edgeTab = tabs[edgeIndex];
+        if (edgeTab !== undefined) activateTab(edgeTab.id);
+        break;
+      }
       case 'Enter':
       case ' ': {
         event.preventDefault();
@@ -84,7 +94,8 @@ export function Tabs({
   }
 
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const panelId = `tabpanel-${activeTab?.id ?? ''}`;
+  const tabDomId = (id: string): string => `${baseId}-tab-${id}`;
+  const panelId = `${baseId}-panel-${activeTab?.id ?? ''}`;
 
   const rootClasses = cn(styles['tabs'], className);
 
@@ -99,11 +110,12 @@ export function Tabs({
               ref={(el) => {
                 tabRefs.current[index] = el;
               }}
-              id={`tab-${tab.id}`}
+              id={tabDomId(tab.id)}
               type="button"
               role="tab"
               aria-selected={isActive}
-              aria-controls={`tabpanel-${tab.id}`}
+              // Only the active panel is mounted, so only it can be referenced.
+              {...(tab.id === activeTab?.id ? { 'aria-controls': panelId } : {})}
               // Roving tabindex: only the active tab is in the natural tab order.
               // Arrow keys move focus between tabs; Tab moves focus out of the tablist.
               tabIndex={isActive ? 0 : -1}
@@ -121,7 +133,7 @@ export function Tabs({
         <div
           id={panelId}
           role="tabpanel"
-          aria-labelledby={`tab-${activeTab.id}`}
+          aria-labelledby={tabDomId(activeTab.id)}
           className={styles['panel']}
           tabIndex={0}
         >

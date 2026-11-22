@@ -14,6 +14,11 @@ const FOCUSABLE_SELECTOR = [
  * Focus management for a modal dialog: while `isOpen`, move focus into
  * `dialogRef`, keep Tab / Shift+Tab cycling inside it and call `onClose` on
  * Escape; restore the previously focused element on close.
+ *
+ * Initial focus goes to the element marked `data-autofocus`, else the first
+ * focusable one inside `data-focus-content` if the dialog has one, else the first
+ * focusable one, else the dialog itself. An Escape that a child already handled (`defaultPrevented`)
+ * is ignored.
  */
 export function useFocusTrap(
   dialogRef: RefObject<HTMLElement | null>,
@@ -29,12 +34,15 @@ export function useFocusTrap(
     const raf = requestAnimationFrame(() => {
       const dialog = dialogRef.current;
       if (!dialog) return;
-      const firstFocusable = dialog.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      if (firstFocusable) {
-        firstFocusable.focus();
-      } else {
-        dialog.focus();
-      }
+      // A child that took focus itself on mount (React's autoFocus) keeps it.
+      if (dialog.contains(document.activeElement)) return;
+      const content = dialog.querySelector<HTMLElement>('[data-focus-content]');
+      const target =
+        dialog.querySelector<HTMLElement>('[data-autofocus]') ??
+        content?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ??
+        dialog.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ??
+        dialog;
+      target.focus();
     });
 
     return () => {
@@ -52,6 +60,9 @@ export function useFocusTrap(
 
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
+        // React's handlers run at the root, below the document, so a child's
+        // preventDefault has already happened by the time this runs.
+        if (event.defaultPrevented) return;
         event.preventDefault();
         onClose();
         return;

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { Toast } from './Toast';
@@ -67,5 +67,110 @@ describe('Toast', () => {
     vi.advanceTimersByTime(2999);
     expect(handleDismiss).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+  describe('auto-dismiss timer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // jsdom has no PointerEvent, so pointerType would be dropped from the init.
+      vi.stubGlobal(
+        'PointerEvent',
+        class extends MouseEvent {
+          readonly pointerType: string;
+          constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
+            super(type, init);
+            this.pointerType = init.pointerType ?? '';
+          }
+        },
+      );
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it('is not restarted by a re-render with a new onDismiss', () => {
+      const first = vi.fn();
+      const second = vi.fn();
+      const { rerender } = render(
+        <Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={first} />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      rerender(<Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={second} />);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(first).not.toHaveBeenCalled();
+      expect(second).toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses while hovered and resumes with the time left', () => {
+      const onDismiss = vi.fn();
+      render(<Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={onDismiss} />);
+      const toast = screen.getByRole('status');
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      fireEvent.pointerEnter(toast, { pointerType: 'mouse' });
+      act(() => {
+        vi.advanceTimersByTime(10000);
+      });
+      expect(onDismiss).not.toHaveBeenCalled();
+      fireEvent.pointerLeave(toast, { pointerType: 'mouse' });
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(onDismiss).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not pause for a touch pointer', () => {
+      const onDismiss = vi.fn();
+      render(<Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={onDismiss} />);
+      fireEvent.pointerEnter(screen.getByRole('status'), { pointerType: 'touch' });
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses while focus is inside and resumes when it leaves', () => {
+      const onDismiss = vi.fn();
+      render(<Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={onDismiss} />);
+      const button = screen.getByRole('button', { name: /dismiss/i });
+      act(() => {
+        button.focus();
+      });
+      act(() => {
+        vi.advanceTimersByTime(10000);
+      });
+      expect(onDismiss).not.toHaveBeenCalled();
+      act(() => {
+        button.blur();
+      });
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays paused when the pointer leaves but focus remains', () => {
+      const onDismiss = vi.fn();
+      render(<Toast message="Hi" variant="info" dismissAfterMs={3000} onDismiss={onDismiss} />);
+      const toast = screen.getByRole('status');
+      act(() => {
+        screen.getByRole('button', { name: /dismiss/i }).focus();
+      });
+      fireEvent.pointerEnter(toast, { pointerType: 'mouse' });
+      fireEvent.pointerLeave(toast, { pointerType: 'mouse' });
+      act(() => {
+        vi.advanceTimersByTime(10000);
+      });
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
   });
 });

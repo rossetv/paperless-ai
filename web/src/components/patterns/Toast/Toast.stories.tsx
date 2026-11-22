@@ -8,6 +8,14 @@ const meta = {
     layout: 'centered',
   },
   tags: ['autodocs'],
+  decorators: [
+    // The toast is position: fixed; a transform gives each story its own containing block.
+    (Story) => (
+      <div style={{ transform: 'translateZ(0)', minHeight: '20rem', width: '100%' }}>
+        <Story />
+      </div>
+    ),
+  ],
   argTypes: {
     variant: { control: { type: 'select' }, options: ['info', 'error'] },
     message: { control: 'text' },
@@ -49,6 +57,17 @@ export const AutoDismiss: Story = {
     dismissAfterMs: 5000,
     onDismiss: () => {
       /* story — would unmount the toast in a real application */
+    },
+  },
+};
+
+export const LongUnbrokenText: Story = {
+  args: {
+    message:
+      'Request failed: https://paperless.example.com/api/documents/12345/download/?original=true&token=abcdefghijklmnopqrstuvwxyz0123456789',
+    variant: 'error',
+    onDismiss: () => {
+      /* story — noop */
     },
   },
 };
