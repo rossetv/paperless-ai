@@ -866,3 +866,25 @@ class TestExifOrientationDecodeErrors:
         with patch.object(Image.Image, "load", side_effect=ValueError("bad data")):
             with pytest.raises(ValueError, match="bad data"):
                 _apply_exif_orientation(image)
+
+
+class TestDamagedTiffTags:
+    @pytest.mark.parametrize(
+        ("tag", "bad_type"),
+        [(0x0100, 1), (0x0111, 2)],
+        ids=["width-tag-has-the-wrong-type", "strip-offset-tag-has-the-wrong-type"],
+    )
+    def test_a_tiff_with_a_damaged_header_tag_is_an_image_conversion_error(
+        self, tag, bad_type
+    ):
+        good = _encode([Image.new("RGB", (40, 30))], "TIFF")
+        damaged = bytearray(good)
+        ifd = struct.unpack("<I", good[4:8])[0]
+        for i in range(struct.unpack("<H", good[ifd : ifd + 2])[0]):
+            entry = ifd + 2 + 12 * i
+            if struct.unpack("<H", good[entry : entry + 2])[0] == tag:
+                damaged[entry + 2 : entry + 4] = struct.pack("<H", bad_type)
+
+        assert damaged != good
+        with pytest.raises(ImageConversionError):
+            open_page_source(bytes(damaged), "image/tiff")

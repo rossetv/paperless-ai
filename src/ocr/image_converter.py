@@ -65,8 +65,19 @@ _STRIP_ROWS = 256
 
 # Errors that mean Pillow cannot (or must not) decode the bytes. The bomb
 # error is not an OSError; uncaught it escapes the worker, the pre-tag stays,
-# and the document is re-downloaded and re-decoded every poll.
-_UNDECODABLE = (UnidentifiedImageError, OSError, Image.DecompressionBombError)
+# and the document is re-downloaded and re-decoded every poll. So do the plain
+# errors Pillow raises on damaged header tags (a TIFF with a bad strip offset
+# gives a TypeError, a bad width a ValueError).
+_UNDECODABLE = (
+    UnidentifiedImageError,
+    OSError,
+    Image.DecompressionBombError,
+    ValueError,
+    TypeError,
+    SyntaxError,
+    struct.error,
+    EOFError,
+)
 
 
 class ImageConversionError(Exception):
