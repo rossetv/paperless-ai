@@ -69,4 +69,15 @@ describe('DeleteConfirmModal', () => {
     await user.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onCancel).toHaveBeenCalledOnce();
   });
+
+  it('disables both buttons while the delete runs', () => {
+    render(<DeleteConfirmModal title="Test Doc" onCancel={vi.fn()} onConfirm={vi.fn()} pending />);
+    expect(screen.getByRole('button', { name: /delet/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled();
+  });
+
+  it('shows why the delete failed', () => {
+    render(<DeleteConfirmModal title="Test Doc" onCancel={vi.fn()} onConfirm={vi.fn()} error="Admins only" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Admins only');
+  });
 });

@@ -412,12 +412,7 @@ export function DocumentScreen({
                 onError: notifyError("Couldn't queue re-transcription."),
               })
             }
-            onDelete={(id) =>
-              deleteDoc.mutate(id, {
-                onSuccess: () => navigate(breadcrumbHref),
-                onError: notifyError("Couldn't delete the document."),
-              })
-            }
+            onDelete={(id) => deleteDoc.mutateAsync(id).then(() => navigate(breadcrumbHref))}
           />
         </aside>
       </div>

@@ -1,11 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tanstack/react-query';
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
-import { ApiError, patchDocument, getDocument } from '../../../api/client';
+import { ApiError, patchDocument, getDocument, deleteDocument } from '../../../api/client';
 import { useDocument } from '../../../api/hooks/library';
 import { DocumentScreen } from './DocumentScreen';
 
@@ -15,6 +15,7 @@ vi.mock('../../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../api/client')>()),
   patchDocument: vi.fn(),
   getDocument: vi.fn(),
+  deleteDocument: vi.fn(),
 }));
 
 vi.mock('../../../api/hooks', async (importOriginal) => ({
@@ -27,7 +28,6 @@ vi.mock('../../../api/hooks', async (importOriginal) => ({
   useCreateTag: vi.fn(),
   useReclassifyDocument: vi.fn(),
   useRetranscribeDocument: vi.fn(),
-  useDeleteDocument: vi.fn(),
   useSearch: vi.fn(),
 }));
 
@@ -40,7 +40,6 @@ import {
   useCreateTag,
   useReclassifyDocument,
   useRetranscribeDocument,
-  useDeleteDocument,
   useSearch,
 } from '../../../api/hooks';
 
@@ -54,7 +53,7 @@ const mockUseCreateDocumentType = useCreateDocumentType as ReturnType<typeof vi.
 const mockUseCreateTag = useCreateTag as ReturnType<typeof vi.fn>;
 const mockUseReclassifyDocument = useReclassifyDocument as ReturnType<typeof vi.fn>;
 const mockUseRetranscribeDocument = useRetranscribeDocument as ReturnType<typeof vi.fn>;
-const mockUseDeleteDocument = useDeleteDocument as ReturnType<typeof vi.fn>;
+const mockDeleteDocument = deleteDocument as ReturnType<typeof vi.fn>;
 const mockUseSearch = useSearch as ReturnType<typeof vi.fn>;
 
 const DOC: LibraryDocument = {
@@ -222,7 +221,7 @@ beforeEach(() => {
   mockUseCreateTag.mockReturnValue(createMutationStub());
   mockUseReclassifyDocument.mockReturnValue(voidMutationStub());
   mockUseRetranscribeDocument.mockReturnValue(voidMutationStub());
-  mockUseDeleteDocument.mockReturnValue(voidMutationStub());
+  mockDeleteDocument.mockReset().mockResolvedValue(undefined);
   // Pending by default; tests that need MatchCard content override it.
   mockUseSearch.mockReturnValue(searchPendingStub());
 });
@@ -372,20 +371,6 @@ describe('DocumentScreen', () => {
   });
 
   it('successful delete navigates back to the breadcrumb target', async () => {
-    // Captured so the test can complete the delete without a network call.
-    let capturedOnSuccess: (() => void) | undefined;
-
-    const deleteMutate = (vi.fn((
-      _id: number,
-      opts?: { onSuccess?: (data: void, vars: number, ctx: unknown) => void },
-    ) => {
-      if (opts?.onSuccess) {
-        capturedOnSuccess = () => opts.onSuccess!(undefined, 0, undefined);
-      }
-    }) as unknown) as UseMutateFunction<void, Error, number>;
-
-    mockUseDeleteDocument.mockReturnValue(voidMutationStub({ mutate: deleteMutate }));
-
     render(
       <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter initialEntries={['/document/934']}>
@@ -402,23 +387,16 @@ describe('DocumentScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
-    expect(deleteMutate).toHaveBeenCalledWith(934, expect.objectContaining({ onSuccess: expect.any(Function) }));
-
-    act(() => capturedOnSuccess?.());
     expect(await screen.findByText('library page')).toBeInTheDocument();
+    expect(mockDeleteDocument).toHaveBeenCalledWith(934, expect.anything());
   });
 
-  it('a failed delete shows the server error and stays on the document', async () => {
-    const deleteMutate = vi.fn((_id: number, opts?: { onError?: (err: Error) => void }) => {
-      opts?.onError?.(new ApiError(403, undefined, 'Admins only'));
-    });
-    mockUseDeleteDocument.mockReturnValue(
-      voidMutationStub({ mutate: deleteMutate as unknown as UseMutateFunction<void, Error, number> }),
-    );
+  it('a failed delete shows the server error in the dialog and stays on the document', async () => {
+    mockDeleteDocument.mockRejectedValue(new ApiError(403, undefined, 'Admins only'));
     renderScreen({ role: 'admin' });
     fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Admins only');
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Admins only');
     expect(screen.getByText(/#934/)).toBeInTheDocument();
   });
 

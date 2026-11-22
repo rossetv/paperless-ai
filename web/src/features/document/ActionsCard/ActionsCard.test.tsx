@@ -1,9 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { ApiError } from '../../../api/client';
 import { ActionsCard } from './ActionsCard';
 
 const noop = (): void => {};
+const noopDelete = (): Promise<void> => Promise.resolve();
 
 describe('ActionsCard', () => {
   it('renders Re-classify + Re-transcribe for a member; no Delete', () => {
@@ -14,7 +16,7 @@ describe('ActionsCard', () => {
         title="Doc"
         onReclassify={noop}
         onRetranscribe={noop}
-        onDelete={noop}
+        onDelete={noopDelete}
       />,
     );
     expect(screen.getByRole('button', { name: /re-classify/i })).toBeInTheDocument();
@@ -30,7 +32,7 @@ describe('ActionsCard', () => {
         title="Doc"
         onReclassify={noop}
         onRetranscribe={noop}
-        onDelete={noop}
+        onDelete={noopDelete}
       />,
     );
     expect(screen.getByRole('button', { name: /^delete/i })).toBeInTheDocument();
@@ -44,7 +46,7 @@ describe('ActionsCard', () => {
         title="Doc"
         onReclassify={noop}
         onRetranscribe={noop}
-        onDelete={noop}
+        onDelete={noopDelete}
       />,
     );
     expect(container).toBeEmptyDOMElement();
@@ -59,7 +61,7 @@ describe('ActionsCard', () => {
         title="Doc"
         onReclassify={onReclassify}
         onRetranscribe={noop}
-        onDelete={noop}
+        onDelete={noopDelete}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /re-classify/i }));
@@ -67,7 +69,7 @@ describe('ActionsCard', () => {
   });
 
   it('Delete opens a confirm modal; cancelling closes without firing onDelete', async () => {
-    const onDelete = vi.fn();
+    const onDelete = vi.fn(noopDelete);
     render(
       <ActionsCard
         documentId={42}
@@ -88,7 +90,7 @@ describe('ActionsCard', () => {
   });
 
   it('Delete → Confirm fires onDelete with the document id', async () => {
-    const onDelete = vi.fn();
+    const onDelete = vi.fn(noopDelete);
     render(
       <ActionsCard
         documentId={42}
@@ -112,7 +114,7 @@ describe('ActionsCard', () => {
         title="Doc"
         onReclassify={noop}
         onRetranscribe={noop}
-        onDelete={noop}
+        onDelete={noopDelete}
         reclassifying
         retranscribing
         deleting
@@ -123,8 +125,9 @@ describe('ActionsCard', () => {
     expect(screen.getByRole('button', { name: /^delete document/i })).toBeDisabled();
   });
 
-  it('keeps the confirm dialog open while the delete runs and closes it when it ends', () => {
-    const onDelete = vi.fn();
+  it('keeps the confirm dialog open while the delete runs and closes it when it ends', async () => {
+    let finish!: () => void;
+    const onDelete = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
     const props = { documentId: 42, role: 'admin' as const, title: 'Doc', onReclassify: noop, onRetranscribe: noop, onDelete };
     const { rerender } = render(<ActionsCard {...props} />);
     fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
@@ -133,10 +136,22 @@ describe('ActionsCard', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
     // A second confirm while the first is running sends nothing more.
-    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^deleting/i }));
     expect(onDelete).toHaveBeenCalledTimes(1);
 
     rerender(<ActionsCard {...props} deleting={false} />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    finish();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('a failed delete keeps the dialog open and shows the error inside it', async () => {
+    const onDelete = vi.fn(() => Promise.reject(new ApiError(403, undefined, 'Admins only')));
+    render(
+      <ActionsCard documentId={42} role="admin" title="Doc" onReclassify={noop} onRetranscribe={noop} onDelete={onDelete} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Admins only');
   });
 });
