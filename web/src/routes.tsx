@@ -51,6 +51,7 @@ import { useSetupStatus, useMe } from './api/hooks';
  */
 function ProtectedRoute({ children }: { children: React.ReactElement }): React.ReactElement {
   const meQuery = useMe();
+  const location = useLocation();
 
   if (meQuery.isLoading) {
     return <FullPageLoading />;
@@ -58,9 +59,27 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
   // Branch on success explicitly so an errored or user-less `me` never renders
   // protected UI.
   if (!meQuery.isSuccess || meQuery.data.user === undefined) {
-    return <Navigate to="/login" replace />;
+    const from = location.pathname + location.search + location.hash;
+    return <Navigate to="/login" replace state={{ from }} />;
   }
   return children;
+}
+
+/**
+ * Where to send a signed-in user who lands on `/login`: the page the guard
+ * bounced them from, if router state names an in-app path, else the root.
+ */
+function returnTarget(state: unknown): string {
+  const from = (state as { from?: unknown } | null)?.from;
+  if (
+    typeof from === 'string' &&
+    from.startsWith('/') &&
+    !from.startsWith('//') &&
+    !/^\/login(?:[/?#]|$)/.test(from)
+  ) {
+    return from;
+  }
+  return '/';
 }
 
 /**
@@ -109,6 +128,7 @@ function BootstrapGate({
   children: React.ReactElement;
 }): React.ReactElement {
   const setupQuery = useSetupStatus();
+  const location = useLocation();
 
   // Resolved regardless of loading state so hooks are called unconditionally.
   // The me query stays disabled while setup state is unknown or setup is needed.
@@ -132,7 +152,7 @@ function BootstrapGate({
   // logout redirect the query is mid-refetch, and a loader would flash a blank
   // frame between sign-out and the form.
   if (meQuery.data?.user !== undefined) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTarget(location.state)} replace />;
   }
   return children;
 }

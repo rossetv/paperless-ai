@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SetupStatus, MeResponse } from './api/types';
@@ -88,17 +88,26 @@ const SAMPLE_USER = {
   last_login_at: null,
 };
 
-function renderAt(path: string) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
+function Where(): React.ReactElement {
+  const { pathname, search, hash } = useLocation();
+  return <span data-testid="where">{pathname + search + hash}</span>;
+}
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+function routerTree(entry: string | { pathname: string; state: unknown }) {
+  return (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={[entry]}>
         <AppRoutes />
+        <Where />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderAt(entry: string | { pathname: string; state: unknown }) {
+  return render(routerTree(entry));
 }
 
 describe('AppRoutes', () => {
@@ -134,6 +143,36 @@ describe('AppRoutes', () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
     renderAt('/login');
+    await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
+  });
+
+  it('returns to the page asked for once the user has signed in', async () => {
+    const setup = setupStatusResult({ isSuccess: true, data: { needed: false } });
+    mockUseSetupStatus.mockReturnValue(setup);
+    mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
+    const view = renderAt('/library?tag=tax#top');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    view.rerender(routerTree('/library?tag=tax#top'));
+    await waitFor(() => expect(screen.getByTestId('library-page')).toBeInTheDocument());
+    expect(screen.getByTestId('where')).toHaveTextContent('/library?tag=tax#top');
+  });
+
+  it.each(['//evil.example/x', 'https://evil.example/x', '/login', 'library', 42, undefined])(
+    'sends a signed-in user from /login to the root when the return target is %s',
+    async (from) => {
+      mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+      mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+      renderAt({ pathname: '/login', state: { from } });
+      await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
+    },
+  );
+
+  it('ignores a return target given in the query string', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/login?from=/library');
     await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
   });
 
