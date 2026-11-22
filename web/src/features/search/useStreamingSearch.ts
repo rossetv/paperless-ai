@@ -134,6 +134,9 @@ interface KeptSearch {
 const searchKey = (query: string, filters: FilterRequest): string =>
   `${query}\u0000${JSON.stringify(filters)}`;
 
+/** Router location state of a link back to the results, which shows the kept answer like Back. */
+export const RETURN_TO_RESULTS = { returnToResults: true } as const;
+
 export interface UseStreamingSearch {
   state: StreamingSearchState;
   /** Starts a search, cancelling any in-flight one. */

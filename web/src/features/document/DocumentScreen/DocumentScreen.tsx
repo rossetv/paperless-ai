@@ -31,6 +31,7 @@ import { SaveStatusPill, type SaveStatus } from '../SaveStatusPill/SaveStatusPil
 import { ActionsCard, type Role } from '../ActionsCard/ActionsCard';
 import { MatchCard } from '../MatchCard/MatchCard';
 import { parseSearchParams } from '../../../lib/parseSearchParams';
+import { RETURN_TO_RESULTS } from '../../search/useStreamingSearch';
 import { cn } from '../../../lib/cn';
 import { isoDateOnly } from '../../../lib/formatDate';
 import styles from './DocumentScreen.module.css';
@@ -374,7 +375,11 @@ export function DocumentScreen({
 
   return (
     <main className={styles['page']}>
-      <Link to={breadcrumbHref} className={styles['crumb']}>
+      <Link
+        to={breadcrumbHref}
+        state={parent === 'search' ? RETURN_TO_RESULTS : undefined}
+        className={styles['crumb']}
+      >
         ← {breadcrumbLabel}
       </Link>
 
