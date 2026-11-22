@@ -194,7 +194,8 @@ def _intersect(
 
     ui_from = normalise_iso_date(ui_filters.date_from) if ui_filters.date_from else None
     date_from = _later_iso(spec_filters.date_from, ui_from)
-    date_to = _earlier_iso(spec_filters.date_to, ui_filters.date_to)
+    ui_to = normalise_iso_date(ui_filters.date_to) if ui_filters.date_to else None
+    date_to = _earlier_iso(spec_filters.date_to, ui_to)
 
     correspondent_id = (
         ui_filters.correspondent_id

@@ -411,3 +411,24 @@ def test_a_bad_ui_date_from_does_not_beat_the_planners_date_from() -> None:
     )
 
     assert _intersect(spec, ui).date_from == "2025-04-01"
+
+
+def test_a_bad_ui_date_to_does_not_beat_the_planners_date_to() -> None:
+    from search.retriever import _intersect
+
+    spec = SearchFilters(
+        date_from=None,
+        date_to="2025-01-31",
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+    ui = SearchFilters(
+        date_from=None,
+        date_to="2024-13-45",
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+
+    assert _intersect(spec, ui).date_to == "2025-01-31"
