@@ -22,6 +22,7 @@ from tests.helpers.llm import (
     ScriptedLLMClient,
     _make_spec,
     answered_response_json,
+    make_chat_completion,
     needs_more_response_json,
     planner_response_json,
 )
@@ -254,6 +255,58 @@ class TestRefinement:
         # Only planner + the single exploratory synthesise.
         assert llm_client.total_calls == 2
         assert result.stats.refined is False
+
+
+class _ModeAwareLLM(ScriptedLLMClient):
+    """Answers a final-mode synthesis with an answer and any other with needs_more."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            planner_response=planner_response_json(), synthesiser_responses=[]
+        )
+        self.synthesiser_modes: list[str] = []
+
+    def route(self, *, model, messages, **kwargs):  # type: ignore[no-untyped-def]
+        user = next((m["content"] for m in messages if m["role"] == "user"), "")
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
+        if "search-query planning engine" in system:
+            return super().route(model=model, messages=messages, **kwargs)
+        self.synthesiser_calls += 1
+        is_final = "FINAL \u2014 you must answer" in user
+        self.synthesiser_modes.append("final" if is_final else "exploratory")
+        return make_chat_completion(
+            answered_response_json("The final-mode answer [2].", citations=[2])
+            if is_final
+            else needs_more_response_json("More, please.")
+        )
+
+
+class TestFirstSynthesisMode:
+    """The first synthesis runs final only when no refinement is allowed."""
+
+    def _run(self, refinements: int) -> tuple[_ModeAwareLLM, SearchResult]:
+        llm_client = _ModeAwareLLM()
+        core = build_search_core(
+            settings=make_search_settings(SEARCH_MAX_REFINEMENTS=refinements),
+            llm_client=llm_client,
+            store_reader=_store_reader_with_hits(
+                vector_hits=[make_chunk_hit(chunk_id=2, document_id=2)]
+            ),
+            embedding_client=_embedding_client(),
+        )
+        return llm_client, core.answer("a query")
+
+    def test_zero_refinements_answers_in_final_mode_not_blank(self) -> None:
+        llm_client, result = self._run(0)
+
+        assert llm_client.synthesiser_modes == ["final"]
+        assert result.answer == "The final-mode answer [2]."
+
+    def test_refinements_allowed_keeps_first_synthesis_exploratory(self) -> None:
+        llm_client, _ = self._run(1)
+
+        assert llm_client.synthesiser_modes[0] == "exploratory"
+        assert llm_client.synthesiser_modes[-1] == "final"
 
 
 class TestPerQueryBudget:
