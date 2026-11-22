@@ -119,7 +119,7 @@ def enrich_tags(
     base_tags = dedupe_tags(tags)
     required_tags: list[str] = []
 
-    required_tags.extend(extract_model_tags(text))
+    required_tags.extend(filter_blacklisted_tags(extract_model_tags(text)))
 
     year_tag = _extract_year(document_date) or today().strftime("%Y")
     required_tags.append(year_tag)

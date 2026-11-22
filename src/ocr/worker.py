@@ -23,7 +23,7 @@ from common.tags import (
     get_latest_tags,
     release_processing_tag,
 )
-from common.content_checks import is_error_content
+from common.content_checks import contains_redacted_marker, is_model_refusal
 from .born_digital import classify_original
 from .image_converter import ImageConversionError, PageSource, open_page_source
 from .provider import OcrProvider
@@ -309,7 +309,12 @@ class OcrProcessor:
         if (
             not full_text.strip()
             or OCR_ERROR_MARKER in full_text
-            or is_error_content(full_text, self.settings.OCR_REFUSAL_MARKERS)
+            or contains_redacted_marker(full_text)
+            or is_model_refusal(
+                full_text,
+                self.settings.OCR_REFUSAL_MARKERS,
+                self.settings.REFUSAL_MARK,
+            )
         ):
             if is_shutdown_requested():
                 # A shutdown-aborted flex-capacity wait fills pages with the

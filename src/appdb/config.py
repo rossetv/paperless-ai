@@ -16,6 +16,18 @@ from appdb.connection import transaction, utc_now_iso
 
 log = structlog.get_logger(__name__)
 
+# Keys whose blank value is a real setting (markers off, trust no proxy, no
+# price refresh, no country tag), so a blank env value is seeded as set. Every
+# other key reads blank as "use the default" and is left unseeded.
+BLANK_IS_A_VALUE: frozenset[str] = frozenset(
+    {
+        "OCR_REFUSAL_MARKERS",
+        "SEARCH_FORWARDED_ALLOW_IPS",
+        "PRICING_REFRESH_URL",
+        "CLASSIFY_DEFAULT_COUNTRY_TAG",
+    }
+)
+
 
 def get_all(conn: sqlite3.Connection) -> dict[str, str]:
     """Return every configuration key/value pair as a plain dict."""
@@ -119,16 +131,22 @@ def seed_from_env(
     """Populate an empty ``config`` table from the process environment.
 
     Copies every key in *keys* that is set in *environ*, so an env-configured
-    deployment keeps its settings on first run. Seeds only when the table is
-    empty, so it never overwrites an edit made in the Settings screen. The check
-    and write need no shared transaction: seeding runs once at startup, before
-    any concurrent writer exists. Returns the number of keys seeded.
+    deployment keeps its settings on first run. A blank value is skipped unless
+    blank is a real value for that key, so the default shows as the default.
+    Seeds only when the table is empty, so it never overwrites an edit made in
+    the Settings screen. The check and write need no shared transaction:
+    seeding runs once at startup, before any concurrent writer exists. Returns
+    the number of keys seeded.
     """
     already_populated = conn.execute("SELECT 1 FROM config LIMIT 1").fetchone()
     if already_populated is not None:
         return 0
 
-    to_seed = {key: environ[key] for key in keys if key in environ}
+    to_seed = {
+        key: environ[key]
+        for key in keys
+        if key in environ and (environ[key].strip() or key in BLANK_IS_A_VALUE)
+    }
     set_many(conn, to_seed)
     if to_seed:
         log.info("appdb.config_seeded_from_env", key_count=len(to_seed))

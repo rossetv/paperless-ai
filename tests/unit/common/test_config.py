@@ -239,6 +239,11 @@ class TestOllamaConfig:
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.OLLAMA_BASE_URL == "http://localhost:11434/v1/"
 
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_ollama_base_url_means_the_default(self, mocker, blank):
+        s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": blank})
+        assert s.OLLAMA_BASE_URL == "http://localhost:11434/v1/"
+
     def test_ollama_custom_base_url(self, mocker):
         s = _build(
             mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": "http://gpu:11434/v1/"}
@@ -296,7 +301,7 @@ class TestValidation:
         with pytest.raises(ValueError, match="LOG_FORMAT must be"):
             _build(mocker, {**_MINIMAL_ENV, "LOG_FORMAT": "xml"})
 
-    @pytest.mark.parametrize("value", ["max", "medium-rare", ""])
+    @pytest.mark.parametrize("value", ["max", "medium-rare"])
     def test_invalid_reasoning_effort_raises(self, mocker, value):
         with pytest.raises(
             ValueError, match="CLASSIFY_REASONING_EFFORT must be one of"
@@ -497,11 +502,9 @@ class TestModelListsValidation:
         ):
             _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ",,, ,"})
 
-    def test_ocr_models_empty_string_raises(self, mocker):
-        with pytest.raises(
-            ValueError, match="OCR_MODELS must contain at least one model"
-        ):
-            _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ""})
+    def test_ocr_models_empty_string_uses_default(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ""})
+        assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
 
     def test_classify_models_all_commas_raises(self, mocker):
         with pytest.raises(
@@ -509,11 +512,9 @@ class TestModelListsValidation:
         ):
             _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ",,, ,"})
 
-    def test_classify_models_empty_string_raises(self, mocker):
-        with pytest.raises(
-            ValueError, match="CLASSIFY_MODELS must contain at least one model"
-        ):
-            _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ""})
+    def test_classify_models_empty_string_uses_default(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ""})
+        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
 
     def test_ocr_models_single_model(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": "model-a"})

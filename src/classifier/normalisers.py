@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import re
-
-_STRIP_NON_ALNUM_RE: re.Pattern[str] = re.compile(r"[^a-z0-9\s]")
+import unicodedata
 
 # Corporate suffixes stripped when comparing organisation names.
 COMPANY_SUFFIXES: frozenset[str] = frozenset(
@@ -41,18 +39,66 @@ def normalise_simple(value: str) -> str:
     return " ".join(value.lower().split())
 
 
+def _is_symbol_or_other_number(ch: str) -> bool:
+    category = unicodedata.category(ch)
+    return category.startswith("S") or category == "No"
+
+
+# Marks are dropped only on these scripts. In others (Indic, Thai, ...) they
+# carry vowels, so dropping them merges distinct names. Arabic harakat and Hebrew
+# niqqud are optional in writing, so they are dropped too.
+_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC", "ARABIC", "HEBREW")
+
+# Letters by category, but written as apostrophes: they fold like "'" and "’".
+_MODIFIER_APOSTROPHES = "\u02bc\u02bb"
+
+
 def normalise_name(value: str) -> str:
     """
     Normalise an organisation name for fuzzy matching.
 
-    Strips punctuation, lowercases, and removes trailing corporate suffixes
-    so that *"Revolut Ltd."* and *"Revolut"* compare as equal.
+    Strips punctuation and the accents of Latin, Greek, Cyrillic, Arabic and
+    Hebrew letters, lowercases, and removes trailing corporate suffixes so that
+    *"Revolut Ltd."* and *"Revolut"* compare as equal. Letters of any script
+    are kept, with the vowel signs of scripts that write vowels as marks.
 
     >>> normalise_name("Revolut Ltd.")
     'revolut'
+    >>> normalise_name("Müller GmbH")
+    'muller'
     """
-    cleaned = _STRIP_NON_ALNUM_RE.sub("", value.lower())
-    parts = cleaned.split()
+    return _fold_name(value, punctuation="")
+
+
+def name_words(value: str) -> str:
+    """
+    Normalise an organisation name like :func:`normalise_name`, but with
+    punctuation as a word break, for whole-word containment.
+
+    >>> name_words("Amazon.co.uk")
+    'amazon co uk'
+    """
+    return _fold_name(value, punctuation=" ")
+
+
+def _fold_name(value: str, punctuation: str) -> str:
+    # Symbols and superscripts go first: NFKD would turn "™" into "TM", "²" into "2".
+    kept = "".join(ch for ch in value if not _is_symbol_or_other_number(ch))
+    folded = unicodedata.normalize("NFKD", kept).casefold()
+    chars: list[str] = []
+    base_is_accentable = False
+    for ch in folded:
+        if unicodedata.category(ch).startswith("M"):
+            if not base_is_accentable:
+                chars.append(ch)
+            continue
+        base_is_accentable = unicodedata.name(ch, "").startswith(_ACCENT_SCRIPTS)
+        chars.append(
+            ch
+            if (ch.isalnum() and ch not in _MODIFIER_APOSTROPHES) or ch.isspace()
+            else punctuation
+        )
+    parts = "".join(chars).split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
         parts.pop()
     return " ".join(parts)

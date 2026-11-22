@@ -7,7 +7,6 @@ ranked lists.
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -40,12 +39,35 @@ log = structlog.get_logger(__name__)
 _RRF_K = 60
 
 
+# Marks are dropped only on these scripts. In others (Indic, Thai, ...) they
+# carry vowels, so dropping them splits or merges words. Arabic harakat and Hebrew
+# niqqud are optional in writing, so they are dropped too.
+_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC", "ARABIC", "HEBREW")
+
+# Letters by category, but written as apostrophes: they fold like "'" and "’".
+_MODIFIER_APOSTROPHES = "\u02bc\u02bb"
+
+
+def _fold(text: str) -> str:
+    """Lower-case, strip Latin/Greek/Cyrillic accents, map non-word chars to space.
+
+    Combining marks on other scripts stay as part of their word.
+    """
+    out: list[str] = []
+    base_is_accentable = False
+    for ch in unicodedata.normalize("NFKD", text).casefold():
+        if unicodedata.category(ch).startswith("M"):
+            if not base_is_accentable:
+                out.append(ch)
+            continue
+        base_is_accentable = unicodedata.name(ch, "").startswith(_ACCENT_SCRIPTS)
+        out.append(ch if ch.isalnum() and ch not in _MODIFIER_APOSTROPHES else " ")
+    return "".join(out)
+
+
 def _normalise(text: str) -> str:
     """Normalise for fuzzy taxonomy matching: "Gas-Bill." == "gas bill" == "gasbill"."""
-    text = unicodedata.normalize("NFKC", text)
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]", "", text)
-    return text
+    return "".join(_fold(text).split())
 
 
 # Connectives ignored when comparing word sets. "a"/"an" are left out on purpose:
@@ -70,8 +92,7 @@ class NameMatch:
 
 def _tokenise(text: str) -> frozenset[str]:
     """Split *text* into normalised whole-word tokens, so "ID" never matches "Video"."""
-    folded = unicodedata.normalize("NFKC", text).lower()
-    return frozenset(tok for tok in re.split(r"[^a-z0-9]+", folded) if tok)
+    return frozenset(_fold(text).split())
 
 
 def _content_tokens(text: str) -> frozenset[str]:
@@ -98,9 +119,10 @@ def _match_name(
             return NameMatch(id=entry.id, method="exact")
 
     normalised_candidate = _normalise(candidate)
-    for entry in entries:
-        if _normalise(entry.name) == normalised_candidate:
-            return NameMatch(id=entry.id, method="normalised")
+    if normalised_candidate:
+        for entry in entries:
+            if _normalise(entry.name) == normalised_candidate:
+                return NameMatch(id=entry.id, method="normalised")
 
     candidate_tokens = _content_tokens(candidate)
     if candidate_tokens:

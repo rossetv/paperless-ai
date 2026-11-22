@@ -151,6 +151,92 @@ class TestListAllPagination:
         client.close()
 
 
+class TestListAllNextLinkOrigin:
+    def test_next_link_naming_another_host_is_requested_on_the_configured_origin(self):
+        url1 = f"{BASE}/api/things/"
+        with respx.mock:
+            respx.get(url__eq=url1).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1}],
+                        "next": "https://other.example:9000/api/things/?page=2",
+                    },
+                )
+            )
+            page2 = respx.get(url__eq=f"{BASE}/api/things/?page=2").mock(
+                return_value=httpx.Response(
+                    200, json={"results": [{"id": 2}], "next": None}
+                )
+            )
+            client = _make_client()
+
+            results = list(client._list_all(url1))
+
+        assert results == [{"id": 1}, {"id": 2}]
+        assert page2.calls.last.request.headers["authorization"] == (
+            "Token test-token-abc"
+        )
+        client.close()
+
+    def test_next_link_with_a_different_scheme_keeps_the_configured_scheme(self):
+        base = "https://paperless.example"
+        client = _make_client(_make_settings(PAPERLESS_URL=base))
+        with respx.mock:
+            respx.get(url__eq=f"{base}/api/things/").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1}],
+                        "next": "http://paperless.example/api/things/?page=2",
+                    },
+                )
+            )
+            respx.get(url__eq=f"{base}/api/things/?page=2").mock(
+                return_value=httpx.Response(
+                    200, json={"results": [{"id": 2}], "next": None}
+                )
+            )
+
+            results = list(client._list_all(f"{base}/api/things/"))
+
+        assert results == [{"id": 1}, {"id": 2}]
+        client.close()
+
+    def test_configured_path_prefix_is_kept_whether_or_not_next_repeats_it(self):
+        base = "http://proxy.example/paperless"
+        client = _make_client(_make_settings(PAPERLESS_URL=base))
+        with respx.mock:
+            respx.get(url__eq=f"{base}/api/things/").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1}],
+                        "next": "http://internal:8000/api/things/?page=2",
+                    },
+                )
+            )
+            respx.get(url__eq=f"{base}/api/things/?page=2").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 2}],
+                        "next": "http://internal:8000/paperless/api/things/?page=3",
+                    },
+                )
+            )
+            respx.get(url__eq=f"{base}/api/things/?page=3").mock(
+                return_value=httpx.Response(
+                    200, json={"results": [{"id": 3}], "next": None}
+                )
+            )
+
+            results = list(client._list_all(f"{base}/api/things/"))
+
+        assert results == [{"id": 1}, {"id": 2}, {"id": 3}]
+        client.close()
+
+
 class TestGetDocumentsByTag:
     def test_constructs_correct_url_with_tag_id(self):
         url = f"{BASE}/api/documents/?tags__id=443&page_size=100"

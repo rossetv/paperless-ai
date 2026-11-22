@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -11,7 +10,7 @@ import structlog
 
 from appdb.connection import connect as connect_app_db
 from appdb.schema import ensure_schema
-from common.config import Settings, current_settings
+from common.config import Settings, app_db_path_from_env, current_settings
 from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS, EmbeddingClient
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
@@ -59,7 +58,7 @@ def main() -> None:
         sys.exit(1)
 
     # Resolved once and threaded down so the loop never re-reads os.environ.
-    app_db_path = os.environ.get("APP_DB_PATH", "/data/app.db")
+    app_db_path = app_db_path_from_env()
 
     # For the heartbeat and activity log. Best-effort: without app.db the
     # indexer still runs and the dashboard's indexer tile goes stale.

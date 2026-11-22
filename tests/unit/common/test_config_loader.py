@@ -13,7 +13,8 @@ import pytest
 from appdb import config as config_store
 from appdb.connection import connect
 from appdb.schema import ensure_schema
-from common.config import load_settings
+from common.config import app_db_path_from_env, load_settings
+from common.config._loader import _resolve_app_db_path
 
 _MINIMAL_ENV = {
     "PAPERLESS_TOKEN": "env-token",
@@ -242,3 +243,46 @@ def test_ai_models_deprecation_warning_silent_when_new_keys_set() -> None:
         assert _settings_mod._ai_models_deprecation_warned is False
     finally:
         _settings_mod._ai_models_deprecation_warned = False
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_app_db_path_means_the_default_path(blank) -> None:
+    with patch.dict(os.environ, {"APP_DB_PATH": blank}, clear=True):
+        assert app_db_path_from_env() == "/data/app.db"
+        assert _resolve_app_db_path(None) == "/data/app.db"
+
+
+def test_app_db_path_from_the_environment_is_used_and_stripped() -> None:
+    with patch.dict(os.environ, {"APP_DB_PATH": " /srv/app.db "}, clear=True):
+        assert app_db_path_from_env() == "/srv/app.db"
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+@pytest.mark.parametrize("key", ["OCR_MODELS", "CLASSIFY_MODELS"])
+def test_blank_model_list_means_the_default(key: str, blank: str) -> None:
+    from common.config import Settings
+
+    with patch.dict(os.environ, {**_MINIMAL_ENV, key: blank}, clear=True):
+        s = Settings.from_environment()
+
+    assert getattr(s, key) == ["gpt-5.6-luna", "gpt-5.6-terra"]
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_blank_model_list_falls_back_to_ai_models(blank: str) -> None:
+    from common.config import Settings
+
+    env = {**_MINIMAL_ENV, "AI_MODELS": "legacy-a", "OCR_MODELS": blank}
+    with patch.dict(os.environ, env, clear=True):
+        s = Settings.from_environment()
+
+    assert s.OCR_MODELS == ["legacy-a"]
+
+
+@pytest.mark.parametrize("value", [",", " , "])
+def test_model_list_of_only_separators_still_raises(value: str) -> None:
+    from common.config import Settings
+
+    with patch.dict(os.environ, {**_MINIMAL_ENV, "OCR_MODELS": value}, clear=True):
+        with pytest.raises(ValueError, match="OCR_MODELS must contain"):
+            Settings.from_environment()

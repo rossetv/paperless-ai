@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from classifier.normalisers import COMPANY_SUFFIXES, normalise_name, normalise_simple
+import pytest
+
+from classifier.normalisers import (
+    COMPANY_SUFFIXES,
+    name_words,
+    normalise_name,
+    normalise_simple,
+)
 
 
 class TestNormaliseSimple:
@@ -66,6 +73,61 @@ class TestNormaliseName:
 
     def test_all_suffixes_result_in_empty(self):
         assert normalise_name("Ltd Inc") == ""
+
+    def test_folds_accents_to_base_letters(self):
+        assert normalise_name("Müller GmbH") == "muller"
+
+    def test_keeps_non_latin_letters(self):
+        assert normalise_name("東京電力 Co") == "東京電力"
+
+    def test_names_differing_only_in_indic_vowel_signs_stay_distinct(self):
+        assert normalise_name("किरण") != normalise_name("करण")
+
+    def test_keeps_marks_in_scripts_that_write_vowels_as_marks(self):
+        assert normalise_name("दिल्ली") == "दिल्ली"
+
+    def test_drops_accents_only_after_latin_greek_or_cyrillic_letters(self):
+        assert normalise_name("Café 1\u093f") == "cafe 1\u093f"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("Acme™", "acme"),
+            ("Acme℠ Ltd", "acme"),
+            ("Office²", "office"),
+            ("½ Price", "price"),
+        ],
+    )
+    def test_symbols_and_superscripts_do_not_become_letters(self, value, expected):
+        assert normalise_name(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("İstanbul", "istanbul"),
+            ("Straße", "strasse"),
+            ("ﬁnance", "finance"),
+            ("ＡＣＭＥ", "acme"),
+            ("ℌilbert", "hilbert"),
+            ("Αθήνα", "αθηνα"),
+            ("Москва", "москва"),
+        ],
+    )
+    def test_folds_case_and_compatibility_forms(self, value, expected):
+        assert normalise_name(value) == expected
+
+    @pytest.mark.parametrize("apostrophe", ["\u02bc", "\u02bb", "\u2019"])
+    def test_modifier_apostrophes_fold_like_the_ascii_one(self, apostrophe):
+        assert normalise_name(f"O{apostrophe}Reilly Media") == normalise_name(
+            "O'Reilly Media"
+        )
+        assert name_words(f"O{apostrophe}Reilly Media") == name_words("O'Reilly Media")
+
+    def test_arabic_vowel_marks_are_optional(self):
+        assert normalise_name("مُحَمَّد") == normalise_name("محمد")
+
+    def test_hebrew_vowel_points_are_optional(self):
+        assert normalise_name("שָׁלוֹם") == normalise_name("שלום")
 
 
 class TestCompanySuffixes:

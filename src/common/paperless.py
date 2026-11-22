@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import Iterator, Sequence
+from urllib.parse import urlsplit
 from typing import Any, Generator, Iterable, Unpack, cast
 
 import httpx
@@ -150,13 +151,31 @@ class PaperlessClient:
         self._raise_for_status_if_server_error(response)
         return response
 
-    def _list_all(self, url: str) -> Generator[dict, None, None]:
+    def _list_all(self, url: str | None) -> Generator[dict, None, None]:
         while url:
             response = self._get(url)
             response.raise_for_status()
             page = response.json()
             yield from page.get("results", [])
-            url = page.get("next")
+            url = self._rebase_next_url(page.get("next"))
+
+    def _rebase_next_url(self, next_url: str | None) -> str | None:
+        """Re-root a pagination ``next`` link on the configured Paperless origin.
+
+        Paperless builds ``next`` from the request's Host and scheme, which a
+        reverse proxy can get wrong; only its path and query are trusted, so the
+        API token is never sent anywhere but ``PAPERLESS_URL``.
+        """
+        if not next_url:
+            return None
+        base = urlsplit(self.settings.PAPERLESS_URL)
+        target = urlsplit(next_url)
+        prefix = base.path.rstrip("/")
+        path = target.path
+        if prefix and path != prefix and not path.startswith(f"{prefix}/"):
+            path = prefix + path
+        url = f"{base.scheme}://{base.netloc}{path}"
+        return f"{url}?{target.query}" if target.query else url
 
     def _create_named_item(
         self,

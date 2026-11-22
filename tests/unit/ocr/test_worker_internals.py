@@ -177,6 +177,73 @@ class TestUpdatePaperlessDocumentErrors:
         assert 552 in tags_arg
 
 
+class TestUpdatePaperlessDocumentSoftPhrases:
+    _LETTER = (
+        "Dear Mr Smith, regarding your application of 3 March: I cannot assist "
+        "you with this request at this time due to regulatory requirements. "
+        "Please contact your local office for further information about the "
+        "matter described in your application."
+    )
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    def test_long_document_quoting_a_soft_phrase_is_saved(self, mock_get_tags):
+        settings = make_settings_obj(
+            ERROR_TAG_ID=552,
+            POST_TAG_ID=444,
+            OCR_REFUSAL_MARKERS=["i cannot assist", "chatgpt refused to transcribe"],
+        )
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+        assert len(self._LETTER) > 200
+
+        outcome = proc._update_paperless_document(self._LETTER, {"m"})
+
+        assert outcome is WriteBackOutcome.SAVED
+        tags_arg = paperless.update_document.call_args[0][2]
+        assert 552 not in tags_arg
+        assert 444 in tags_arg
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("common.tags.clean_pipeline_tags", return_value=set())
+    def test_short_soft_refusal_marks_error(self, mock_clean, mock_get_tags):
+        settings = make_settings_obj(
+            ERROR_TAG_ID=552, OCR_REFUSAL_MARKERS=["i cannot assist"]
+        )
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        outcome = proc._update_paperless_document("I cannot assist with that.", {"m"})
+
+        assert outcome is None
+        assert 552 in paperless.update_document.call_args[0][2]
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("common.tags.clean_pipeline_tags", return_value=set())
+    def test_redacted_marker_in_long_document_marks_error(
+        self, mock_clean, mock_get_tags
+    ):
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        proc._update_paperless_document(f"{self._LETTER} Name: [REDACTED]", {"m"})
+
+        assert 552 in paperless.update_document.call_args[0][2]
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("common.tags.clean_pipeline_tags", return_value=set())
+    def test_refusal_mark_in_long_document_marks_error(self, mock_clean, mock_get_tags):
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        proc._update_paperless_document(
+            f"{self._LETTER}\n\nCHATGPT REFUSED TO TRANSCRIBE", {"m"}
+        )
+
+        assert 552 in paperless.update_document.call_args[0][2]
+
+
 class TestLogOcrStats:
     @patch("ocr.worker.log")
     def test_normal_stats_logged(self, mock_log):

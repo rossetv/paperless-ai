@@ -125,6 +125,56 @@ class TestGetOrCreateCorrespondentId:
 
         assert result == 7
 
+    @pytest.mark.parametrize(
+        ("existing", "name"),
+        [
+            ("Neon Energy", "Eon"),
+            ("AS", "Vasco"),
+            ("EE", "Deere"),
+            ("Neon Energy", "E.ON"),
+        ],
+    )
+    def test_partial_word_does_not_match(self, existing, name):
+        cache = _make_cache(correspondents=[_corr(7, existing)])
+        cache.refresh()
+        cache._client.create_correspondent.side_effect = None
+        cache._client.create_correspondent.return_value = {"id": 99, "name": name}
+
+        result = cache.get_or_create_correspondent_id(name)
+
+        assert result == 99
+
+    @pytest.mark.parametrize(
+        ("existing", "name"),
+        [
+            ("Amazon.co.uk", "Amazon"),
+            ("Amazon", "Amazon.co.uk"),
+            ("Booking.com", "Booking"),
+            ("Coca-Cola", "Cola"),
+            ("AT&T Mobility", "AT&T"),
+            ("E.ON UK", "EON"),
+        ],
+    )
+    def test_punctuation_separates_words_for_containment(self, existing, name):
+        cache = _make_cache(correspondents=[_corr(7, existing)])
+        cache.refresh()
+
+        assert cache.get_or_create_correspondent_id(name) == 7
+
+    def test_whole_word_containment_matches(self):
+        cache = _make_cache(correspondents=[_corr(7, "Neon Energy")])
+        cache.refresh()
+
+        assert cache.get_or_create_correspondent_id("Neon") == 7
+
+    def test_non_latin_words_are_not_dropped_before_matching(self):
+        cache = _make_cache(correspondents=[_corr(7, "Deutsche Bank")])
+        cache.refresh()
+        cache._client.create_correspondent.side_effect = None
+        cache._client.create_correspondent.return_value = {"id": 99, "name": "x"}
+
+        assert cache.get_or_create_correspondent_id("東京 Bank") == 99
+
     def test_creates_when_not_found(self):
         cache = _make_cache(correspondents=[])
         cache.refresh()
