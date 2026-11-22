@@ -71,6 +71,22 @@
   color: var(--colour-text-tertiary);
 }
 
+.stale-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-5);
+  margin: 0;
+  padding: var(--spacing-5) var(--spacing-8);
+  border: var(--spacing-1) solid var(--colour-status-warn-fg);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-status-warn-bg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-status-warn-fg);
+}
+
 .split-row {
   display: grid;
   grid-template-columns: 3fr 2fr;
