@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from classifier.normalisers import COMPANY_SUFFIXES, normalise_name, normalise_simple
+from classifier.normalisers import (
+    COMPANY_SUFFIXES,
+    name_words,
+    normalise_name,
+    normalise_simple,
+)
 
 
 class TestNormaliseSimple:
@@ -110,6 +115,19 @@ class TestNormaliseName:
     )
     def test_folds_case_and_compatibility_forms(self, value, expected):
         assert normalise_name(value) == expected
+
+    @pytest.mark.parametrize("apostrophe", ["\u02bc", "\u02bb", "\u2019"])
+    def test_modifier_apostrophes_fold_like_the_ascii_one(self, apostrophe):
+        assert normalise_name(f"O{apostrophe}Reilly Media") == normalise_name(
+            "O'Reilly Media"
+        )
+        assert name_words(f"O{apostrophe}Reilly Media") == name_words("O'Reilly Media")
+
+    def test_arabic_vowel_marks_are_optional(self):
+        assert normalise_name("مُحَمَّد") == normalise_name("محمد")
+
+    def test_hebrew_vowel_points_are_optional(self):
+        assert normalise_name("שָׁלוֹם") == normalise_name("שלום")
 
 
 class TestCompanySuffixes:

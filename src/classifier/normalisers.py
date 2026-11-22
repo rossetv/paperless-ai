@@ -44,17 +44,21 @@ def _is_symbol_or_other_number(ch: str) -> bool:
     return category.startswith("S") or category == "No"
 
 
-# Accent marks are dropped only on these scripts. In others (Indic, Thai,
-# Arabic, ...) the marks carry vowels, so dropping them merges distinct names.
-_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC")
+# Marks are dropped only on these scripts. In others (Indic, Thai, ...) they
+# carry vowels, so dropping them merges distinct names. Arabic harakat and Hebrew
+# niqqud are optional in writing, so they are dropped too.
+_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC", "ARABIC", "HEBREW")
+
+# Letters by category, but written as apostrophes: they fold like "'" and "’".
+_MODIFIER_APOSTROPHES = "\u02bc\u02bb"
 
 
 def normalise_name(value: str) -> str:
     """
     Normalise an organisation name for fuzzy matching.
 
-    Strips punctuation and the accents of Latin, Greek and Cyrillic letters,
-    lowercases, and removes trailing corporate suffixes so that
+    Strips punctuation and the accents of Latin, Greek, Cyrillic, Arabic and
+    Hebrew letters, lowercases, and removes trailing corporate suffixes so that
     *"Revolut Ltd."* and *"Revolut"* compare as equal. Letters of any script
     are kept, with the vowel signs of scripts that write vowels as marks.
 
@@ -89,7 +93,11 @@ def _fold_name(value: str, punctuation: str) -> str:
                 chars.append(ch)
             continue
         base_is_accentable = unicodedata.name(ch, "").startswith(_ACCENT_SCRIPTS)
-        chars.append(ch if ch.isalnum() or ch.isspace() else punctuation)
+        chars.append(
+            ch
+            if (ch.isalnum() and ch not in _MODIFIER_APOSTROPHES) or ch.isspace()
+            else punctuation
+        )
     parts = "".join(chars).split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
         parts.pop()

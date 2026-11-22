@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from search.retriever import _match_name, _tokenise
+import pytest
+
+from search.retriever import _fold, _match_name, _normalise, _tokenise
 from store.models import TaxonomyEntry
 
 
@@ -54,3 +56,17 @@ def test_hindi_names_differing_only_in_vowel_signs_do_not_match_each_other():
 def test_accents_on_greek_and_cyrillic_letters_are_still_dropped():
     assert _tokenise("Ελλάδα Йод") == {"ελλαδα", "иод"}
     assert _tokenise("Café MÜLLER") == {"cafe", "muller"}
+
+
+@pytest.mark.parametrize("apostrophe", ["\u02bc", "\u02bb", "\u2019"])
+def test_modifier_apostrophes_fold_like_the_ascii_one(apostrophe):
+    assert _normalise(f"O{apostrophe}Reilly Media") == _normalise("O'Reilly Media")
+    assert _fold(f"O{apostrophe}Reilly") == _fold("O'Reilly")
+
+
+def test_arabic_vowel_marks_are_optional():
+    assert _fold("مُحَمَّد") == _fold("محمد")
+
+
+def test_hebrew_vowel_points_are_optional():
+    assert _fold("שָׁלוֹם") == _fold("שלום")
