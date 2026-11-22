@@ -7,17 +7,47 @@
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-large);
   overflow: hidden;
+  overflow-x: auto;
 }
 
 /*
- * Narrow viewports: the fixed-width columns exceed the container, so the wrapper
- * scrolls horizontally and the table keeps a legible min-width.
+ * The table can be wider than its container at any viewport (fixed-width
+ * columns), so the wrapper scrolls whenever it overflows. The edge fade cues
+ * the columns scrolled out of view; the Table sets the data attributes only
+ * for edges that have more content beyond them.
  */
-@media (width <= 699.98px) {
-  .wrapper {
-    overflow-x: auto;
-  }
+.wrapper[data-fade-start='true'],
+.wrapper[data-fade-end='true'] {
+  --table-fade-start: 0px;
+  --table-fade-end: 0px;
 
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--table-fade-start),
+    #000 calc(100% - var(--table-fade-end)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--table-fade-start),
+    #000 calc(100% - var(--table-fade-end)),
+    transparent 100%
+  );
+}
+
+.wrapper[data-fade-start='true'] {
+  --table-fade-start: var(--spacing-16);
+}
+
+.wrapper[data-fade-end='true'] {
+  --table-fade-end: var(--spacing-16);
+}
+
+/* Narrow viewports: the table keeps a legible min-width and long words wrap. */
+@media (width <= 699.98px) {
   .table {
     /* Widest caller (API Keys): fixed columns sum to ≈530 px; the extra width
        leaves the flex Name column room to read a key name without clipping. */
@@ -27,40 +57,6 @@
   /* Words move to the next line first; only one wider than its cell breaks. */
   .cell {
     overflow-wrap: break-word;
-  }
-
-  /*
-   * Edge fade cues the columns scrolled out of view; the Table sets the data
-   * attributes only for edges that have more content beyond them.
-   */
-  .wrapper[data-fade-start='true'],
-  .wrapper[data-fade-end='true'] {
-    --table-fade-start: 0px;
-    --table-fade-end: 0px;
-
-    /* stylelint-disable-next-line property-no-vendor-prefix */
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--table-fade-start),
-      #000 calc(100% - var(--table-fade-end)),
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent 0,
-      #000 var(--table-fade-start),
-      #000 calc(100% - var(--table-fade-end)),
-      transparent 100%
-    );
-  }
-
-  .wrapper[data-fade-start='true'] {
-    --table-fade-start: var(--spacing-16);
-  }
-
-  .wrapper[data-fade-end='true'] {
-    --table-fade-end: var(--spacing-16);
   }
 }
 
