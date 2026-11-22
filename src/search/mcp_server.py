@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import importlib.metadata
 import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -155,7 +156,7 @@ class _SseAcceptOnGetMiddleware:
         if scope["type"] == "http" and scope["method"] == "GET":
             accept = Request(scope).headers.get("accept", "")
             if not any(
-                media_type.strip().startswith("text/event-stream")
+                media_type.strip().lower().startswith("text/event-stream")
                 for media_type in accept.split(",")
             ):
                 response = Response(
@@ -602,6 +603,7 @@ def build_mcp_app(
     """
     mcp = MCPServer(
         name="paperless-search",
+        version=importlib.metadata.version("mcp"),
         instructions=(
             "Search and read a personal Paperless-ngx document archive. Five "
             "tools; only deep_search is billed.\n\n"

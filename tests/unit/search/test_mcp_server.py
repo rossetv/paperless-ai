@@ -6,12 +6,15 @@ round-trip; auth tests use Starlette's ``TestClient`` against the ASGI app.
 
 from __future__ import annotations
 
+import asyncio
+import importlib.metadata
 import json
 from unittest.mock import MagicMock
 
 import pytest
 from starlette.testclient import TestClient
 
+from search.mcp_server import _SseAcceptOnGetMiddleware
 from search.mcp_server import build_mcp_app as _real_build_mcp_app
 from search.models import SearchResult
 from search.offload import LazySemaphore
@@ -451,6 +454,63 @@ def test_authenticated_get_not_accepting_event_stream_gets_406() -> None:
 
     assert response.status_code == 406
     assert "text/event-stream" in response.json()["error"]["message"]
+
+
+def test_event_stream_accept_is_matched_case_insensitively() -> None:
+    """``Accept: Text/Event-Stream`` passes the GET check; it is not answered 406."""
+    reached: list[bool] = []
+
+    async def inner(scope: object, receive: object, send: object) -> None:
+        reached.append(True)
+
+    middleware = _SseAcceptOnGetMiddleware(inner)
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "headers": [(b"accept", b"Text/Event-Stream")],
+    }
+
+    async def send(message: object) -> None:
+        pass
+
+    asyncio.run(middleware(scope, None, send))  # type: ignore[arg-type]
+
+    assert reached == [True]
+
+
+def test_initialize_reports_the_installed_mcp_version() -> None:
+    """serverInfo.version is the installed mcp package version, not empty."""
+    core = _make_core()
+    settings = _make_settings()
+    app_db_path, raw_key = _app_db_with_key(scopes="mcp")
+
+    asgi_app = build_mcp_app(core, settings, app_db_path)
+    with TestClient(asgi_app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/mcp",
+            headers={
+                "Authorization": f"Bearer {raw_key}",
+                "Accept": "application/json, text/event-stream",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "id": 1,
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0.1"},
+                },
+            },
+        )
+
+    body = response.text
+    data_line = next(
+        (ln[5:] for ln in body.splitlines() if ln.startswith("data:")), body
+    )
+    version = json.loads(data_line)["result"]["serverInfo"]["version"]
+    assert version
+    assert version == importlib.metadata.version("mcp")
 
 
 def test_no_bearer_prefix_is_rejected() -> None:
