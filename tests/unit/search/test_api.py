@@ -378,3 +378,31 @@ def test_search_heartbeat_stop_terminates_the_thread(tmp_path: Path) -> None:
         if thread.name == "search-heartbeat" and thread.is_alive()
     }
     assert leaked == set()
+
+
+@pytest.mark.parametrize("upstream_status", [401, 403])
+def test_paperless_rejecting_the_server_token_is_a_502_not_a_login_prompt(
+    upstream_status: int,
+) -> None:
+    """The browser must not read the server's own rejected token as "log in"."""
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from search.api import register_paperless_exception_handlers
+
+    app = FastAPI()
+    register_paperless_exception_handlers(app)
+
+    @app.get("/boom")
+    def boom() -> None:
+        request = httpx.Request("GET", "http://paperless/api/x")
+        raise httpx.HTTPStatusError(
+            "rejected",
+            request=request,
+            response=httpx.Response(upstream_status, request=request),
+        )
+
+    response = TestClient(app).get("/boom")
+    assert response.status_code == 502
+    assert "API token" in response.json()["detail"]
