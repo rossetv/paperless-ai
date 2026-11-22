@@ -277,12 +277,18 @@ describe('UserEditDrawer — edit mode', () => {
     });
 
     it('ignores a confirm tap that follows the arming tap immediately', async () => {
+      // Only Date is frozen, so the guard does not depend on how fast the test runs.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date'] });
       const mutateAsync = vi.fn().mockResolvedValue(undefined);
       mockDelete.mockReturnValue(stubMutation(mutateAsync));
       render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
       await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
       await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
       expect(mutateAsync).not.toHaveBeenCalled();
+      vi.setSystemTime(Date.now() + 700);
+      await userEvent.click(screen.getByRole('button', { name: /confirm delete/i }));
+      expect(mutateAsync).toHaveBeenCalledWith(2);
     });
 
     it('closes the drawer only on the second Escape while delete is armed', async () => {

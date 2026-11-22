@@ -313,10 +313,16 @@ describe('APIKeysScreen', () => {
     });
 
     it('ignores a confirm tap that follows the arming tap immediately', async () => {
+      // Only Date is frozen, so the guard does not depend on how fast the test runs.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date'] });
       const { row, mutateAsync } = armRevoke();
       await userEvent.click(within(row).getByRole('button', { name: /revoke/i }));
       await userEvent.click(within(row).getByRole('button', { name: /confirm/i }));
       expect(mutateAsync).not.toHaveBeenCalled();
+      vi.setSystemTime(Date.now() + 700);
+      await userEvent.click(within(row).getByRole('button', { name: /confirm/i }));
+      expect(mutateAsync).toHaveBeenCalledWith(1);
     });
 
     it('disarms on Escape', async () => {
