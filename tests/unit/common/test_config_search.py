@@ -139,6 +139,14 @@ class TestSearchSettingsBounds:
         with pytest.raises(ValueError, match="SEARCH_SESSION_TTL must be >= 1"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_SESSION_TTL": value})
 
+    def test_search_session_ttl_above_ten_years_raises(self, mocker):
+        with pytest.raises(ValueError, match="SEARCH_SESSION_TTL must be <= "):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_SESSION_TTL": "315360001"})
+
+    def test_search_session_ttl_accepts_ten_years(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_SESSION_TTL": "315360000"})
+        assert s.SEARCH_SESSION_TTL == 315360000
+
     @pytest.mark.parametrize("value", ["-1", "-8"])
     def test_search_max_concurrent_clamped_to_zero(self, mocker, value):
         s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_CONCURRENT": value})

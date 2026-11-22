@@ -140,10 +140,14 @@ def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> 
         raise ValueError(f"{var_name} must be a number, got {raw!r}.") from exc
 
 
-def _require_at_least_one(var_name: str, value: int, minimum: int = 1) -> int:
-    """Return *value*, raising a contextful ``ValueError`` if it is below *minimum*."""
+def _require_at_least_one(
+    var_name: str, value: int, minimum: int = 1, maximum: int | None = None
+) -> int:
+    """Return *value*, raising a contextful ``ValueError`` outside its bounds."""
     if value < minimum:
         raise ValueError(f"{var_name} must be >= {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{var_name} must be <= {maximum}")
     return value
 
 

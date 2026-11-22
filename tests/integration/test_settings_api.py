@@ -393,3 +393,12 @@ def test_get_settings_secret_keys_have_null_default_value(admin_client) -> None:
     items = {i["key"]: i for i in response.json()["settings"]}
     assert items["OPENAI_API_KEY"]["default_value"] is None
     assert items["PAPERLESS_TOKEN"]["default_value"] is None
+
+
+def test_put_settings_rejects_a_session_lifetime_above_ten_years(admin_client) -> None:
+    client, app_db = admin_client
+    response = client.put(
+        "/api/settings", json={"changes": {"SEARCH_SESSION_TTL": "315360001"}}
+    )
+    assert response.status_code == 400
+    assert config_store.get(app_db, "SEARCH_SESSION_TTL") is None
