@@ -28,7 +28,9 @@ export interface SortControlProps<T extends string = string> {
  * Inline labelled sort dropdown (`{label}: {selected} ▾`) using the ARIA menu
  * pattern with `menuitemradio` items.
  *
- * Closes on selection, Escape or an outside pointer-down. Re-picking the current
+ * Focus moves into the menu on open; Arrow Up/Down (wrapping), Home and End move
+ * between items, and Escape or a pick returns focus to the trigger. Also closes on
+ * Tab or an outside pointer-down. Re-picking the current
  * value still calls `onChange`.
  */
 export function SortControl<T extends string = string>({
@@ -41,13 +43,15 @@ export function SortControl<T extends string = string>({
 }: SortControlProps<T>): React.ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
 
   const selected = options.find((o) => o.value === value);
   const selectedLabel = selected?.label ?? '';
   const menuId = `${id}-menu`;
 
-  // Close on a pointer-down outside the control, and on Escape. Bound only
-  // while the menu is open so there is no idle global listener.
+  // Close on a pointer-down outside the control. Bound only while the menu is
+  // open so there is no idle global listener.
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -57,27 +61,72 @@ export function SortControl<T extends string = string>({
         setIsOpen(false);
       }
     }
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    }
     document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
+    return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [isOpen]);
+
+  // Move focus into the menu on open, onto the checked item.
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const items = menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]');
+    const checked = menuRef.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+    (checked ?? items?.[0])?.focus();
+  }, [isOpen]);
+
+  function onKeyDown(event: React.KeyboardEvent): void {
+    if (!isOpen) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (event.key === 'Tab') {
+      setIsOpen(false);
+      return;
+    }
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [],
+    );
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (items.length === 0 || current === -1) {
+      return;
+    }
+    let next: number;
+    if (event.key === 'ArrowDown') {
+      next = (current + 1) % items.length;
+    } else if (event.key === 'ArrowUp') {
+      next = (current - 1 + items.length) % items.length;
+    } else if (event.key === 'Home') {
+      next = 0;
+    } else if (event.key === 'End') {
+      next = items.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    items[next]?.focus();
+  }
 
   function pick(optionValue: T): void {
     onChange(optionValue);
     setIsOpen(false);
+    triggerRef.current?.focus();
   }
 
   return (
-    <div ref={rootRef} className={cn(styles['sort-control'], className)}>
+    <div
+      ref={rootRef}
+      className={cn(styles['sort-control'], className)}
+      onKeyDown={onKeyDown}
+    >
       <button
+        ref={triggerRef}
         id={id}
         type="button"
         className={styles['trigger']}
@@ -97,7 +146,7 @@ export function SortControl<T extends string = string>({
       </button>
 
       {isOpen && (
-        <ul id={menuId} role="menu" aria-label={label} className={styles['menu']}>
+        <ul ref={menuRef} id={menuId} role="menu" aria-label={label} className={styles['menu']}>
           {options.map((option) => {
             const isSelected = option.value === value;
             return (
@@ -105,6 +154,7 @@ export function SortControl<T extends string = string>({
                 <button
                   type="button"
                   role="menuitemradio"
+                  tabIndex={-1}
                   aria-checked={isSelected}
                   className={cn(
                     styles['item'],

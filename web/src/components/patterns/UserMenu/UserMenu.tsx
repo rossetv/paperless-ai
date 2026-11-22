@@ -27,7 +27,9 @@ const DEFAULT_AVATAR_COLOUR = 'var(--gradient-avatar-default)';
 
 /**
  * Account dropdown: an `Avatar` trigger opening a menu with a name/email header
- * and a "Sign out" item. Closes on Escape, an outside pointer-down, or a pick.
+ * and a "Sign out" item. Focus moves into the menu on open; Arrow keys, Home and End move between items,
+ * and Escape or a pick returns focus to the trigger. Also closes on Tab or an
+ * outside pointer-down.
  */
 export function UserMenu({
   initials,
@@ -40,8 +42,10 @@ export function UserMenu({
 }: UserMenuProps): React.ReactElement {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
 
-  // Close on outside pointer-down and on Escape, only while open.
+  // Close on outside pointer-down, only while open.
   React.useEffect(() => {
     if (!open) return undefined;
 
@@ -50,30 +54,58 @@ export function UserMenu({
         setOpen(false);
       }
     }
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        setOpen(false);
-      }
-    }
 
     document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [open]);
+
+  // Move focus into the menu on open.
+  React.useEffect(() => {
+    if (open) {
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    }
+  }, [open]);
+
+  function handleKeyDown(event: React.KeyboardEvent): void {
+    if (!open) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (event.key === 'Tab') {
+      setOpen(false);
+      return;
+    }
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+    );
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (items.length === 0 || current === -1) return;
+    let next: number;
+    if (event.key === 'ArrowDown') next = (current + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (current - 1 + items.length) % items.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else return;
+    event.preventDefault();
+    items[next]?.focus();
+  }
 
   function handleSignOut(): void {
     setOpen(false);
+    triggerRef.current?.focus();
     onSignOut();
   }
 
   const headerName = displayName ?? username ?? 'Account';
 
   return (
-    <div ref={rootRef} className={cn(styles['root'], className)}>
+    <div ref={rootRef} className={cn(styles['root'], className)} onKeyDown={handleKeyDown}>
       <button
+        ref={triggerRef}
         type="button"
         className={styles['trigger']}
         aria-label="Account menu"
@@ -85,7 +117,7 @@ export function UserMenu({
       </button>
 
       {open && (
-        <div className={styles['dropdown']} role="menu">
+        <div ref={menuRef} className={styles['dropdown']} role="menu">
           <div className={styles['header']}>
             <span className={styles['name']}>{headerName}</span>
             {email !== null && email !== '' && (
@@ -96,6 +128,7 @@ export function UserMenu({
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className={styles['item']}
             onClick={handleSignOut}
           >
