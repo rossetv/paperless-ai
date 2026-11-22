@@ -58,6 +58,10 @@
   color: var(--colour-text-primary);
 }
 
+[data-muted='true'] .name {
+  color: var(--colour-text-tertiary);
+}
+
 .username {
   font-family: var(--font-mono);
   font-size: var(--font-size-micro);

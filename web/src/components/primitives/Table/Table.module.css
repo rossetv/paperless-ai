@@ -98,16 +98,17 @@
   border-bottom: none;
 }
 
-/* Muted rows — suspended users, expired keys: dimmed but legible. */
-.row[data-muted='true'] {
-  opacity: var(--opacity-disabled);
-}
-
 .cell {
   padding: var(--spacing-10) var(--spacing-14);
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
   vertical-align: middle;
+}
+
+/* Muted rows — suspended users, expired keys: plain text steps down a tone;
+   badges, state labels and buttons keep their own full-strength colours. */
+.row[data-muted='true'] .cell {
+  color: var(--colour-text-tertiary);
 }
 
 .cell-end {
