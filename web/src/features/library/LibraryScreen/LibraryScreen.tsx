@@ -48,6 +48,12 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
   return entries.find((e) => e.id === id)?.name ?? `#${id}`;
 }
 
+/** A short date, or the raw URL value when it does not parse. */
+function dateLabel(iso: string): string {
+  const formatted = formatShortDate(iso);
+  return formatted === '—' ? iso : formatted;
+}
+
 /**
  * True below SearchScreenLayout's 834px breakpoint, where the rail stacks above
  * the content. matchMedia is missing in some test environments.
@@ -85,6 +91,8 @@ export function LibraryScreen(): React.ReactElement {
   useEffect(() => setSearchText(urlText), [urlText]);
 
   function submitSearch(text: string): void {
+    // A blank submit leaves the URL as it is, so the field must be cleared here.
+    if (text.trim() === '') setSearchText('');
     setQuery({ ...query, query: text.trim() === '' ? null : text.trim(), page: 1 });
   }
 
@@ -166,14 +174,14 @@ export function LibraryScreen(): React.ReactElement {
     if (query.date_from != null && query.date_from !== '') {
       chips.push({
         key: 'date-from',
-        label: `From ${formatShortDate(query.date_from)}`,
+        label: `From ${dateLabel(query.date_from)}`,
         onRemove: () => setQuery({ ...query, date_from: null, page: 1 }),
       });
     }
     if (query.date_to != null && query.date_to !== '') {
       chips.push({
         key: 'date-to',
-        label: `To ${formatShortDate(query.date_to)}`,
+        label: `To ${dateLabel(query.date_to)}`,
         onRemove: () => setQuery({ ...query, date_to: null, page: 1 }),
       });
     }
@@ -195,7 +203,14 @@ export function LibraryScreen(): React.ReactElement {
   const rangeStart = total === 0 ? 0 : (query.page - 1) * effectivePageSize + 1;
   const rangeEnd =
     total === 0 ? 0 : Math.min(query.page * effectivePageSize, total);
-  const hasFilters = activeChips.length > 0;
+  // From the query, not the chips: tag and name chips wait for the facets.
+  const hasFilters =
+    (query.query != null && query.query !== '') ||
+    query.correspondent_id != null ||
+    query.document_type_id != null ||
+    query.tag_ids.length > 0 ||
+    (query.date_from != null && query.date_from !== '') ||
+    (query.date_to != null && query.date_to !== '');
   const isFirstPage = query.page <= 1;
   const isLastPage = query.page >= pageCount;
 
