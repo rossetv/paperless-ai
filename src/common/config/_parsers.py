@@ -31,6 +31,18 @@ def _get_required_env(source: Mapping[str, str], var_name: str) -> str:
     return value
 
 
+def _get_str_env(source: Mapping[str, str], var_name: str, default: str) -> str:
+    """Return *var_name* stripped, falling back to *default* when unset or blank.
+
+    A blank value such as ``LOG_FORMAT=`` in a compose file means "not set",
+    not an empty string that breaks at use.
+    """
+    value = source.get(var_name)
+    if value is None or not value.strip():
+        return default
+    return value.strip()
+
+
 def _get_int_env(source: Mapping[str, str], var_name: str, default: int) -> int:
     """Parse *var_name* from *source* as an integer, falling back to *default*.
 
@@ -136,7 +148,7 @@ def _require_at_least_one(var_name: str, value: int, minimum: int = 1) -> int:
 
 def _resolve_llm_provider(source: Mapping[str, str]) -> Literal["openai", "ollama"]:
     """Resolve and validate ``LLM_PROVIDER`` (defaults to ``openai``)."""
-    provider = source.get("LLM_PROVIDER", "openai")
+    provider = _get_str_env(source, "LLM_PROVIDER", "openai")
     if provider not in ("openai", "ollama"):
         raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
     # Validated above; mypy cannot narrow `str` to the Literal.
@@ -185,7 +197,7 @@ def _resolve_step_provider(
 
 def _resolve_log_format(source: Mapping[str, str]) -> Literal["json", "console"]:
     """Resolve and validate ``LOG_FORMAT`` (defaults to ``console``)."""
-    log_format = source.get("LOG_FORMAT", "console")
+    log_format = _get_str_env(source, "LOG_FORMAT", "console")
     if log_format not in ("json", "console"):
         raise ValueError("LOG_FORMAT must be 'json' or 'console'")
     # Validated above; mypy cannot narrow `str` to the Literal.
@@ -200,7 +212,7 @@ def _resolve_ocr_image_detail(
     Mirrors OpenAI's ``image_url.detail``; the cheaper ``auto`` / ``low`` are
     opt-in.
     """
-    detail = source.get("OCR_IMAGE_DETAIL", "high")
+    detail = _get_str_env(source, "OCR_IMAGE_DETAIL", "high")
     if detail not in ("low", "high", "auto"):
         raise ValueError("OCR_IMAGE_DETAIL must be 'low', 'high', or 'auto'")
     # Validated above; mypy cannot narrow `str` to the Literal.
@@ -226,7 +238,7 @@ def _resolve_reasoning_effort(
     it stripped by the adaptive-compat layer rather than failing the call. An
     unrecognised value raises rather than silently sending the wrong effort.
     """
-    effort = source.get(var_name, default).strip().lower()
+    effort = _get_str_env(source, var_name, default).lower()
     if effort == "minimal":
         # Raising would brick a stored config: validation runs on every boot
         # and every Settings save. "none" is the nearest tier below "low".

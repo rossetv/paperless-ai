@@ -20,6 +20,7 @@ from ._parsers import (
     _get_optional_int_env,
     _get_optional_positive_int_env,
     _get_required_env,
+    _get_str_env,
     _require_at_least_one,
     _resolve_chunk_overlap,
     _resolve_classify_reasoning_effort,
@@ -530,8 +531,12 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     classify_pre_tag_id = _get_int_env(source, "CLASSIFY_PRE_TAG_ID", post_tag_id)
 
     # Stripped of trailing slashes so callers can append paths cleanly.
-    paperless_url = source.get("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
-    paperless_public_url = source.get("PAPERLESS_PUBLIC_URL", paperless_url).rstrip("/")
+    paperless_url = _get_str_env(
+        source, "PAPERLESS_URL", _DEFAULT_PAPERLESS_URL
+    ).rstrip("/")
+    paperless_public_url = _get_str_env(
+        source, "PAPERLESS_PUBLIC_URL", paperless_url
+    ).rstrip("/")
 
     tiers = _resolve_relevance_tiers(source)
 
@@ -626,7 +631,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         OCR_REASONING_EFFORT=_resolve_ocr_reasoning_effort(source),
         PAGE_WORKERS=max(1, _get_int_env(source, "PAGE_WORKERS", 8)),
         DOCUMENT_WORKERS=max(1, _get_int_env(source, "DOCUMENT_WORKERS", 4)),
-        LOG_LEVEL=source.get("LOG_LEVEL", "INFO").upper(),
+        LOG_LEVEL=_get_str_env(source, "LOG_LEVEL", "INFO").upper(),
         LOG_FORMAT=_resolve_log_format(source),
         REFUSAL_MARK=_REFUSAL_MARK,
         CLASSIFY_PERSON_FIELD_ID=_get_optional_int_env(
@@ -648,10 +653,12 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             0, _get_int_env(source, "CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
         ),
         CLASSIFY_REASONING_EFFORT=_resolve_classify_reasoning_effort(source),
-        INDEX_DB_PATH=source.get("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
-        APP_DB_PATH=source.get("APP_DB_PATH", _DEFAULT_APP_DB_PATH),
+        INDEX_DB_PATH=_get_str_env(source, "INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
+        APP_DB_PATH=_get_str_env(source, "APP_DB_PATH", _DEFAULT_APP_DB_PATH),
         EMBEDDING_PROVIDER=embedding_provider,
-        EMBEDDING_MODEL=source.get("EMBEDDING_MODEL", "text-embedding-3-small"),
+        EMBEDDING_MODEL=_get_str_env(
+            source, "EMBEDDING_MODEL", "text-embedding-3-small"
+        ),
         EMBEDDING_DIMENSIONS=_require_at_least_one(
             "EMBEDDING_DIMENSIONS",
             _get_int_env(source, "EMBEDDING_DIMENSIONS", 1536),
@@ -671,16 +678,22 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CHUNK_OVERLAP=_resolve_chunk_overlap(source, chunk_size),
         SEARCH_TOP_K=search_top_k,
         SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(source),
-        SEARCH_PLANNER_MODEL=source.get("SEARCH_PLANNER_MODEL", default_planner_model),
-        SEARCH_ANSWER_MODEL=source.get("SEARCH_ANSWER_MODEL", default_answer_model),
+        SEARCH_PLANNER_MODEL=_get_str_env(
+            source, "SEARCH_PLANNER_MODEL", default_planner_model
+        ),
+        SEARCH_ANSWER_MODEL=_get_str_env(
+            source, "SEARCH_ANSWER_MODEL", default_answer_model
+        ),
         # 0.0.0.0 is deliberate: the server is auth-gated, and the operator
         # restricts exposure at the reverse proxy / port map.
-        SEARCH_SERVER_HOST=source.get("SEARCH_SERVER_HOST", "0.0.0.0"),  # nosec B104 - intentional default, auth-gated, exposure restricted by reverse proxy
+        SEARCH_SERVER_HOST=_get_str_env(source, "SEARCH_SERVER_HOST", "0.0.0.0"),  # nosec B104 - intentional default, auth-gated, exposure restricted by reverse proxy
         SEARCH_SERVER_PORT=_resolve_server_port(source),
         # Peers whose X-Forwarded-For/-Proto uvicorn trusts. "*" is right only
         # when the proxy is the sole route in; otherwise pin it to the proxy
         # CIDR so a client cannot spoof its IP or the cookie Secure flag.
-        SEARCH_FORWARDED_ALLOW_IPS=source.get("SEARCH_FORWARDED_ALLOW_IPS", "*"),
+        SEARCH_FORWARDED_ALLOW_IPS=_get_str_env(
+            source, "SEARCH_FORWARDED_ALLOW_IPS", "*"
+        ),
         SEARCH_SESSION_TTL=_require_at_least_one(
             "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
         ),
@@ -706,7 +719,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_GATE_JUDGE=_get_bool_env(source, "SEARCH_GATE_JUDGE", True),
         SEARCH_JUDGE_RATIONALES=_get_bool_env(source, "SEARCH_JUDGE_RATIONALES", True),
-        SEARCH_JUDGE_MODEL=source.get("SEARCH_JUDGE_MODEL", default_judge_model),
+        SEARCH_JUDGE_MODEL=_get_str_env(
+            source, "SEARCH_JUDGE_MODEL", default_judge_model
+        ),
         SEARCH_JUDGE_REASONING_EFFORT=_resolve_search_reasoning_effort(
             source, "SEARCH_JUDGE_REASONING_EFFORT", default="none"
         ),

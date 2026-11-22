@@ -296,7 +296,7 @@ class TestValidation:
         with pytest.raises(ValueError, match="LOG_FORMAT must be"):
             _build(mocker, {**_MINIMAL_ENV, "LOG_FORMAT": "xml"})
 
-    @pytest.mark.parametrize("value", ["max", "medium-rare", ""])
+    @pytest.mark.parametrize("value", ["max", "medium-rare"])
     def test_invalid_reasoning_effort_raises(self, mocker, value):
         with pytest.raises(
             ValueError, match="CLASSIFY_REASONING_EFFORT must be one of"

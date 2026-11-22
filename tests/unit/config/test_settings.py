@@ -79,3 +79,33 @@ class TestSearchMaxChunksPerDoc:
     def test_negative_clamps_to_one(self) -> None:
         settings = _make_settings(SEARCH_MAX_CHUNKS_PER_DOC="-5")
         assert settings.SEARCH_MAX_CHUNKS_PER_DOC == 1
+
+
+class TestBlankAndPaddedValues:
+    def test_blank_values_use_defaults(self) -> None:
+        settings = _make_settings(
+            LLM_PROVIDER="",
+            LOG_FORMAT="  ",
+            LOG_LEVEL="",
+            OCR_IMAGE_DETAIL="",
+            OCR_REASONING_EFFORT="",
+            PAPERLESS_URL="",
+            EMBEDDING_MODEL="",
+            SEARCH_PLANNER_MODEL="",
+            SEARCH_SERVER_HOST="",
+        )
+        assert settings.LLM_PROVIDER == "openai"
+        assert settings.LOG_FORMAT == "console"
+        assert settings.LOG_LEVEL == "INFO"
+        assert settings.OCR_IMAGE_DETAIL == "high"
+        assert settings.OCR_REASONING_EFFORT == "none"
+        assert settings.PAPERLESS_URL
+        assert settings.EMBEDDING_MODEL == "text-embedding-3-small"
+        assert settings.SEARCH_PLANNER_MODEL
+        assert settings.SEARCH_SERVER_HOST == "0.0.0.0"
+
+    def test_padded_provider_is_accepted(self) -> None:
+        assert _make_settings(LLM_PROVIDER=" openai ").LLM_PROVIDER == "openai"
+
+    def test_blank_refusal_markers_still_disable_detection(self) -> None:
+        assert _make_settings(OCR_REFUSAL_MARKERS="").OCR_REFUSAL_MARKERS == []
