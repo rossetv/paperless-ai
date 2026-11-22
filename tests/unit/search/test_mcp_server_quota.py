@@ -146,6 +146,28 @@ async def test_deep_search_is_counted_and_then_refused_at_the_quota(
 
 
 @pytest.mark.anyio
+async def test_deep_search_answered_from_the_cache_records_no_tokens(
+    app_db_path: str,
+) -> None:
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core(answer_tokens=50)
+
+    def _cached_answer(*, on_cache_hit=None, **_kwargs):
+        on_cache_hit()
+        return core.answer.return_value
+
+    core.answer.side_effect = _cached_answer
+    app = _build(core, app_db_path)
+
+    async with create_connected_server_and_client_session(app._fastmcp) as client:
+        result = await client.call_tool("deep_search", {"question": "invoice"})
+
+    assert result.isError is False
+    assert _tokens_used(app_db_path) == 0
+
+
+@pytest.mark.anyio
 async def test_deep_search_waiting_for_a_slot_is_refused_if_the_quota_ran_out_meanwhile(
     app_db_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

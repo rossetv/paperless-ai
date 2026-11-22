@@ -232,6 +232,7 @@ def _register_search_tools(
         build_output: Callable[[SearchCore], str],
         *,
         bills_llm: bool,
+        cache_hits: list[None] | None = None,
     ) -> str:
         """Run a tool body off the loop, under the shared concurrency bound.
 
@@ -239,7 +240,7 @@ def _register_search_tools(
         contextvars, so callers must read any contextvar on the loop and
         capture it. With *bills_llm* the per-key spend quota is checked before
         the body (again once the slot is held) and the query's tokens are
-        recorded after.
+        recorded after (none when *cache_hits* shows a cached answer).
         """
         core = await run_blocking(lambda: resolve_core(app_db_path))
         api_key_id = mcp_api_key_id.get()
@@ -270,7 +271,7 @@ def _register_search_tools(
                 await record_usage(
                     api_key_id=api_key_id,
                     quota=quota,
-                    tokens=_total_tokens(output),
+                    tokens=0 if cache_hits else _total_tokens(output),
                     app_db_path=app_db_path,
                 )
         return output
@@ -280,7 +281,8 @@ def _register_search_tools(
         query: str,
         filters: dict[str, Any] | None,
         core_call: Callable[
-            [SearchCore, str, SearchFilters | None, str | None], SearchResult
+            [SearchCore, str, SearchFilters | None, str | None, Callable[[], None]],
+            SearchResult,
         ],
         error_event: str,
         bills_llm: bool,
@@ -288,6 +290,7 @@ def _register_search_tools(
         """Run a query-shaped tool (``semantic_search``/``deep_search``)."""
         # Read on the loop: the worker thread does not inherit contextvars.
         raw_asker = mcp_asker.get()
+        cache_hits: list[None] = []
 
         def _build(core: SearchCore) -> str:
             asker = resolve_asker(
@@ -297,13 +300,17 @@ def _register_search_tools(
                 query=query,
                 filters=filters,
                 core_call=lambda text, ui_filters, asker_arg: core_call(
-                    core, text, ui_filters, asker_arg
+                    core,
+                    text,
+                    ui_filters,
+                    asker_arg,
+                    lambda: cache_hits.append(None),
                 ),
                 error_event=error_event,
                 asker=asker,
             )
 
-        return await _run_tool(_build, bills_llm=bills_llm)
+        return await _run_tool(_build, bills_llm=bills_llm, cache_hits=cache_hits)
 
     @mcp.tool(
         name="semantic_search",
@@ -324,7 +331,7 @@ def _register_search_tools(
         return await _dispatch(
             query=query,
             filters=filters,
-            core_call=lambda core, text, ui_filters, asker: core.retrieve(
+            core_call=lambda core, text, ui_filters, asker, _hit: core.retrieve(
                 query=text, ui_filters=ui_filters
             ),
             error_event="mcp.semantic_search_error",
@@ -350,8 +357,8 @@ def _register_search_tools(
         return await _dispatch(
             query=question,
             filters=filters,
-            core_call=lambda core, text, ui_filters, asker: core.answer(
-                query=text, ui_filters=ui_filters, asker=asker
+            core_call=lambda core, text, ui_filters, asker, hit: core.answer(
+                query=text, ui_filters=ui_filters, asker=asker, on_cache_hit=hit
             ),
             error_event="mcp.deep_search_error",
             bills_llm=True,
