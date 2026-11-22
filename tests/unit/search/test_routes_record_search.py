@@ -82,6 +82,7 @@ def _build_app(tmp_path, core: MagicMock) -> FastAPI:
             require_member=require_role("member"),
             get_current_user=get_current_user,
             search_semaphore=LazySemaphore(settings.SEARCH_MAX_CONCURRENT),
+            current_settings=lambda: settings,
         )
     )
     return app

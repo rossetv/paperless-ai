@@ -362,6 +362,12 @@ def create_app(
 
     _seed_core_cache(app_db_path, core)
 
+    def current_settings() -> Settings:
+        live_core = _resolve_search_core(app_db_path)
+        # Until a settings save replaces the startup core, the live settings are
+        # the ones this app was built with; a caller may pass them apart from it.
+        return settings if live_core is core else live_core.settings
+
     # An exact-path Route, not app.mount: a Mount only serves "/mcp/..." and the
     # SPA catch-all would 405 the bare "/mcp" instead of Starlette redirecting.
     # Registered before the other routers and the catch-all so it wins.
@@ -371,7 +377,7 @@ def create_app(
     app.include_router(build_api_key_router())
     app.include_router(
         build_document_router(
-            lambda: _resolve_search_core(app_db_path).settings,
+            current_settings,
             store_reader=store_reader,
         )
     )
@@ -385,6 +391,7 @@ def create_app(
             require_member=require_api_scope_member,
             get_current_user=get_current_user,
             search_semaphore=search_semaphore,
+            current_settings=current_settings,
         )
     )
 

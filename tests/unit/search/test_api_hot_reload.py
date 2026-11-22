@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
+import pytest
+
 
 def test_search_core_is_rebuilt_when_config_version_moves(tmp_path) -> None:
     """The per-request accessor rebuilds the search core on a config change,
@@ -283,11 +285,27 @@ def test_current_settings_cache_key_matches_get_all_snapshot(tmp_path) -> None:
         )
 
 
-def test_document_routes_use_paperless_settings_saved_after_startup(
-    tmp_path,
+@pytest.mark.parametrize(
+    ("env_public_url", "saved", "expected_url", "expected_token"),
+    [
+        # Saved in Settings after startup.
+        (
+            None,
+            {"PAPERLESS_PUBLIC_URL": "https://new.example", "PAPERLESS_TOKEN": "new"},
+            "https://new.example/",
+            "new",
+        ),
+        # Set only in the environment, kept across an unrelated save.
+        ("https://env.example", {"SEARCH_TOP_K": "25"}, "https://env.example/", "old"),
+        # A fresh install with nothing saved yet.
+        ("https://env.example", {}, "https://env.example/", "old"),
+    ],
+)
+def test_document_routes_use_the_current_paperless_settings(
+    tmp_path, env_public_url, saved, expected_url, expected_token
 ) -> None:
-    """A saved Paperless URL or token reaches the document, Library and taxonomy
-    routes on the next request, without a restart."""
+    """The document, Library and taxonomy routes use the Paperless URL and token
+    in force now, from the environment or a save, without a restart."""
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
@@ -297,10 +315,9 @@ def test_document_routes_use_paperless_settings_saved_after_startup(
     from appdb.connection import connect
     from appdb.schema import ensure_schema
     from appdb.users import create as create_user
-    from common.config import _SETTINGS_CACHE
+    from common.config import _SETTINGS_CACHE, current_settings
     from search.api import _reset_core_cache_for_test, create_app
     from store.models import DocumentPage, DocumentSummary
-    from tests.helpers.factories import make_search_settings
     from tests.helpers.search import mint_api_key
 
     app_db = str(tmp_path / "app.db")
@@ -312,13 +329,12 @@ def test_document_routes_use_paperless_settings_saved_after_startup(
     env = {
         "APP_DB_PATH": app_db,
         "INDEX_DB_PATH": str(tmp_path / "index.db"),
-        "PAPERLESS_URL": "https://old.example",
-        "PAPERLESS_TOKEN": "old-token",
+        "PAPERLESS_URL": "http://paperless-internal:8000",
+        "PAPERLESS_TOKEN": "old",
         "OPENAI_API_KEY": "k",
     }
-    startup_settings = make_search_settings(
-        APP_DB_PATH=app_db, PAPERLESS_PUBLIC_URL="https://old.example"
-    )
+    if env_public_url is not None:
+        env["PAPERLESS_PUBLIC_URL"] = env_public_url
     summary = DocumentSummary(
         id=42,
         title="Invoice",
@@ -348,24 +364,21 @@ def test_document_routes_use_paperless_settings_saved_after_startup(
     ):
         _SETTINGS_CACHE.pop(app_db, None)
         _reset_core_cache_for_test()
-        app = create_app(
-            startup_settings,
-            core=MagicMock(settings=startup_settings),
-            store_reader=store_reader,
-        )
+        # As main() does: startup settings from the environment and the saved
+        # table, and a core built from them.
+        app = create_app(current_settings(app_db), store_reader=store_reader)
         client = TestClient(app, base_url="https://testserver")
         client.headers["Authorization"] = f"Bearer {raw_key}"
 
-        c = connect(app_db)
-        config_store.set_value(c, "PAPERLESS_PUBLIC_URL", "https://new.example")
-        config_store.set_value(c, "PAPERLESS_TOKEN", "new-token")
-        c.close()
+        if saved:
+            c = connect(app_db)
+            config_store.set_many(c, saved)
+            c.close()
 
         document = client.get("/api/documents/42").json()
         library = client.get("/api/documents").json()
         assert client.get("/api/tags").status_code == 200
 
-    assert document["paperless_url"].startswith("https://new.example/")
-    assert library["documents"][0]["paperless_url"].startswith("https://new.example/")
-    used_settings = paperless_class.call_args.args[0]
-    assert used_settings.PAPERLESS_TOKEN == "new-token"
+    assert document["paperless_url"].startswith(expected_url)
+    assert library["documents"][0]["paperless_url"].startswith(expected_url)
+    assert paperless_class.call_args.args[0].PAPERLESS_TOKEN == expected_token

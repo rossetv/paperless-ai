@@ -106,6 +106,7 @@ def _client(path: str, core: MagicMock) -> TestClient:
             require_member=require_role("member"),
             get_current_user=get_current_user,
             search_semaphore=LazySemaphore(4),
+            current_settings=lambda: settings,
         )
     )
     return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
