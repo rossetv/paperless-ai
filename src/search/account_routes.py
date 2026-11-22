@@ -121,7 +121,10 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
             request,
             response,
             app_db,
-            remember_ttl_seconds=_remember_ttl(state.app_db_path, settings),
+            # Only read when "remember" is set, so a plain login loads no settings.
+            remember_ttl_seconds=(
+                _remember_ttl(state.app_db_path, settings) if body.remember else 0
+            ),
         )
 
     @router.post("/api/auth/logout", status_code=204)

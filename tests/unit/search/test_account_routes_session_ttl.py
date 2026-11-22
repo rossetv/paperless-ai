@@ -18,8 +18,13 @@ from search.appstate import AppState, attach_app_state
 from search.setup import SetupState
 
 
-def _remember_cookie(
-    tmp_path, monkeypatch, saved_ttl: str | None, startup_ttl: int = 604800
+def _login_cookie(
+    tmp_path,
+    monkeypatch,
+    saved_ttl: str | None,
+    startup_ttl: int = 604800,
+    *,
+    remember: bool = True,
 ) -> str:
     monkeypatch.setattr(
         os,
@@ -42,7 +47,7 @@ def _remember_cookie(
     app.include_router(build_account_router(startup, MagicMock()))
     response = TestClient(app).post(
         "/api/auth/login",
-        json={"username": "amy", "password": "pw-123456", "remember": True},
+        json={"username": "amy", "password": "pw-123456", "remember": remember},
     )
     assert response.status_code == 200
     return response.headers["set-cookie"]
@@ -51,24 +56,45 @@ def _remember_cookie(
 def test_remember_login_cookie_uses_the_ttl_saved_after_startup(
     tmp_path, monkeypatch
 ) -> None:
-    assert "Max-Age=1234" in _remember_cookie(tmp_path, monkeypatch, "1234")
+    assert "Max-Age=1234" in _login_cookie(tmp_path, monkeypatch, "1234")
 
 
-def test_remember_login_cookie_uses_the_startup_ttl_when_none_is_saved(
+def test_remember_login_cookie_uses_the_default_when_none_is_saved(
     tmp_path, monkeypatch
 ) -> None:
-    assert "Max-Age=604800" in _remember_cookie(tmp_path, monkeypatch, None)
+    cookie = _login_cookie(tmp_path, monkeypatch, None, startup_ttl=3600)
+    assert "Max-Age=604800" in cookie
+
+
+def test_remember_login_cookie_uses_the_startup_ttl_when_settings_cannot_load(
+    tmp_path, monkeypatch
+) -> None:
+    def broken(_path: str):
+        raise RuntimeError("settings unavailable")
+
+    monkeypatch.setattr("search.account_routes.current_settings", broken)
+    cookie = _login_cookie(tmp_path, monkeypatch, "1234", startup_ttl=3600)
+    assert "Max-Age=3600" in cookie
+
+
+def test_plain_login_does_not_load_the_live_settings(tmp_path, monkeypatch) -> None:
+    loads: list[str] = []
+    monkeypatch.setattr(
+        "search.account_routes.current_settings", lambda path: loads.append(path)
+    )
+    _login_cookie(tmp_path, monkeypatch, None, remember=False)
+    assert loads == []
 
 
 def test_remember_login_cookie_uses_the_default_when_the_saved_ttl_is_cleared(
     tmp_path, monkeypatch
 ) -> None:
-    cookie = _remember_cookie(tmp_path, monkeypatch, "", startup_ttl=3600)
+    cookie = _login_cookie(tmp_path, monkeypatch, "", startup_ttl=3600)
     assert "Max-Age=604800" in cookie
 
 
 def test_remember_login_cookie_uses_the_longest_allowed_ttl(
     tmp_path, monkeypatch
 ) -> None:
-    cookie = _remember_cookie(tmp_path, monkeypatch, "315360000")
+    cookie = _login_cookie(tmp_path, monkeypatch, "315360000")
     assert "Max-Age=315360000" in cookie
