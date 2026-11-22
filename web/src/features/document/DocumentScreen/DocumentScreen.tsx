@@ -169,7 +169,8 @@ export function DocumentScreen({
   const notifyError = (fallback: string) => (err: Error): void =>
     showToast(errorDetail(err, fallback), 'error');
 
-  // The patch of a failed save; the retry, or the next edit, sends it again.
+  // The patch of a failed save; the retry, or the next edit, sends it again,
+  // its tags rebuilt from the latest ones.
   const failedRef = React.useRef<DocumentPatch | null>(null);
   const inFlightRef = React.useRef(false);
   // Edits made while a save is in flight, merged so later edits to a field win.
@@ -208,9 +209,20 @@ export function DocumentScreen({
     send(merged);
   }
 
+  /** The latest fetched tags with the layer's tag edits applied; null if a name is unknown. */
+  function latestTagIds(): number[] | null {
+    const ops = layerRef.current.tags;
+    const known = [...(tags.data ?? []), ...[...ops].map(([id, op]) => ({ id, name: op.name, document_count: 0 }))];
+    const ids = resolveTagIds(latestDoc().tags, known);
+    return ids && applyTagOps(ids, ops);
+  }
+
   // mutateAsync, not mutate's callbacks: TanStack skips those after unmount, and
   // an edit queued behind a save must still be sent if the user leaves the page.
-  function send(patch: DocumentPatch): void {
+  // A tag list stored for later is rebuilt now, so a tag another change made
+  // meanwhile is not undone.
+  function send(stored: DocumentPatch): void {
+    const patch = stored.tags === undefined ? stored : { ...stored, tags: latestTagIds() ?? stored.tags };
     inFlightRef.current = true;
     update.mutateAsync({ id: document.id, patch }).then(
       () => {
@@ -303,7 +315,11 @@ export function DocumentScreen({
       const ops = new Map(layerRef.current.tags);
       ops.delete(tag.id);
       const armed = latestDoc().tags.includes(tag.name) !== add;
-      ops.set(tag.id, { name: tag.name, add, armed });
+      // A removal that undoes an addition leaves the fetched tags in charge: the
+      // index may jump straight to the end, so waiting for a read of the tag would
+      // hide it for good once another change adds it. A tag added back after a
+      // removal still waits, since a read may yet show the removal alone.
+      if (armed || add) ops.set(tag.id, { name: tag.name, add, armed });
       keepLayer({ ...layerRef.current, tags: ops });
       save({ tags: applyTagOps(ids, ops) });
     };

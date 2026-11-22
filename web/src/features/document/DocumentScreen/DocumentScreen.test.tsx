@@ -700,6 +700,32 @@ describe('DocumentScreen', () => {
     expect(sentPatches()[2]).toEqual({ tags: [100, 102, 101, 103] });
   });
 
+  it('a tag added and then removed again is not hidden when another change adds it later', async () => {
+    mockUseTags.mockReturnValue(queryOk([
+      ...ALL_TAGS,
+      { id: 104, name: 'home', document_count: 1 },
+      { id: 105, name: 'car', document_count: 1 },
+    ]));
+    const queryClient = makeQueryClient();
+    renderScreen({ role: 'member', live: true, queryClient });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /home/i }));
+    expect(await screen.findByText(/^saved$/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /remove home/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 101, 102] });
+
+    // The index jumps straight to the final state, then the pipeline adds the tag.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: [...DOC.tags, 'home'] });
+    await act(() => queryClient.invalidateQueries({ queryKey: ['document', DOC.id] }));
+    expect(await screen.findByRole('button', { name: /remove home/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: /car/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(3));
+    expect(sentPatches()[2]).toEqual({ tags: [100, 101, 102, 104, 105] });
+  });
+
   it('keeps showing a saved title while the index still has the old one', async () => {
     renderScreen({ role: 'member', live: true });
     renameTitle('Renamed');
@@ -775,5 +801,21 @@ describe('DocumentScreen', () => {
 
     await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
     expect(sentPatches()[1]).toEqual({ title: 'Renamed' });
+  });
+
+  it('a retry sends the failed tag edit over the latest tags, keeping one added meanwhile', async () => {
+    mockUseTags.mockReturnValue(queryOk([...ALL_TAGS, { id: 104, name: 'medical', document_count: 1 }]));
+    mockPatchDocument.mockRejectedValueOnce(new Error('server error'));
+    // Another change adds a tag while the failed save waits for its retry.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: [...DOC.tags, 'medical'] });
+    renderScreen({ role: 'member', live: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    expect(await screen.findByRole('button', { name: /remove medical/i })).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: /couldn't save/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 101, 102, 104, 103] });
   });
 });
