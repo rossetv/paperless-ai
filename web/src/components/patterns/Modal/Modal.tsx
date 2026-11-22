@@ -32,6 +32,11 @@ export interface ModalProps {
   title: string;
   /** Called when the user dismisses the modal (close button, Escape, backdrop). */
   onClose: () => void;
+  /**
+   * When false, Escape and backdrop clicks do nothing, so only the modal's own
+   * buttons close it. Focus is still trapped. Defaults to true.
+   */
+  dismissible?: boolean;
   children: React.ReactNode;
   className?: string;
 }
@@ -47,6 +52,7 @@ export function Modal({
   isOpen,
   title,
   onClose,
+  dismissible = true,
   children,
   className,
 }: ModalProps): React.ReactElement | null {
@@ -54,7 +60,7 @@ export function Modal({
 
   const titleId = React.useId();
 
-  useFocusTrap(dialogRef, isOpen, onClose);
+  useFocusTrap(dialogRef, isOpen, dismissible ? onClose : undefined);
 
   useEffect(() => (isOpen ? lockBodyScroll() : undefined), [isOpen]);
 
@@ -66,7 +72,7 @@ export function Modal({
         className={styles['backdrop']}
         data-testid="modal-backdrop"
         aria-hidden="true"
-        onClick={onClose}
+        onClick={dismissible ? onClose : undefined}
       />
 
       <dialog

@@ -12,7 +12,7 @@ import styles from './APIKeyCreatePanel.module.css';
 import shared from '../ScopeChecklist/ScopeChecklist.module.css';
 
 export interface APIKeyCreatePanelProps {
-  /** Called to dismiss the panel (cancel, Escape, or Done after a mint). */
+  /** Called to dismiss the panel (cancel, Escape, or Done after a mint; the secret view ignores Escape). */
   onClose: () => void;
 }
 
@@ -42,7 +42,7 @@ function RevealPanel({ secret, onClose }: RevealPanelProps): React.ReactElement 
   }
 
   return (
-    <Modal isOpen title="API key created" onClose={onClose}>
+    <Modal isOpen title="API key created" onClose={onClose} dismissible={false}>
       <div className={styles['reveal']}>
         <p className={styles['reveal-note']}>
           Copy this key now — it is shown <strong>once</strong>. After you

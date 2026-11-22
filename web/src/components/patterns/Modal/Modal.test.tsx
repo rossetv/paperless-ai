@@ -92,6 +92,50 @@ describe('Modal', () => {
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores Escape and backdrop clicks when dismissible is false', async () => {
+    const handleClose = vi.fn();
+    render(
+      <Modal isOpen title="Sticky" onClose={handleClose} dismissible={false}>
+        <p>Stay</p>
+      </Modal>,
+    );
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(
+      document.querySelector('[data-testid="modal-backdrop"]') as HTMLElement,
+    );
+    expect(handleClose).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: /close/i }));
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Escape untouched for a nested widget when not dismissible', async () => {
+    const onKeyDown = vi.fn();
+    render(
+      <Modal isOpen title="Sticky" onClose={vi.fn()} dismissible={false}>
+        <input aria-label="Field" onKeyDown={onKeyDown} />
+      </Modal>,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Field')).toHaveFocus());
+    await userEvent.keyboard('{Escape}');
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(onKeyDown.mock.calls[0][0].defaultPrevented).toBe(false);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('keeps trapping focus when not dismissible', async () => {
+    render(
+      <Modal isOpen title="Sticky" onClose={vi.fn()} dismissible={false}>
+        <button type="button">Only</button>
+      </Modal>,
+    );
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Only' })).toHaveFocus());
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it('traps focus within the modal while it is open', async () => {
     render(
       <Modal isOpen title="Focus trap" onClose={vi.fn()}>

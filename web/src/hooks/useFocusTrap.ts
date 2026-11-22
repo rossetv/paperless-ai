@@ -13,7 +13,7 @@ const FOCUSABLE_SELECTOR = [
 /**
  * Focus management for a modal dialog: while `isOpen`, move focus into
  * `dialogRef`, keep Tab / Shift+Tab cycling inside it and call `onClose` on
- * Escape; restore the previously focused element on close.
+ * Escape (without an `onClose`, Escape is left alone); restore the previously focused element on close.
  *
  * Initial focus goes to the element marked `data-autofocus`, else the first
  * focusable one inside `data-focus-content` if the dialog has one, else the first
@@ -23,7 +23,7 @@ const FOCUSABLE_SELECTOR = [
 export function useFocusTrap(
   dialogRef: RefObject<HTMLElement | null>,
   isOpen: boolean,
-  onClose: () => void,
+  onClose?: () => void,
 ): void {
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -60,6 +60,7 @@ export function useFocusTrap(
 
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
+        if (!onClose) return;
         // React's handlers run at the root, below the document, so a child's
         // preventDefault has already happened by the time this runs.
         if (event.defaultPrevented) return;
