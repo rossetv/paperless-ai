@@ -23,9 +23,10 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
     clauses: list[str] = []
     params: list[str | int] = []
 
-    if filters.date_from is not None:
+    lower = _lower_bound(filters.date_from) if filters.date_from is not None else None
+    if lower is not None:
         clauses.append("d.created >= ?")
-        params.append(filters.date_from)
+        params.append(lower)
 
     if filters.date_to is not None:
         exclusive_upper = _exclusive_upper_bound(filters.date_to)
@@ -49,6 +50,18 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
         return "", params
 
     return "WHERE " + " AND ".join(clauses), params
+
+
+def _lower_bound(date_from: str) -> str | None:
+    """Return the bare ``YYYY-MM-DD`` of an inclusive ``date_from``, or ``None``.
+
+    Handled like ``date_to``: only the leading day is used, so a timestamp does
+    not skip documents created at midnight, and an unparseable value is dropped.
+    """
+    try:
+        return date.fromisoformat(date_from[:10]).isoformat()
+    except ValueError:
+        return None
 
 
 def _exclusive_upper_bound(date_to: str) -> str | None:
@@ -140,7 +153,7 @@ def _token_key(term: str) -> tuple[str, ...]:
     splits on every character that is not a letter or number. The tokenizer folds
     diacritics (``café`` is indexed as ``cafe``), but this key does not, so terms
     that differ only by an accent keep separate keys. Combining marks stay inside
-    a token. A term with no token keeps its exact spelling as its key.
+    a token.
     """
     tokens: list[str] = []
     current: list[str] = []
@@ -152,7 +165,7 @@ def _token_key(term: str) -> tuple[str, ...]:
             current = []
     if current:
         tokens.append("".join(current))
-    return tuple(tokens) if tokens else (term,)
+    return tuple(tokens)
 
 
 def build_match_expr(terms: Sequence[str]) -> str:
@@ -160,10 +173,15 @@ def build_match_expr(terms: Sequence[str]) -> str:
 
     Terms the tokenizer treats identically (case and punctuation variants) are
     dropped, first spelling wins, and at most :data:`MAX_FTS_TERMS` distinct
-    terms are kept.
+    terms are kept. A term with no letter or digit indexes nothing, so quoting it
+    would make the AND match no document: it is dropped. When no term is left the
+    expression is the empty phrase ``""``, which matches nothing and is valid FTS5.
     """
     distinct: dict[tuple[str, ...], str] = {}
     for term in terms:
-        distinct.setdefault(_token_key(term), term)
+        if any(char.isalnum() for char in term):
+            distinct.setdefault(_token_key(term), term)
     kept = list(distinct.values())[:MAX_FTS_TERMS]
+    if not kept:
+        return '""'
     return " AND ".join(f'"{escape_fts_term(term)}"' for term in kept)

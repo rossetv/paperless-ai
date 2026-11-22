@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import StreamingResponse
 
 from search.deps import require_api_scope
+from search.document_routes._documents import DocumentId
 from search.offload import run_blocking
 
 if TYPE_CHECKING:
@@ -59,7 +60,7 @@ _THUMB_RESPONSE_HEADERS = {
 
 def register_proxy_routes(
     router: APIRouter,
-    settings: Settings,
+    current_settings: Callable[[], Settings],
     *,
     paperless_factory: Callable[[Settings], PaperlessClient],
 ) -> None:
@@ -72,11 +73,12 @@ def register_proxy_routes(
         dependencies=[reader_auth],
         response_class=StreamingResponse,
     )
-    async def document_pdf(document_id: int) -> StreamingResponse:
+    async def document_pdf(document_id: DocumentId) -> StreamingResponse:
         """Stream a document's original PDF from Paperless-ngx.
 
         404 for an unknown document; 502 when Paperless is unreachable or errors.
         """
+        settings = await run_blocking(current_settings)
         return await _stream_document_pdf(document_id, settings, paperless_factory)
 
     @router.get(
@@ -84,12 +86,13 @@ def register_proxy_routes(
         dependencies=[reader_auth],
         response_class=StreamingResponse,
     )
-    async def document_thumb(document_id: int) -> StreamingResponse:
+    async def document_thumb(document_id: DocumentId) -> StreamingResponse:
         """Stream a document's first-page thumbnail from Paperless-ngx.
 
         404 for an unknown document; 502 when Paperless is unreachable, errors,
         or returns a content type outside the image allowlist.
         """
+        settings = await run_blocking(current_settings)
         return await _stream_document_thumb(document_id, settings, paperless_factory)
 
 
@@ -115,6 +118,9 @@ async def _stream_document_pdf(
         if status == 404:
             log.info("api.document_pdf_not_found", document_id=document_id)
             raise HTTPException(status_code=404, detail="Document not found") from exc
+        if status in (401, 403):
+            # The app's Paperless handler names a rejected token or a denial.
+            raise
         # Any other upstream status is nothing the browser can act on.
         log.warning(
             "api.document_pdf_upstream_error",
@@ -165,6 +171,9 @@ async def _stream_document_thumb(
         if status == 404:
             log.info("api.document_thumb_not_found", document_id=document_id)
             raise HTTPException(status_code=404, detail="Document not found") from exc
+        if status in (401, 403):
+            # The app's Paperless handler names a rejected token or a denial.
+            raise
         log.warning(
             "api.document_thumb_upstream_error",
             document_id=document_id,

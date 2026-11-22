@@ -691,8 +691,11 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         # CIDR so a client cannot spoof its IP or the cookie Secure flag. Blank is
         # kept as set: it means trust no proxy, never the permissive default.
         SEARCH_FORWARDED_ALLOW_IPS=source.get("SEARCH_FORWARDED_ALLOW_IPS", "*"),
+        # Capped at 10 years so the session expiry arithmetic cannot overflow.
         SEARCH_SESSION_TTL=_require_at_least_one(
-            "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
+            "SEARCH_SESSION_TTL",
+            _get_int_env(source, "SEARCH_SESSION_TTL", 604800),
+            maximum=315360000,
         ),
         # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
         SEARCH_MAX_CONCURRENT=max(0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)),

@@ -61,7 +61,7 @@ def _build_app(
         settings = MagicMock()
     app.include_router(
         build_document_router(
-            settings,
+            lambda: settings,
             paperless_factory=lambda _s: paperless_client,
             store_reader=store_reader if store_reader is not None else MagicMock(),
         )
@@ -199,6 +199,46 @@ def test_pdf_proxy_404_for_an_unknown_document(app_db_path, conn) -> None:
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("upstream_status", "detail", "event"),
+    [
+        (401, "rejected the server's API token", "paperless.token_rejected"),
+        (
+            403,
+            "denied the server's API token permission",
+            "paperless.permission_denied",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("suffix", "method"), [("pdf", "download_stream"), ("thumb", "thumb_stream")]
+)
+def test_proxy_names_a_rejected_or_unpermitted_server_token(
+    app_db_path, conn, suffix, method, upstream_status, detail, event
+) -> None:
+    """A Paperless 401/403 says the server's token was refused, as the other
+    proxied routes do, instead of a generic store outage."""
+    import structlog.testing
+
+    request = httpx.Request("GET", "https://paperless.example/x")
+    paperless = MagicMock()
+    getattr(paperless, method).side_effect = httpx.HTTPStatusError(
+        "refused",
+        request=request,
+        response=httpx.Response(upstream_status, request=request),
+    )
+    client = _client(app_db_path, paperless)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    with structlog.testing.capture_logs() as logs:
+        response = client.get(f"/api/documents/100/{suffix}")
+
+    assert response.status_code == 502
+    assert detail in response.json()["detail"]
+    assert event in [e["event"] for e in logs]
+    paperless.close.assert_called_once()
+
+
 def test_pdf_proxy_502_when_paperless_is_unreachable(app_db_path, conn) -> None:
     """A Paperless network error maps to a 502 Bad Gateway."""
     paperless = MagicMock()
@@ -250,7 +290,7 @@ class TestRecentSearchesRoute:
         settings = MagicMock()
         app.include_router(
             build_document_router(
-                settings,
+                lambda: settings,
                 paperless_factory=lambda _s: MagicMock(),
                 store_reader=MagicMock(),
             )
@@ -355,7 +395,7 @@ def _build_app_with_paperless_url(
     )
     app.include_router(
         build_document_router(
-            settings,
+            lambda: settings,
             paperless_factory=lambda _s: paperless_client,
             store_reader=store_reader if store_reader is not None else MagicMock(),
         )
@@ -1011,3 +1051,25 @@ def test_paperless_network_error_returns_502(
     paperless_stub.raise_on_get_document = httpx.ConnectError("connection refused")
     r = api_client.post("/api/documents/42/reclassify")
     assert r.status_code == 502
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix"),
+    [
+        ("GET", ""),
+        ("GET", "/pdf"),
+        ("GET", "/thumb"),
+        ("PATCH", ""),
+        ("POST", "/reclassify"),
+        ("POST", "/retranscribe"),
+        ("DELETE", ""),
+    ],
+)
+def test_a_document_id_beyond_the_index_id_range_is_rejected(
+    admin_client, method, suffix
+) -> None:
+    """An id no stored document can have answers 422, not an upstream error."""
+    response = admin_client.request(
+        method, f"/api/documents/{2**63}{suffix}", json={"title": "t"}
+    )
+    assert response.status_code == 422

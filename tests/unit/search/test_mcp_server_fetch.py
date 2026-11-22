@@ -128,6 +128,25 @@ async def test_fetch_documents_unknown_id_is_per_id_error() -> None:
 
 
 @pytest.mark.anyio
+async def test_fetch_documents_id_beyond_the_index_range_is_per_id_not_found() -> None:
+    from tests.helpers.mcp_client import connect_client
+
+    huge = 2**63
+    core, client = _make_core({1: {"content": "text"}, huge: {"content": "never"}})
+    app = _build_app(core, client)
+
+    async with connect_client(app._server) as session:
+        result = await session.call_tool("fetch_documents", {"document_ids": [1, huge]})
+
+    assert result.isError is False
+    ok, missing = json.loads(result.content[0].text)["documents"]
+    assert ok["content"] == "text"
+    assert missing["document_id"] == huge
+    assert missing["error"] == "not found"
+    assert missing["content"] == ""
+
+
+@pytest.mark.anyio
 async def test_fetch_documents_rejects_too_many_ids() -> None:
     from tests.helpers.mcp_client import connect_client
 

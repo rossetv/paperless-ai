@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from store.migrations import StoreError
@@ -36,8 +38,24 @@ def test_match_expr_keeps_different_words_and_accent_variants_as_separate_terms(
     assert expr == " AND ".join(f'"{t}"' for t in terms)
 
 
-def test_match_expr_keeps_a_term_without_tokens() -> None:
-    assert build_match_expr(["a", "..", "a."]) == '"a" AND ".."'
+def test_match_expr_drops_terms_without_a_letter_or_digit() -> None:
+    assert build_match_expr(["invoice", "-", "march", "..", "—"]) == (
+        '"invoice" AND "march"'
+    )
+
+
+def test_match_expr_keeps_non_latin_letters_and_digits() -> None:
+    assert build_match_expr(["請求書", "2025", "-"]) == '"請求書" AND "2025"'
+
+
+def test_match_expr_of_only_punctuation_matches_nothing_without_error() -> None:
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE VIRTUAL TABLE f USING fts5(text)")
+    db.execute("INSERT INTO f VALUES ('invoice march')")
+
+    expr = build_match_expr(["-", ".."])
+
+    assert db.execute("SELECT 1 FROM f WHERE f MATCH ?", (expr,)).fetchall() == []
 
 
 def test_match_expr_keeps_at_most_the_term_cap() -> None:

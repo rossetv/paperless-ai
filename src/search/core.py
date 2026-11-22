@@ -35,7 +35,12 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from search.cache import build_cache_key, get_search_result_cache, is_cacheable
+from search.cache import (
+    build_cache_key,
+    cache_generation,
+    get_search_result_cache,
+    is_cacheable,
+)
 from search.errors import LlmBudgetExceededError
 from search.judge import RelevanceJudge
 from search.models import (
@@ -184,6 +189,9 @@ class SearchCore:
         self._retriever = retriever
         self._synthesizer = synthesizer
         self._judge = judge
+        # A search queued under this core can finish after a settings save has
+        # replaced it; its answer must not land in the cache built since.
+        self._cache_generation = cache_generation()
 
     @property
     def settings(self) -> Settings:
@@ -238,15 +246,19 @@ class SearchCore:
                 so a caller charging a token quota charges nothing for it; the
                 result's own cost still reports the original spend.
         """
-        cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
-        # Building the key costs a get_stats() round-trip, so skip it when the
-        # cache is off.
-        cache_key = (
-            self._cache_key(query, ui_filters, asker)
-            if self._settings.SEARCH_CACHE_TTL_SECONDS > 0
-            else None
-        )
-        if cache_key is not None:
+        # A core retired by a settings save must not build the cache (it would
+        # fix the old TTL into it) nor read or fill it.
+        cache = None
+        cache_key = None
+        if (
+            self._settings.SEARCH_CACHE_TTL_SECONDS > 0
+            and self._cache_generation == cache_generation()
+        ):
+            cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
+            # Building the key costs a get_stats() round-trip, so only do it
+            # when the cache is on.
+            cache_key = self._cache_key(query, ui_filters, asker)
+        if cache is not None and cache_key is not None:
             cached = cache.get(cache_key)
             if cached is not None:
                 log.info(
@@ -260,7 +272,7 @@ class SearchCore:
 
         result = self._answer_uncached(query, ui_filters, asker, on_event=on_event)
 
-        if cache_key is not None and is_cacheable(result):
+        if cache is not None and cache_key is not None and is_cacheable(result):
             cache.put(cache_key, result)
         return result
 

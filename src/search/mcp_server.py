@@ -142,11 +142,11 @@ class _BearerAuthMiddleware:
             app_db.close()
 
 
-class _SseAcceptOnGetMiddleware:
-    """Answer 406 to a GET whose Accept header does not name ``text/event-stream``.
+class _GetNotAllowedMiddleware:
+    """Answer 405 to every GET on the endpoint.
 
-    The transport also takes ``*/*`` there, and in stateless mode the GET stream
-    it then opens never sends anything or ends, so a plain GET would hang.
+    The server is stateless, so the GET stream the transport would open never
+    sends anything or ends and the connection would be held open for good.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -154,29 +154,21 @@ class _SseAcceptOnGetMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["method"] == "GET":
-            accept = Request(scope).headers.get("accept", "")
-            if not any(
-                entry.split(";")[0].strip().lower() == "text/event-stream"
-                for entry in accept.split(",")
-            ):
-                response = Response(
-                    content=json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": "server-error",
-                            "error": {
-                                "code": -32600,
-                                "message": "Not Acceptable: Client must accept "
-                                "text/event-stream",
-                            },
-                        },
-                        separators=(",", ":"),
-                    ),
-                    status_code=406,
-                    media_type="application/json",
-                )
-                await response(scope, receive, send)
-                return
+            response = Response(
+                content=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "server-error",
+                        "error": {"code": -32000, "message": "Method Not Allowed"},
+                    },
+                    separators=(",", ":"),
+                ),
+                status_code=405,
+                headers={"Allow": "POST"},
+                media_type="application/json",
+            )
+            await response(scope, receive, send)
+            return
         await self._app(scope, receive, send)
 
 
@@ -267,7 +259,7 @@ class _McpApp:
             ),
         )
         self._asgi_app: ASGIApp = _BearerAuthMiddleware(
-            _SseAcceptOnGetMiddleware(starlette_app), app_db_path
+            _GetNotAllowedMiddleware(starlette_app), app_db_path
         )
 
     @property

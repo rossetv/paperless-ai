@@ -36,7 +36,7 @@ log = structlog.get_logger(__name__)
 
 def register_taxonomy_routes(
     router: APIRouter,
-    settings: Settings,
+    current_settings: Callable[[], Settings],
     *,
     paperless_factory: Callable[[Settings], PaperlessClient],
 ) -> None:
@@ -48,7 +48,7 @@ def register_taxonomy_routes(
     )
     async def list_correspondents() -> list[TaxonomyItemResponse]:
         """Return all Paperless correspondents with their document counts."""
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             items = await run_blocking(paperless.list_correspondents)
         finally:
@@ -62,7 +62,7 @@ def register_taxonomy_routes(
     )
     async def create_correspondent(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
         """Create a new Paperless correspondent and return it."""
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             created = await run_blocking(
                 lambda: paperless.create_correspondent(body.name)
@@ -77,7 +77,7 @@ def register_taxonomy_routes(
     )
     async def list_document_types() -> list[TaxonomyItemResponse]:
         """Return all Paperless document types with their document counts."""
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             items = await run_blocking(paperless.list_document_types)
         finally:
@@ -91,7 +91,7 @@ def register_taxonomy_routes(
     )
     async def create_document_type(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
         """Create a new Paperless document type and return it."""
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             created = await run_blocking(
                 lambda: paperless.create_document_type(body.name)
@@ -106,7 +106,7 @@ def register_taxonomy_routes(
     )
     async def list_tags() -> list[TaxonomyItemResponse]:
         """Return all Paperless tags with their document counts."""
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             items = await run_blocking(paperless.list_tags)
         finally:
@@ -120,7 +120,7 @@ def register_taxonomy_routes(
     )
     async def create_tag(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
         """Create a new Paperless tag and return it."""
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             created = await run_blocking(lambda: paperless.create_tag(body.name))
         finally:

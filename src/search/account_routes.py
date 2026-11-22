@@ -19,13 +19,14 @@ event loop.
 from __future__ import annotations
 
 import sqlite3
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Annotated, cast
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 
 from appdb import users as user_store
 from appdb.passwords import hash_password
+from common.config import current_settings
 from appdb.users import Role, UsernameTakenError, UserStatus
 from search.accounts import (
     GuardError,
@@ -59,12 +60,26 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# The app database stores ids as SQLite INTEGER; a larger one can name no row.
+_MAX_ROW_ID = 2**63 - 1
+
+
+def _remember_ttl(app_db_path: str, startup: Settings) -> int:
+    """The live ``SEARCH_SESSION_TTL``, or the startup value if settings can't load."""
+    try:
+        return current_settings(app_db_path).SEARCH_SESSION_TTL
+    except Exception:
+        log.warning("session_ttl_settings_unavailable", exc_info=True)
+        return startup.SEARCH_SESSION_TTL
+
 
 def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
     """Build the account ``/api`` router.
 
-    *settings* supplies ``SEARCH_SESSION_TTL`` for the "keep me signed in"
-    cookie; *store_reader* backs ``GET /api/stats/public``.
+    The "keep me signed in" cookie reads ``SEARCH_SESSION_TTL`` from the live
+    settings on each login, so a Settings save applies without a restart.
+    *settings* supplies the lifetime if the live settings cannot be loaded;
+    *store_reader* backs ``GET /api/stats/public``.
     """
     router = APIRouter()
 
@@ -93,6 +108,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
         request: Request,
         response: Response,
         app_db: sqlite3.Connection = Depends(get_app_db),
+        state: AppState = Depends(get_app_state),
     ) -> UserEnvelope:
         """Verify credentials and set the session cookie.
 
@@ -105,7 +121,10 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
             request,
             response,
             app_db,
-            remember_ttl_seconds=settings.SEARCH_SESSION_TTL,
+            # Only read when "remember" is set, so a plain login loads no settings.
+            remember_ttl_seconds=(
+                _remember_ttl(state.app_db_path, settings) if body.remember else 0
+            ),
         )
 
     @router.post("/api/auth/logout", status_code=204)
@@ -153,7 +172,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
 
     @router.patch("/api/users/{user_id}")
     def update_user(
-        user_id: int,
+        user_id: Annotated[int, Path(le=_MAX_ROW_ID)],
         body: UpdateUserRequest,
         request: Request,
         app_db: sqlite3.Connection = Depends(get_app_db),
@@ -175,7 +194,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
 
     @router.delete("/api/users/{user_id}", status_code=204)
     def delete_user(
-        user_id: int,
+        user_id: Annotated[int, Path(le=_MAX_ROW_ID)],
         app_db: sqlite3.Connection = Depends(get_app_db),
         admin: CurrentUser = Depends(require_admin),
     ) -> Response:
@@ -242,6 +261,7 @@ def _login(
         raise HTTPException(
             status_code=429,
             detail="Too many failed login attempts. Try again later.",
+            headers={"Retry-After": str(throttle.retry_after_seconds(attempt_key))},
         )
 
     try:

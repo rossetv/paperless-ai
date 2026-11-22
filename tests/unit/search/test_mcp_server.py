@@ -6,7 +6,6 @@ round-trip; auth tests use Starlette's ``TestClient`` against the ASGI app.
 
 from __future__ import annotations
 
-import asyncio
 import importlib.metadata
 import json
 from unittest.mock import MagicMock
@@ -14,7 +13,6 @@ from unittest.mock import MagicMock
 import pytest
 from starlette.testclient import TestClient
 
-from search.mcp_server import _SseAcceptOnGetMiddleware
 from search.mcp_server import build_mcp_app as _real_build_mcp_app
 from search.models import SearchResult
 from search.offload import LazySemaphore
@@ -438,9 +436,9 @@ def test_api_key_without_mcp_scope_is_rejected_with_401() -> None:
     assert response.status_code == 401
 
 
-@pytest.mark.parametrize("accept", ["*/*", "text/event-stream-x"])
-def test_authenticated_get_not_accepting_event_stream_gets_406(accept: str) -> None:
-    """A GET that does not name exactly ``text/event-stream`` is refused at once."""
+@pytest.mark.parametrize("accept", ["text/event-stream", "*/*"])
+def test_authenticated_get_is_answered_405_with_allow_post(accept: str) -> None:
+    """The endpoint is stateless, so a GET is refused at once, not held open."""
     core = _make_core()
     settings = _make_settings()
     app_db_path, raw_key = _app_db_with_key(scopes="mcp")
@@ -453,30 +451,18 @@ def test_authenticated_get_not_accepting_event_stream_gets_406(accept: str) -> N
         headers={"Authorization": f"Bearer {raw_key}", "Accept": accept},
     )
 
-    assert response.status_code == 406
-    assert "text/event-stream" in response.json()["error"]["message"]
+    assert response.status_code == 405
+    assert response.headers["allow"] == "POST"
 
 
-def test_event_stream_accept_is_matched_case_insensitively() -> None:
-    """``Accept: Text/Event-Stream`` passes the GET check; it is not answered 406."""
-    reached: list[bool] = []
+def test_unauthenticated_get_is_still_refused_with_401() -> None:
+    """Auth runs before the GET refusal, so a stranger learns nothing more."""
+    asgi_app = build_mcp_app(_make_core(), _make_settings(), _app_db_path())
+    client = TestClient(asgi_app, raise_server_exceptions=False)
 
-    async def inner(scope: object, receive: object, send: object) -> None:
-        reached.append(True)
+    response = client.get("/mcp", headers={"Accept": "text/event-stream"})
 
-    middleware = _SseAcceptOnGetMiddleware(inner)
-    scope = {
-        "type": "http",
-        "method": "GET",
-        "headers": [(b"accept", b"Text/Event-Stream")],
-    }
-
-    async def send(message: object) -> None:
-        pass
-
-    asyncio.run(middleware(scope, None, send))  # type: ignore[arg-type]
-
-    assert reached == [True]
+    assert response.status_code == 401
 
 
 def test_initialize_reports_the_installed_mcp_version() -> None:

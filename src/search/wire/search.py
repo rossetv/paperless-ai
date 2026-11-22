@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from search.dates import normalise_iso_date
 from search.models import NoMatchReason
 from store import SearchFilters
 
@@ -212,8 +213,8 @@ def to_search_filters(filters: FilterRequest | None) -> SearchFilters | None:
     if filters is None:
         return None
     return SearchFilters(
-        date_from=filters.date_from,
-        date_to=filters.date_to,
+        date_from=normalise_iso_date(filters.date_from) if filters.date_from else None,
+        date_to=normalise_iso_date(filters.date_to) if filters.date_to else None,
         correspondent_id=filters.correspondent_id,
         document_type_id=filters.document_type_id,
         tag_ids=tuple(filters.tag_ids),

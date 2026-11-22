@@ -18,6 +18,7 @@ would not be shared across replicas.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import OrderedDict
@@ -181,6 +182,24 @@ class LoginThrottle:
                 self._username_pending.get(key.username, 0) + 1
             )
             return True
+
+    def retry_after_seconds(self, key: AttemptKey) -> int:
+        """Whole seconds until *key* may try again, rounded up, at least 1.
+
+        The longer of the two lockouts counts; with none running (the refusal
+        came from attempts still under way) one second is a fair wait.
+        """
+        now = self._clock()
+        with self._lock:
+            remaining = [
+                record.locked_until - now
+                for record in (
+                    self._records.get(key),
+                    self._username_records.get(key.username),
+                )
+                if record is not None and record.locked_until is not None
+            ]
+        return max(1, math.ceil(max(remaining, default=0)))
 
     def _is_locked(self, key: AttemptKey, now: float) -> bool:
         """Whether either counter refuses one more attempt. Caller holds the lock."""

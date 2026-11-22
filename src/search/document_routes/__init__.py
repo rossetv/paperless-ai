@@ -30,7 +30,7 @@ def _default_paperless_factory(settings: Settings) -> PaperlessClient:
 
 
 def build_document_router(
-    settings: Settings,
+    current_settings: Callable[[], Settings],
     *,
     store_reader: StoreReader,
     paperless_factory: Callable[[Settings], PaperlessClient] = (
@@ -39,16 +39,19 @@ def build_document_router(
 ) -> APIRouter:
     """Build the ``/api`` document and search-history router.
 
-    *paperless_factory* builds the :class:`PaperlessClient` for a request;
-    tests inject a stub.
+    *current_settings* is called per request, so a saved Paperless URL, token
+    or tag id applies without a restart. *paperless_factory* builds the
+    :class:`PaperlessClient` for a request; tests inject a stub.
     """
     router = APIRouter()
-    register_proxy_routes(router, settings, paperless_factory=paperless_factory)
+    register_proxy_routes(router, current_settings, paperless_factory=paperless_factory)
     register_document_routes(
         router,
-        settings,
+        current_settings,
         store_reader=store_reader,
         paperless_factory=paperless_factory,
     )
-    register_taxonomy_routes(router, settings, paperless_factory=paperless_factory)
+    register_taxonomy_routes(
+        router, current_settings, paperless_factory=paperless_factory
+    )
     return router

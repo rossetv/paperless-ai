@@ -233,6 +233,7 @@ def test_repeated_failures_lock_the_login_with_429(tmp_path: Path) -> None:
         blocked = login(client, username="alice", password="wrong-password")
         assert blocked.status_code == 429
         assert SESSION_COOKIE_NAME not in blocked.cookies
+        assert 1 <= int(blocked.headers["Retry-After"]) <= 900
     finally:
         store_reader.close()
         app_db.close()
@@ -411,6 +412,26 @@ def test_non_remember_login_sets_an_eight_hour_cookie(tmp_path: Path) -> None:
         )
         assert response.status_code == 200, response.text
         assert "Max-Age=28800" in _set_cookie_header(response)
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_login_accepts_a_password_shorter_than_the_creation_minimum(
+    tmp_path: Path,
+) -> None:
+    """An account made when the floor was lower can still sign in."""
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_user(app_db, username="alice", password="ninechars", role="member")
+        client = build_account_client(settings, app_db, store_reader)
+        assert login(client, username="alice", password="ninechars").status_code == 200
+        assert login(client, username="alice", password="").status_code == 422
+        wrong = login(client, username="alice", password="wrongpw9c")
+        assert wrong.status_code == 401
     finally:
         store_reader.close()
         app_db.close()

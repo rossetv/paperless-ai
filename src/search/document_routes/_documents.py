@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from starlette.responses import Response
 
 from appdb import recent_searches as recent_search_store
@@ -47,10 +47,13 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# The index stores ids as SQLite INTEGER; a larger one can name no document.
+DocumentId = Annotated[int, Path(le=2**63 - 1)]
+
 
 def register_document_routes(
     router: APIRouter,
-    settings: Settings,
+    current_settings: Callable[[], Settings],
     *,
     store_reader: StoreReader,
     paperless_factory: Callable[[Settings], PaperlessClient],
@@ -62,7 +65,7 @@ def register_document_routes(
         dependencies=[Depends(require_api_scope)],
         response_model=DocumentSummaryResponse,
     )
-    async def document_summary(document_id: int) -> DocumentSummaryResponse:
+    async def document_summary(document_id: DocumentId) -> DocumentSummaryResponse:
         """Return the summary for one document; 404 when it is not indexed.
 
         Backs the shareable ``/documents/{id}`` SPA route.
@@ -72,6 +75,7 @@ def register_document_routes(
         )
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
+        settings = await run_blocking(current_settings)
         paperless_url = (
             f"{settings.PAPERLESS_PUBLIC_URL.rstrip('/')}/documents/{document_id}/"
         )
@@ -90,7 +94,7 @@ def register_document_routes(
         dependencies=[Depends(require_api_scope_member)],
     )
     async def patch_document(
-        document_id: int,
+        document_id: DocumentId,
         body: DocumentPatchRequest,
     ) -> DocumentSummaryResponse:
         """Update editable document metadata in Paperless (Member or above).
@@ -100,7 +104,11 @@ def register_document_routes(
         frontend hides this with an optimistic update.
         """
         return await _patch_document(
-            document_id, body, settings, store_reader, paperless_factory
+            document_id,
+            body,
+            await run_blocking(current_settings),
+            store_reader,
+            paperless_factory,
         )
 
     @router.post(
@@ -108,8 +116,9 @@ def register_document_routes(
         status_code=202,
         dependencies=[Depends(require_api_scope_member)],
     )
-    async def reclassify_document(document_id: int) -> Response:
+    async def reclassify_document(document_id: DocumentId) -> Response:
         """Re-queue this document for classification (Member or above)."""
+        settings = await run_blocking(current_settings)
         await _swap_pipeline_tag(
             document_id,
             settings,
@@ -124,12 +133,13 @@ def register_document_routes(
         status_code=202,
         dependencies=[Depends(require_api_scope_member)],
     )
-    async def retranscribe_document(document_id: int) -> Response:
+    async def retranscribe_document(document_id: DocumentId) -> Response:
         """Re-queue this document for OCR (Member or above).
 
         OCR usually triggers classification too, so this re-runs the full
         pipeline.
         """
+        settings = await run_blocking(current_settings)
         await _swap_pipeline_tag(
             document_id,
             settings,
@@ -144,12 +154,12 @@ def register_document_routes(
         status_code=204,
         dependencies=[Depends(require_admin)],
     )
-    async def delete_document(document_id: int) -> Response:
+    async def delete_document(document_id: DocumentId) -> Response:
         """Delete the document from Paperless (admin only).
 
         The search index drops it on the next reconcile.
         """
-        paperless = paperless_factory(settings)
+        paperless = paperless_factory(await run_blocking(current_settings))
         try:
             await run_blocking(lambda: paperless.delete_document(document_id))
         finally:

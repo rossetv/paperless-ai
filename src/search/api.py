@@ -46,6 +46,7 @@ from search.appstate import AppState, attach_app_state
 from search.body_limit import BodyLimitMiddleware
 from search.deps import get_current_user, require_api_scope, require_api_scope_member
 from search.document_routes import build_document_router
+from search.fetch_site import FetchSiteMiddleware
 from search.index_routes import build_index_router
 from search.mcp_server import build_mcp_app
 from search.offload import LazySemaphore
@@ -221,8 +222,8 @@ def register_paperless_exception_handlers(app: FastAPI) -> None:
 
     Upstream 404 and 409 pass through; 5xx, 401, 403 and network errors become
     502 (the server's own token was rejected or lacks permission, which the
-    browser must not read as "log in"). The streaming PDF/thumbnail handlers handle their
-    own errors because they must close their ``httpx`` client first.
+    browser must not read as "log in"). The streaming PDF/thumbnail handlers answer a 404
+    and other upstream statuses themselves, and pass a 401 or 403 on to these handlers.
     """
 
     @app.exception_handler(httpx.HTTPStatusError)
@@ -332,6 +333,7 @@ def create_app(
     # The last one added is outermost: security headers wrap everything,
     # including /mcp, the SPA and the body limit's own 413.
     app.add_middleware(BodyLimitMiddleware)
+    app.add_middleware(FetchSiteMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     register_paperless_exception_handlers(app)
@@ -360,6 +362,12 @@ def create_app(
 
     _seed_core_cache(app_db_path, core)
 
+    def current_settings() -> Settings:
+        live_core = _resolve_search_core(app_db_path)
+        # Until a settings save replaces the startup core, the live settings are
+        # the ones this app was built with; a caller may pass them apart from it.
+        return settings if live_core is core else live_core.settings
+
     # An exact-path Route, not app.mount: a Mount only serves "/mcp/..." and the
     # SPA catch-all would 405 the bare "/mcp" instead of Starlette redirecting.
     # Registered before the other routers and the catch-all so it wins.
@@ -367,7 +375,12 @@ def create_app(
     app.include_router(build_account_router(settings, store_reader))
     app.include_router(build_settings_router(settings))
     app.include_router(build_api_key_router())
-    app.include_router(build_document_router(settings, store_reader=store_reader))
+    app.include_router(
+        build_document_router(
+            current_settings,
+            store_reader=store_reader,
+        )
+    )
     app.include_router(build_index_router(settings, store_reader))
     app.include_router(
         build_api_router(
@@ -378,6 +391,7 @@ def create_app(
             require_member=require_api_scope_member,
             get_current_user=get_current_user,
             search_semaphore=search_semaphore,
+            current_settings=current_settings,
         )
     )
 
@@ -463,14 +477,16 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
         # reads could stamp a newer version onto an older core and pin the stale
         # core in the cache.
         cache_version, settings = current_settings_with_version(app_db_path)
+        # A config change can alter the answer to an identical query (model,
+        # top-k, prompts, ...), and the result cache is keyed only on the index
+        # version, so drop it rather than serve pre-change answers until the TTL.
+        # Dropped before the build: a core stamps the cache generation it is
+        # built under and uses the cache only while that generation holds.
+        reset_search_result_cache()
         setup_libraries(settings)
         llm_limiter.init(settings.LLM_MAX_CONCURRENT)
         core, _store_reader = _resolve_components(settings, None, None)
         _CORE_CACHE[app_db_path] = (cache_version, core)
-        # A config change can alter the answer to an identical query (model,
-        # top-k, prompts, ...), and the result cache is keyed only on the index
-        # version, so drop it rather than serve pre-change answers until the TTL.
-        reset_search_result_cache()
         return core
 
 

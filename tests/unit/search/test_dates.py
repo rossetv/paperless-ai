@@ -65,3 +65,8 @@ def test_bare_year_resolves_to_the_full_year() -> None:
 def test_valid_iso_date_still_works_as_single_day() -> None:
     """A valid ISO date in text resolves to a single-day range (Rule 1 wins)."""
     assert extract_date_range("2025-04-25", T) == ("2025-04-25", "2025-04-25")
+
+
+def test_normalise_iso_date_returns_the_canonical_day_for_other_iso_spellings() -> None:
+    result = normalise_iso_date("2024-W03-1")
+    assert result == "2024-01-15"

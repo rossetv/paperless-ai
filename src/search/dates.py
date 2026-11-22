@@ -64,7 +64,8 @@ _RE_THIS_YEAR = re.compile(r"\bthis\s+year\b", re.IGNORECASE)
 def normalise_iso_date(s: str) -> str | None:
     """Return the ``YYYY-MM-DD`` date portion of *s*, or ``None`` if invalid.
 
-    Accepts a bare ``YYYY-MM-DD`` string or a full ISO-8601 timestamp
+    Always returns the canonical form, so alternative ISO spellings such as a
+    week date become ``YYYY-MM-DD``. Accepts a bare ``YYYY-MM-DD`` string or a full ISO-8601 timestamp
     (``YYYY-MM-DDTHH:MM:SS±HH:MM``); a calendar error such as month 13
     returns ``None``.
 
@@ -81,12 +82,10 @@ def normalise_iso_date(s: str) -> str | None:
     """
     if len(s) < 10:
         return None
-    date_part = s[:10]
     try:
-        datetime.date.fromisoformat(date_part)
+        return datetime.date.fromisoformat(s[:10]).isoformat()
     except ValueError:
         return None
-    return date_part
 
 
 def extract_date_range(

@@ -51,9 +51,25 @@ def test_login_request_rejects_a_short_username() -> None:
         LoginRequest(username="ab", password="password-1234")
 
 
-def test_login_request_rejects_a_short_password() -> None:
+def test_login_request_accepts_a_short_password() -> None:
+    assert LoginRequest(username="alice", password="ninechars").password == "ninechars"
+
+
+def test_login_request_accepts_a_very_long_password() -> None:
+    long_password = "x" * 5000
+    assert (
+        LoginRequest(username="alice", password=long_password).password == long_password
+    )
+
+
+def test_login_request_rejects_an_empty_password() -> None:
     with pytest.raises(ValidationError):
-        LoginRequest(username="alice", password="short")
+        LoginRequest(username="alice", password="")
+
+
+def test_setup_request_still_rejects_a_short_password() -> None:
+    with pytest.raises(ValidationError):
+        SetupRequest(token="t", username="alice", password="ninechars")
 
 
 def test_setup_request_accepts_a_valid_body() -> None:

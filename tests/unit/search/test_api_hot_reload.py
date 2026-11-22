@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
+import pytest
+
 
 def test_search_core_is_rebuilt_when_config_version_moves(tmp_path) -> None:
     """The per-request accessor rebuilds the search core on a config change,
@@ -114,6 +116,52 @@ def test_result_cache_is_dropped_when_config_version_moves(tmp_path) -> None:
         c.close()
         _resolve_search_core(app_db)
         assert result_cache._search_result_cache is None
+
+
+def test_core_rebuilt_on_config_change_uses_the_fresh_result_cache(
+    tmp_path,
+) -> None:
+    """The core built for a new config belongs to the cache generation that
+    follows the drop, so its answers are cached again."""
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from common.config import _SETTINGS_CACHE
+    from search import cache as result_cache
+    from search.api import _reset_core_cache_for_test, _resolve_search_core
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    conn.close()
+    env = {
+        "APP_DB_PATH": app_db,
+        "INDEX_DB_PATH": str(tmp_path / "index.db"),
+        "PAPERLESS_TOKEN": "t",
+        "OPENAI_API_KEY": "k",
+    }
+    built_under: list[int] = []
+
+    def fake_resolve_components(settings, core, store_reader):
+        del settings, core, store_reader
+        built_under.append(result_cache.cache_generation())
+        return "core", "store_reader"
+
+    with (
+        patch.dict(os.environ, env, clear=True),
+        patch("search.api._resolve_components", side_effect=fake_resolve_components),
+        patch("search.api.setup_libraries"),
+        patch("search.api.llm_limiter"),
+    ):
+        _SETTINGS_CACHE.pop(app_db, None)
+        _reset_core_cache_for_test()
+        _resolve_search_core(app_db)
+        c = connect(app_db)
+        config_store.set_value(c, "SEARCH_TOP_K", "25")
+        c.close()
+        _resolve_search_core(app_db)
+
+    assert built_under[-1] == result_cache.cache_generation()
 
 
 def test_resolve_search_core_reinitialises_openai_client_on_config_change(
@@ -235,3 +283,102 @@ def test_current_settings_cache_key_matches_get_all_snapshot(tmp_path) -> None:
             "Settings cached under a version higher than the data they were "
             "built from — the race window is open."
         )
+
+
+@pytest.mark.parametrize(
+    ("env_public_url", "saved", "expected_url", "expected_token"),
+    [
+        # Saved in Settings after startup.
+        (
+            None,
+            {"PAPERLESS_PUBLIC_URL": "https://new.example", "PAPERLESS_TOKEN": "new"},
+            "https://new.example/",
+            "new",
+        ),
+        # Set only in the environment, kept across an unrelated save.
+        ("https://env.example", {"SEARCH_TOP_K": "25"}, "https://env.example/", "old"),
+        # A fresh install with nothing saved yet.
+        ("https://env.example", {}, "https://env.example/", "old"),
+    ],
+)
+def test_document_routes_use_the_current_paperless_settings(
+    tmp_path, env_public_url, saved, expected_url, expected_token
+) -> None:
+    """The document, Library and taxonomy routes use the Paperless URL and token
+    in force now, from the environment or a save, without a restart."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from fastapi.testclient import TestClient
+
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from appdb.users import create as create_user
+    from common.config import _SETTINGS_CACHE, current_settings
+    from search.api import _reset_core_cache_for_test, create_app
+    from store.models import DocumentPage, DocumentSummary
+    from tests.helpers.search import mint_api_key
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    user = create_user(conn, username="m", password_hash="h", role="member")
+    raw_key = mint_api_key(conn, owner_user_id=user.id, scopes="api")
+    conn.close()
+    env = {
+        "APP_DB_PATH": app_db,
+        "INDEX_DB_PATH": str(tmp_path / "index.db"),
+        "PAPERLESS_URL": "http://paperless-internal:8000",
+        "PAPERLESS_TOKEN": "old",
+        "OPENAI_API_KEY": "k",
+    }
+    if env_public_url is not None:
+        env["PAPERLESS_PUBLIC_URL"] = env_public_url
+    summary = DocumentSummary(
+        id=42,
+        title="Invoice",
+        correspondent=None,
+        document_type=None,
+        tags=(),
+        created=None,
+        page_count=None,
+    )
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = summary
+    store_reader.list_documents.return_value = DocumentPage(
+        documents=(summary,), total=1, offset=0, limit=24
+    )
+    paperless_class = MagicMock()
+    paperless_class.return_value.list_tags.return_value = []
+
+    with (
+        patch.dict(os.environ, env, clear=True),
+        patch(
+            "search.api._resolve_components",
+            side_effect=lambda s, c, r: (c or SimpleNamespace(settings=s), r),
+        ),
+        patch("search.api.setup_libraries"),
+        patch("search.api.llm_limiter"),
+        patch("search.document_routes.PaperlessClient", paperless_class),
+    ):
+        _SETTINGS_CACHE.pop(app_db, None)
+        _reset_core_cache_for_test()
+        # As main() does: startup settings from the environment and the saved
+        # table, and a core built from them.
+        app = create_app(current_settings(app_db), store_reader=store_reader)
+        client = TestClient(app, base_url="https://testserver")
+        client.headers["Authorization"] = f"Bearer {raw_key}"
+
+        if saved:
+            c = connect(app_db)
+            config_store.set_many(c, saved)
+            c.close()
+
+        document = client.get("/api/documents/42").json()
+        library = client.get("/api/documents").json()
+        assert client.get("/api/tags").status_code == 200
+
+    assert document["paperless_url"].startswith(expected_url)
+    assert library["documents"][0]["paperless_url"].startswith(expected_url)
+    assert paperless_class.call_args.args[0].PAPERLESS_TOKEN == expected_token
