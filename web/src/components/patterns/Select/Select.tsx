@@ -245,7 +245,7 @@ export function Select<T extends string = string>({
                 onMouseMove={(event) => {
                   const last = lastPointer.current;
                   lastPointer.current = { x: event.clientX, y: event.clientY };
-                  if (last && last.x === event.clientX && last.y === event.clientY) return;
+                  if (!last || (last.x === event.clientX && last.y === event.clientY)) return;
                   if (index === highlightedIndex) return;
                   pointerMoved.current = true;
                   setHighlightedIndex(index);

@@ -185,7 +185,7 @@ export function FilterableListbox<T extends string | number = string>({
   function highlightFromPointer(event: React.MouseEvent, index: number): void {
     const last = lastPointer.current;
     lastPointer.current = { x: event.clientX, y: event.clientY };
-    if (last && last.x === event.clientX && last.y === event.clientY) return;
+    if (!last || (last.x === event.clientX && last.y === event.clientY)) return;
     if (index === highlight) return;
     pointerMoved.current = true;
     setHighlight(index);
