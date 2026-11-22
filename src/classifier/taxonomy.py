@@ -51,7 +51,8 @@ def _match_item(
 ) -> PaperlessItem | None:
     """Find a Paperless item by normalised name, optionally allowing substrings.
 
-    Substring matching lets a *"Revolut Ltd"* correspondent find *"Revolut"*.
+    Substring matching lets a *"Neon"* correspondent find *"Neon Energy"*; it
+    compares whole words only, so *"Eon"* does not.
     """
     normalised = normaliser(name)
     if not normalised:
@@ -65,8 +66,10 @@ def _match_item(
     if matched:
         return matched
     if allow_substring:
+        padded = f" {normalised} "
         for key, item in mapping.items():
-            if normalised in key or key in normalised:
+            padded_key = f" {key} "
+            if padded in padded_key or padded_key in padded:
                 return item
     return None
 

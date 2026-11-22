@@ -125,6 +125,26 @@ class TestGetOrCreateCorrespondentId:
 
         assert result == 7
 
+    @pytest.mark.parametrize(
+        ("existing", "name"),
+        [("Neon Energy", "Eon"), ("AS", "Vasco"), ("EE", "Deere")],
+    )
+    def test_partial_word_does_not_match(self, existing, name):
+        cache = _make_cache(correspondents=[_corr(7, existing)])
+        cache.refresh()
+        cache._client.create_correspondent.side_effect = None
+        cache._client.create_correspondent.return_value = {"id": 99, "name": name}
+
+        result = cache.get_or_create_correspondent_id(name)
+
+        assert result == 99
+
+    def test_whole_word_containment_matches(self):
+        cache = _make_cache(correspondents=[_corr(7, "Neon Energy")])
+        cache.refresh()
+
+        assert cache.get_or_create_correspondent_id("Neon") == 7
+
     def test_creates_when_not_found(self):
         cache = _make_cache(correspondents=[])
         cache.refresh()
