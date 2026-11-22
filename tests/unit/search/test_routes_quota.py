@@ -6,13 +6,14 @@ stubbed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import search.routes as routes
@@ -199,3 +200,40 @@ async def test_stream_refused_at_the_slot_ends_with_a_quota_error_frame(
     assert [(line["type"], line["kind"]) for line in lines] == [("error", "quota")]
     core.answer.assert_not_called()
     assert not semaphore.acquire().locked()  # type: ignore[attr-defined]
+
+
+@pytest.mark.anyio
+async def test_waiting_search_is_refused_when_the_first_fills_the_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+    real_record = routes.record_usage
+
+    async def _slow_record(**kwargs: Any) -> None:
+        await asyncio.sleep(0.05)
+        await real_record(**kwargs)
+
+    monkeypatch.setattr(routes, "record_usage", _slow_record)
+    first, second = _fresh_core(), _fresh_core()
+    first.answer.return_value = make_search_result(
+        stats=make_search_stats(total_tokens=_QUOTA)
+    )
+    semaphore = LazySemaphore(1)
+
+    def _run(core: MagicMock) -> Any:
+        return routes._search(
+            SearchRequest(query="gas bill"),
+            core,
+            semaphore,
+            asker=None,
+            app_db_path=path,
+            api_key_id=key_id,
+            quota=_QUOTA,
+        )
+
+    results = await asyncio.gather(_run(first), _run(second), return_exceptions=True)
+
+    assert not isinstance(results[0], BaseException)
+    assert isinstance(results[1], HTTPException)
+    assert results[1].status_code == 429
+    second.answer.assert_not_called()

@@ -394,12 +394,13 @@ async def _search(
             raise HTTPException(
                 status_code=503, detail="The search index is not ready"
             ) from exc
-    await record_usage(
-        api_key_id=api_key_id,
-        quota=quota,
-        tokens=0 if cache_hits else result.stats.cost.tokens.total,
-        app_db_path=app_db_path,
-    )
+        # Recorded before the slot is freed so the next waiter's check sees it.
+        await record_usage(
+            api_key_id=api_key_id,
+            quota=quota,
+            tokens=0 if cache_hits else result.stats.cost.tokens.total,
+            app_db_path=app_db_path,
+        )
     return to_search_response(result)
 
 
