@@ -1,4 +1,5 @@
-"""Integration tests for role gates and session revocation on suspend or delete."""
+"""Integration tests for role gates and session revocation on suspend, delete or
+password reset."""
 
 from __future__ import annotations
 
@@ -103,6 +104,71 @@ def test_deleting_a_user_kills_their_live_session(tmp_path: Path) -> None:
         assert deleted.status_code == 204
 
         assert victim_client.get("/api/auth/me").status_code == 401
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_resetting_a_password_kills_the_users_live_sessions(tmp_path: Path) -> None:
+    """An admin resets a logged-in member's password; the old cookie stops working."""
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_admin(app_db, username="boss", password="boss-password")
+        member = seed_user(
+            app_db, username="alice", password="alice-password", role="member"
+        )
+
+        member_client = build_account_client(settings, app_db, store_reader)
+        assert (
+            login(member_client, username="alice", password="alice-password")
+        ).status_code == 200
+        admin_client = build_account_client(settings, app_db, store_reader)
+        assert (
+            login(admin_client, username="boss", password="boss-password")
+        ).status_code == 200
+
+        patched = admin_client.patch(
+            f"/api/users/{member.id}", json={"password": "a-brand-new-password"}
+        )
+        assert patched.status_code == 200, patched.text
+
+        assert member_client.get("/api/auth/me").status_code == 401
+        assert admin_client.get("/api/auth/me").status_code == 200
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_resetting_your_own_password_keeps_only_the_current_session(
+    tmp_path: Path,
+) -> None:
+    """An admin resets their own password: this session lives, their others end."""
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        boss = seed_admin(app_db, username="boss", password="boss-password")
+
+        current = build_account_client(settings, app_db, store_reader)
+        assert (
+            login(current, username="boss", password="boss-password")
+        ).status_code == 200
+        elsewhere = build_account_client(settings, app_db, store_reader)
+        assert (
+            login(elsewhere, username="boss", password="boss-password")
+        ).status_code == 200
+
+        patched = current.patch(
+            f"/api/users/{boss.id}", json={"password": "a-brand-new-password"}
+        )
+        assert patched.status_code == 200, patched.text
+
+        assert current.get("/api/auth/me").status_code == 200
+        assert elsewhere.get("/api/auth/me").status_code == 401
     finally:
         store_reader.close()
         app_db.close()

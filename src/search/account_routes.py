@@ -155,14 +155,23 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
     def update_user(
         user_id: int,
         body: UpdateUserRequest,
+        request: Request,
         app_db: sqlite3.Connection = Depends(get_app_db),
         admin: CurrentUser = Depends(require_admin),
     ) -> UserEnvelope:
         """Partially update a user (admin only).
 
-        404 when the user is unknown; 409 when a guard rejects the change.
+        A password reset ends the user's sessions, all but the caller's own
+        when admins reset their own password. 404 when the user is unknown; 409
+        when a guard rejects the change.
         """
-        return _update_user(user_id, body, admin, app_db)
+        return _update_user(
+            user_id,
+            body,
+            admin,
+            app_db,
+            actor_session_token=request.cookies.get(SESSION_COOKIE_NAME),
+        )
 
     @router.delete("/api/users/{user_id}", status_code=204)
     def delete_user(
@@ -327,6 +336,8 @@ def _update_user(
     body: UpdateUserRequest,
     actor: CurrentUser,
     app_db: sqlite3.Connection,
+    *,
+    actor_session_token: str | None,
 ) -> UserEnvelope:
     """404 on an unknown user, else apply the guarded atomic update.
 
@@ -350,6 +361,7 @@ def _update_user(
             role=cast("Role | None", body.role),
             status=cast("UserStatus | None", body.status),
             password_hash=password_hash,
+            actor_session_token=actor_session_token,
         )
     except GuardError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
