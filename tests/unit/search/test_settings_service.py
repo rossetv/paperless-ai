@@ -246,3 +246,23 @@ def test_validate_accepts_ollama_embeddings_with_a_local_model() -> None:
         environ=_SECRETS,
     )
     assert changed == {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS"}
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_view_treats_a_blank_environment_value_as_the_default(blank: str) -> None:
+    view = {
+        v.key: v for v in view_settings(config_table={}, environ={"LOG_LEVEL": blank})
+    }
+
+    assert view["LOG_LEVEL"].effective_value is None
+    assert view["LOG_LEVEL"].source == "default"
+
+
+def test_view_keeps_a_blank_environment_value_where_blank_is_a_value() -> None:
+    view = {
+        v.key: v
+        for v in view_settings(config_table={}, environ={"OCR_REFUSAL_MARKERS": ""})
+    }
+
+    assert view["OCR_REFUSAL_MARKERS"].effective_value == ""
+    assert view["OCR_REFUSAL_MARKERS"].source == "environment"

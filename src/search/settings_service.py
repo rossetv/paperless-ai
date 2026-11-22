@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from appdb.config import BLANK_IS_A_VALUE
 from common.config import (
     CONFIG_KEYS,
     REINDEX_KEYS,
@@ -130,7 +131,7 @@ def view_settings(
         if key in config_table:
             value: str | None = config_table[key]
             source: ValueSource = "database"
-        elif key in environ:
+        elif key in environ and (environ[key].strip() or key in BLANK_IS_A_VALUE):
             value = environ[key]
             source = "environment"
         else:
