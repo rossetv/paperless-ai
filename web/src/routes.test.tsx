@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SetupStatus, MeResponse } from './api/types';
-import { AppRoutes } from './routes';
+import { AppRoutes, returnTarget } from './routes';
 
 // Leaf pages are mocked so routing is tested in isolation.
 vi.mock('./pages/LoginPage', () => ({
@@ -182,6 +182,35 @@ describe('AppRoutes', () => {
       await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
     },
   );
+
+  it.each([
+    ['/library', '/library'],
+    ['/library/document/42?q=a#top', '/library/document/42?q=a#top'],
+    ['/loginx', '/loginx'],
+  ])('returnTarget keeps the in-app path %s', (from, expected) => {
+    expect(returnTarget({ from })).toBe(expected);
+  });
+
+  it.each([
+    '/login',
+    '/login?x',
+    '/login#y',
+    '/login/',
+    'library',
+    '//host',
+    'https://host',
+    '/\\evil.example',
+    '\\\\evil.example',
+    '/a\\b',
+    42,
+    undefined,
+  ])('returnTarget falls back to the root for %s', (from) => {
+    expect(returnTarget({ from })).toBe('/');
+  });
+
+  it.each([null, undefined, 'x', 7])('returnTarget falls back to the root for state %s', (state) => {
+    expect(returnTarget(state)).toBe('/');
+  });
 
   it('ignores a return target given in the query string', async () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));

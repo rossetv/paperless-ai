@@ -75,12 +75,14 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
 /**
  * Where to send a signed-in user who lands on `/login`: the page the guard
  * bounced them from, if router state names an in-app path, else the root.
+ * A backslash is refused because browsers read `/\` like `//`.
  */
-function returnTarget(state: unknown): string {
+export function returnTarget(state: unknown): string {
   const from = (state as { from?: unknown } | null)?.from;
   if (
     typeof from === 'string' &&
     from.startsWith('/') &&
+    !from.includes('\\') &&
     !from.startsWith('//') &&
     !/^\/login(?:[/?#]|$)/.test(from)
   ) {
@@ -175,94 +177,94 @@ function RoutesBody(): React.ReactElement {
     <ErrorBoundary resetKeys={[location.pathname]}>
       <Suspense fallback={<FullPageLoading />}>
         <div ref={content} tabIndex={-1} style={{ outline: 'none' }}>
-        <Routes>
-          <Route
-            path="/setup"
-            element={
-              <BootstrapGate intent="setup">
-                <SetupPage />
-              </BootstrapGate>
-            }
-          />
-          <Route
-            path="/login"
-            element={
-              <BootstrapGate intent="login">
-                <LoginPage />
-              </BootstrapGate>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <RootRoute />
-            }
-          />
-          <Route
-            path="/index"
-            element={
-              <ProtectedRoute>
-                <IndexPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/library"
-            element={
-              <ProtectedRoute>
-                <LibraryPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <RequireAdmin>
-                <SettingsPage />
-              </RequireAdmin>
-            }
-          />
-          <Route
-            path="/settings/users"
-            element={
-              <RequireAdmin>
-                <UsersPage />
-              </RequireAdmin>
-            }
-          />
-          <Route
-            path="/settings/keys"
-            element={
-              <RequireAdmin>
-                <KeysPage />
-              </RequireAdmin>
-            }
-          />
-          {/* Unknown /settings/* sub-paths stay within Settings rather than
-              bouncing to the Search home. */}
-          <Route
-            path="/settings/*"
-            element={<Navigate to="/settings" replace />}
-          />
-          <Route
-            path="/library/document/:id"
-            element={
-              <ProtectedRoute>
-                <LibraryDocumentPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/document/:id"
-            element={
-              <ProtectedRoute>
-                <DocumentPage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Unknown paths fall back to the root, which re-resolves the gate. */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          <Routes>
+            <Route
+              path="/setup"
+              element={
+                <BootstrapGate intent="setup">
+                  <SetupPage />
+                </BootstrapGate>
+              }
+            />
+            <Route
+              path="/login"
+              element={
+                <BootstrapGate intent="login">
+                  <LoginPage />
+                </BootstrapGate>
+              }
+            />
+            <Route
+              path="/"
+              element={
+                <RootRoute />
+              }
+            />
+            <Route
+              path="/index"
+              element={
+                <ProtectedRoute>
+                  <IndexPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/library"
+              element={
+                <ProtectedRoute>
+                  <LibraryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <RequireAdmin>
+                  <SettingsPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/settings/users"
+              element={
+                <RequireAdmin>
+                  <UsersPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/settings/keys"
+              element={
+                <RequireAdmin>
+                  <KeysPage />
+                </RequireAdmin>
+              }
+            />
+            {/* Unknown /settings/* sub-paths stay within Settings rather than
+                bouncing to the Search home. */}
+            <Route
+              path="/settings/*"
+              element={<Navigate to="/settings" replace />}
+            />
+            <Route
+              path="/library/document/:id"
+              element={
+                <ProtectedRoute>
+                  <LibraryDocumentPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/document/:id"
+              element={
+                <ProtectedRoute>
+                  <DocumentPage />
+                </ProtectedRoute>
+              }
+            />
+            {/* Unknown paths fall back to the root, which re-resolves the gate. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </div>
         <RouteAnnouncer fallback={content} />
       </Suspense>
