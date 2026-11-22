@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import struct
 import tempfile
+import warnings
+import zlib
 from io import BytesIO
 from unittest.mock import patch
 
@@ -588,3 +591,100 @@ class TestDecompressionBomb:
             open_page_source(content, "image/tiff")
 
         assert created and not os.path.exists(created[0])
+
+
+def _header_only_png(width: int, height: int) -> bytes:
+    """A PNG whose header claims *width* x *height* and carries no pixel data."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(kind + data)
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"")
+
+
+class TestImagePixelCap:
+    """An image above the pixel cap is refused outright, even where Pillow only warns."""
+
+    def test_image_above_cap_but_inside_pillows_hard_limit_is_refused(
+        self, monkeypatch
+    ):
+        # 22000 x 22000 is under twice the 250 MP cap, so Pillow only warns.
+        content = _header_only_png(22000, 22000)
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 250_000_000)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(ImageConversionError, match="too large"):
+                open_page_source(content, "image/png", max_side=1600)
+
+    def test_image_at_the_cap_is_accepted(self, monkeypatch):
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+
+        with open_page_source(_make_png_bytes(10, 10), "image/png") as source:
+            assert len(source) == 1
+
+    def test_tiff_frame_above_cap_is_refused_and_cleans_temp_dir(self, monkeypatch):
+        content = _encode(
+            [Image.new("RGB", (10, 10)), Image.new("RGB", (40, 40))], "TIFF"
+        )
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)  # 1600 px: warn only
+        created: list[str] = []
+        real_mkdtemp = tempfile.mkdtemp
+        monkeypatch.setattr(
+            tempfile,
+            "mkdtemp",
+            lambda **kw: created.append(real_mkdtemp(**kw)) or created[-1],
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(ImageConversionError, match="too large"):
+                open_page_source(content, "image/tiff")
+
+        assert created and not os.path.exists(created[0])
+
+
+class TestImageMaxSide:
+    """Image uploads are scaled to max_side like PDF pages are."""
+
+    @pytest.mark.parametrize("mode", ["P", "1", "LA", "RGBA"])
+    def test_large_image_in_every_page_safe_mode_can_be_scaled(self, mode):
+        content = _encode([Image.new(mode, (300, 200))], "PNG")
+
+        with open_page_source(content, "image/png", max_side=100) as source:
+            page = source.load_page(0)
+
+        assert page.size == (100, 67)
+        assert page.mode == mode
+
+    @pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
+    def test_large_image_is_scaled_to_max_side_keeping_aspect(self, fmt):
+        content = _encode([Image.new("RGB", (3000, 2000))], fmt)
+
+        with open_page_source(content, "image/x", max_side=1600) as source:
+            page = source.load_page(0)
+
+        assert max(page.size) == 1600
+        assert page.size[1] == pytest.approx(1600 * 2000 / 3000, abs=1)
+
+    def test_large_multiframe_tiff_frames_are_scaled_to_max_side(self):
+        content = _encode([Image.new("RGB", (400, 800)) for _ in range(2)], "TIFF")
+
+        with open_page_source(content, "image/tiff", max_side=200) as source:
+            sizes = [p.size for p in _load_all(source)]
+
+        assert sizes == [(100, 200), (100, 200)]
+
+    def test_image_within_max_side_is_not_resized(self):
+        with open_page_source(
+            _make_png_bytes(20, 30), "image/png", max_side=1600
+        ) as source:
+            assert source.load_page(0).size == (20, 30)
+
+    def test_without_max_side_the_image_keeps_its_size(self):
+        content = _make_png_bytes(300, 200)
+
+        with open_page_source(content, "image/png") as source:
+            assert source.load_page(0).size == (300, 200)

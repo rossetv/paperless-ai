@@ -69,7 +69,8 @@ class PageSource:
                     ...
 
     Every loaded page is fully in memory, 8-bit, and in a mode the provider can
-    resize and PNG-encode.
+    resize and PNG-encode. When the source was opened with ``max_side``, no page
+    is longer than that on either side.
     """
 
     def __init__(
@@ -155,49 +156,93 @@ def open_page_source(
     Args:
         dpi: PDF rendering resolution; still passed to poppler when *max_side*
             sets the output size.
-        max_side: Scale each PDF page so its longer side is this many pixels
-            (``pdftoppm -scale-to``). An int, because ``size=(max_side, None)``
-            would only fix the width. Non-PDF inputs are not scaled here.
+        max_side: Scale each page so its longer side is at most this many pixels
+            (PDFs via ``pdftoppm -scale-to``, an int because
+            ``size=(max_side, None)`` would only fix the width; images are only
+            ever shrunk). ``None`` leaves images at their size.
         timeout: Seconds before ``pdftoppm`` is killed; ``None`` means no limit.
 
     Raises:
-        ImageConversionError: The bytes cannot be decoded or rasterised.
+        ImageConversionError: The bytes cannot be decoded or rasterised, or an
+            image is larger than Pillow's pixel cap.
     """
     if "pdf" in content_type.lower():
         return _pdf_to_page_source(content, dpi=dpi, max_side=max_side, timeout=timeout)
 
     try:
         img = Image.open(BytesIO(content))
-        img.load()
+        _check_pixel_cap(img)
         if getattr(img, "n_frames", 1) > 1:
             # Stream frames like PDF pages: decoding all of a 100-page 300-DPI
             # TIFF at once is ~2.6 GB.
             img.close()
-            return _multiframe_to_page_source(content)
-        single = _to_page_mode(img)
-        img.close()
-        return PageSource(images=[single])
+            return _multiframe_to_page_source(content, max_side)
+        if max_side is not None:
+            # JPEG decodes at a reduced size; a no-op for other formats.
+            img.draft(None, (max_side, max_side))
+        page = _normalise(img, max_side)
+        page.load()
+        if page is not img:
+            img.close()
+        return PageSource(images=[page])
     except _UNDECODABLE as e:
         raise ImageConversionError(f"Unable to open image: {e}") from e
 
 
+def _check_pixel_cap(image: Image.Image) -> None:
+    """Refuse an image above Pillow's pixel cap, judged from its header alone.
+
+    Pillow itself only refuses above twice the cap and warns below that, which
+    still leaves room for a decode too large for the container.
+    """
+    limit = Image.MAX_IMAGE_PIXELS
+    width, height = image.size
+    if limit is not None and width * height > limit:
+        raise ImageConversionError(
+            f"Unable to open image: {width}x{height} pixels is too large (limit {limit})"
+        )
+
+
 def _to_page_mode(image: Image.Image) -> Image.Image:
-    """Return a new image, independent of *image*, in a page-safe mode.
+    """Return *image* itself when it is page-safe, else a converted new image.
 
     16- and 32-bit greyscale is rescaled to 8 bits (65535 → 255) rather than
-    clipped; colour spaces PNG cannot hold become RGB/RGBA/LA. Safe images are
-    copied, so every caller gets exactly one new bitmap and still owns *image*.
+    clipped; colour spaces PNG cannot hold become RGB/RGBA/LA. The caller closes
+    the result only when it is not *image*.
     """
     mode = image.mode
     if mode in _PAGE_SAFE_MODES:
-        return image.copy()
+        return image
     if mode == "I" or mode.startswith("I;16"):
         # point() only accepts I and native I;16 — widen I;16B/L/N first.
         return image.convert("I").point(lambda v: v / 257).convert("L")
     return image.convert(_PAGE_MODE_TARGETS.get(mode, "RGB"))
 
 
-def _multiframe_to_page_source(content: bytes) -> PageSource:
+def _fit_to_side(image: Image.Image, max_side: int | None) -> Image.Image:
+    """Return *image* itself, or a shrunk new image if a side exceeds *max_side*."""
+    if max_side is None or max(image.size) <= max_side:
+        return image
+    scale = max_side / max(image.size)
+    size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+    # reducing_gap does most of the shrink with a cheap integer reduce, as
+    # Image.thumbnail does.
+    return image.resize(size, reducing_gap=2.0)
+
+
+def _normalise(image: Image.Image, max_side: int | None) -> Image.Image:
+    """Convert *image* to a page-safe mode and fit it to *max_side*.
+
+    May return *image* itself; any intermediate bitmap is closed.
+    """
+    page = _to_page_mode(image)
+    fitted = _fit_to_side(page, max_side)
+    if page is not image and fitted is not page:
+        page.close()
+    return fitted
+
+
+def _multiframe_to_page_source(content: bytes, max_side: int | None) -> PageSource:
     """Write each frame of a multi-frame image to a temp PNG for on-demand loading.
 
     The returned :class:`PageSource` owns the temp directory; on failure it is
@@ -208,10 +253,12 @@ def _multiframe_to_page_source(content: bytes) -> PageSource:
     try:
         with Image.open(BytesIO(content)) as img:
             for frame_index, frame in enumerate(ImageSequence.Iterator(img)):
-                frame_copy = _to_page_mode(frame)
+                _check_pixel_cap(frame)
+                page = _normalise(frame, max_side)
                 path = os.path.join(temp_dir, f"frame-{frame_index:04d}.png")
-                frame_copy.save(path, format="PNG")
-                frame_copy.close()
+                page.save(path, format="PNG")
+                if page is not frame:
+                    page.close()
                 paths.append(path)
     except _UNDECODABLE as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
