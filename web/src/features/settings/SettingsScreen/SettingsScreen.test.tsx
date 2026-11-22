@@ -285,6 +285,33 @@ describe('SettingsScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows the server error in a toast and keeps the edit when the save fails', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    const topK = await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    // Later calls (the PUT) fail; the first (GET) already resolved.
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockResponse({ status: 422, body: { detail: 'SEARCH_TOP_K is out of range' } }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('SEARCH_TOP_K is out of range');
+    expect(topK).toHaveValue(11);
+  });
+
+  it('warns before unload only while there are unsaved changes', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    const fire = (): boolean =>
+      window.dispatchEvent(new Event('beforeunload', { cancelable: true }));
+    expect(fire()).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    expect(fire()).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: /discard/i }));
+    expect(fire()).toBe(true);
+  });
+
   it('shows no re-indexing toast when the save does not trigger one', async () => {
     mockFetchSequence([
       { status: 200, body: toSettingsBody(SETTINGS) },
