@@ -261,6 +261,34 @@ describe('LibraryScreen', () => {
     expect(screen.getByText('To 9 Mar 2025')).toBeInTheDocument();
   });
 
+  it('shows an unparseable date as the raw value', () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?from=garbage');
+    expect(screen.getByText('From garbage')).toBeInTheDocument();
+  });
+
+  it('does not call the library empty while a tag filter is unresolved', () => {
+    mockUseFacets.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library?tag=1');
+    expect(screen.getByText('No documents match')).toBeInTheDocument();
+    expect(screen.queryByText('The library is empty')).not.toBeInTheDocument();
+  });
+
+  it('clears a whitespace-only search from the field', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [makeDoc(1, 'Doc one')], total: 1, page: 1, page_size: 24 }),
+    );
+    renderScreen();
+    await userEvent.type(screen.getByRole('searchbox'), '   {Enter}');
+    expect(screen.getByTestId('location-probe').textContent).toBe('/library');
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+  });
+
   it('retries the request from the error state', async () => {
     const refetch = vi.fn();
     mockUseDocuments.mockReturnValue({

@@ -327,6 +327,16 @@ describe('DocumentScreen', () => {
     expect(mockPatchDocument).not.toHaveBeenCalled();
   });
 
+  it('says the tag list could not be loaded when its refetch fails, and sends nothing', async () => {
+    const stale = ALL_TAGS.filter((t) => t.name !== 'payroll');
+    const refetch = vi.fn().mockResolvedValue({ data: stale, status: 'error', isError: true, error: new Error('down') });
+    mockUseTags.mockReturnValue({ ...queryOk(stale), refetch });
+    renderScreen({ role: 'member' });
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/tag list/i);
+    expect(mockPatchDocument).not.toHaveBeenCalled();
+  });
+
   it('readonly user sees no edit affordances on the title', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.getByRole('heading', { name: 'eBay Payslip 05/2026' })).toBeInTheDocument();
@@ -643,6 +653,79 @@ describe('DocumentScreen', () => {
     expect(sentPatches()[1]).toEqual({ tags: [100, 102, 103] });
   });
 
+  it('a tag edit keeps a tag another change added while an earlier edit was pending', async () => {
+    mockUseTags.mockReturnValue(queryOk([
+      ...ALL_TAGS,
+      { id: 104, name: 'medical', document_count: 1 },
+      { id: 105, name: 'car', document_count: 1 },
+    ]));
+    // By the next read the index has the edit and a tag the pipeline added meanwhile.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: [...DOC.tags, 'new-tag', 'medical'] });
+    renderScreen({ role: 'member', live: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    await waitFor(() => expect(mockGetDocument).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: /remove medical/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: /car/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 101, 102, 103, 104, 105] });
+  });
+
+  it('shows a title another change set after the user\'s rename', async () => {
+    mockGetDocument.mockResolvedValue({ ...DOC, title: 'Set by someone else' });
+    renderScreen({ role: 'member', live: true });
+    renameTitle('Renamed');
+    expect(await screen.findByRole('button', { name: 'Edit title: Set by someone else' })).toBeInTheDocument();
+  });
+
+  it('a tag removed and added back is kept when a read shows the state in between', async () => {
+    const queryClient = makeQueryClient();
+    renderScreen({ role: 'member', live: true, queryClient });
+
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /ireland/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/^saved$/i)).toBeInTheDocument();
+
+    // The index catches up with the removal only.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: ['2026', 'payroll'] });
+    await act(() => queryClient.invalidateQueries({ queryKey: ['document', DOC.id] }));
+
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(3));
+    expect(sentPatches()[2]).toEqual({ tags: [100, 102, 101, 103] });
+  });
+
+  it('a tag added and then removed again is not hidden when another change adds it later', async () => {
+    mockUseTags.mockReturnValue(queryOk([
+      ...ALL_TAGS,
+      { id: 104, name: 'home', document_count: 1 },
+      { id: 105, name: 'car', document_count: 1 },
+    ]));
+    const queryClient = makeQueryClient();
+    renderScreen({ role: 'member', live: true, queryClient });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /home/i }));
+    expect(await screen.findByText(/^saved$/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /remove home/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 101, 102] });
+
+    // The index jumps straight to the final state, then the pipeline adds the tag.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: [...DOC.tags, 'home'] });
+    await act(() => queryClient.invalidateQueries({ queryKey: ['document', DOC.id] }));
+    expect(await screen.findByRole('button', { name: /remove home/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: /car/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(3));
+    expect(sentPatches()[2]).toEqual({ tags: [100, 101, 102, 104, 105] });
+  });
+
   it('keeps showing a saved title while the index still has the old one', async () => {
     renderScreen({ role: 'member', live: true });
     renameTitle('Renamed');
@@ -718,5 +801,21 @@ describe('DocumentScreen', () => {
 
     await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
     expect(sentPatches()[1]).toEqual({ title: 'Renamed' });
+  });
+
+  it('a retry sends the failed tag edit over the latest tags, keeping one added meanwhile', async () => {
+    mockUseTags.mockReturnValue(queryOk([...ALL_TAGS, { id: 104, name: 'medical', document_count: 1 }]));
+    mockPatchDocument.mockRejectedValueOnce(new Error('server error'));
+    // Another change adds a tag while the failed save waits for its retry.
+    mockGetDocument.mockResolvedValue({ ...DOC, tags: [...DOC.tags, 'medical'] });
+    renderScreen({ role: 'member', live: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    expect(await screen.findByRole('button', { name: /remove medical/i })).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: /couldn't save/i }));
+    await waitFor(() => expect(mockPatchDocument).toHaveBeenCalledTimes(2));
+    expect(sentPatches()[1]).toEqual({ tags: [100, 101, 102, 104, 103] });
   });
 });

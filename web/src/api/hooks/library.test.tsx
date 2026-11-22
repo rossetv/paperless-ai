@@ -41,4 +41,24 @@ describe('document mutations refresh the counts', () => {
     await waitFor(() => expect(invalidated()).toContainEqual(queryKeys.facets()));
     expect(invalidated()).toContainEqual(queryKeys.stats());
   });
+
+  const expectListsRefreshed = async (invalidated: () => unknown[]) => {
+    await waitFor(() => expect(invalidated()).toContainEqual(queryKeys.tags()));
+    expect(invalidated()).toContainEqual(queryKeys.correspondents());
+    expect(invalidated()).toContainEqual(queryKeys.documentTypes());
+  };
+
+  it('updating a document refreshes the tag, correspondent and type lists', async () => {
+    const { wrapper, invalidated } = setup();
+    const { result } = renderHook(() => useUpdateDocument(), { wrapper });
+    result.current.mutate({ id: 1, patch: { title: 'x' } });
+    await expectListsRefreshed(invalidated);
+  });
+
+  it('deleting a document refreshes the tag, correspondent and type lists', async () => {
+    const { wrapper, invalidated } = setup();
+    const { result } = renderHook(() => useDeleteDocument(), { wrapper });
+    result.current.mutate(1);
+    await expectListsRefreshed(invalidated);
+  });
 });
