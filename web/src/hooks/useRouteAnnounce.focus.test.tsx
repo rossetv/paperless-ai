@@ -60,6 +60,16 @@ describe('useRouteAnnounce late headings', () => {
     expect(screen.getByRole('heading', { name: 'Index' })).toHaveStyle({ outline: 'none' });
   });
 
+  it('restores the heading outline once it blurs', () => {
+    renderAt();
+    act(() => setHeading('Index'));
+    act(() => go('/index'));
+    const h1 = screen.getByRole('heading', { name: 'Index' });
+    expect(h1.style.outline).toBe('none');
+    act(() => screen.getByRole('button', { name: 'other' }).focus());
+    expect(h1.style.outline).toBe('');
+  });
+
   it('stops waiting once a key is pressed', async () => {
     renderAt();
     act(() => go('/index'));

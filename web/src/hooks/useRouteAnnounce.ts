@@ -21,8 +21,10 @@ const WATCH_MS = 2000;
 
 function focusQuietly(el: HTMLElement): void {
   if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
-  // Focus here is a reading position, not a control, so it gets no ring.
+  // Focus here is a reading position, not a control, so it gets no ring; a later Tab back keeps its normal one.
+  const before = el.style.outline;
   el.style.outline = 'none';
+  el.addEventListener('blur', () => { el.style.outline = before; }, { once: true });
   el.focus();
 }
 
