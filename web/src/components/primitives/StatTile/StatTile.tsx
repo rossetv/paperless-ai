@@ -3,8 +3,8 @@ import { cn } from '../../../lib/cn';
 import styles from './StatTile.module.css';
 
 export interface StatTileProps {
-  /** The headline figure — a number, or a pre-formatted string. */
-  value: number | string;
+  /** The headline figure — a number, a pre-formatted string, or markup such as soft line breaks. */
+  value: React.ReactNode;
   /** The uppercase label above the figure. */
   label: string;
   /** Optional caption sub-line below the figure. */

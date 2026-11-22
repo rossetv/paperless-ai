@@ -261,6 +261,13 @@ describe('IndexScreen', () => {
     expect(screen.queryByText(/dimensions/i)).not.toBeInTheDocument();
   });
 
+  it('offers a soft line break after each separator in the embedding model name', () => {
+    primeAll();
+    render(<IndexScreen />);
+    const value = screen.getByText('text-embedding-3-small');
+    expect(value.querySelectorAll('wbr')).toHaveLength(3);
+  });
+
   it('does not show "View full log ›" when cycles fit within the limit', () => {
     // One cycle, under ACTIVITY_ROW_LIMIT (5).
     primeAll();
