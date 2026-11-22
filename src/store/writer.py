@@ -13,7 +13,7 @@ import structlog
 
 from common.clock import utc_now_iso
 from common.config import Settings
-from store._reembed_guard import log_reembed_projection
+from store._reembed_guard import log_reembed_projection, project_reembed_scope
 from store._sql import placeholders
 from store.migrations import StoreError
 from store.models import ChunkInput, DocumentMeta, IndexState, TaxonomyEntry
@@ -284,13 +284,15 @@ class StoreWriter:
             configured_model=configured_model,
             configured_dimensions=configured_dims,
         )
+        # A fresh database has nothing to re-embed, so the alarm would be false.
         # Read outside the write lock, before the wipe.
-        log_reembed_projection(
-            self._conn,
-            trigger="embedding_model_change",
-            stored_model=stored_model,
-            configured_model=configured_model,
-        )
+        if stored_model is not None or project_reembed_scope(self._conn)[1] != 0:
+            log_reembed_projection(
+                self._conn,
+                trigger="embedding_model_change",
+                stored_model=stored_model,
+                configured_model=configured_model,
+            )
 
         try:
             self._wipe_and_stamp_model(

@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 import threading
 
+import structlog.testing
+
 from store.models import TaxonomyEntry
 from store.schema import connect
 from tests.helpers.factories import make_chunks, make_document_meta
@@ -59,6 +61,10 @@ class TestIndexState:
         assert ids == {1, 2}
 
 
+def _full_reembed_logs(captured: list) -> list:
+    return [e for e in captured if e["event"] == "store.full_reembed_projected"]
+
+
 class TestBulkDelete:
     def test_delete_more_ids_than_the_variable_limit_allows(self, db_path: str) -> None:
         writer = open_writer(db_path)
@@ -77,6 +83,33 @@ class TestBulkDelete:
 
 
 class TestCheckEmbeddingModel:
+    def test_first_run_on_an_empty_index_logs_no_full_reembed_warning(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path, model="model-a", dimensions=4)
+        with structlog.testing.capture_logs() as captured:
+            writer.check_embedding_model()
+        stored = writer.read_meta("embedding_model")
+        writer.close()
+        assert _full_reembed_logs(captured) == []
+        assert stored == "model-a"
+
+    def test_model_change_on_an_index_with_chunks_logs_full_reembed(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path, model="model-a", dimensions=4)
+        writer.check_embedding_model()
+        writer.upsert_document(make_document_meta(id=1), make_chunks(2))
+        writer.close()
+
+        writer2 = open_writer(db_path, model="model-b", dimensions=4)
+        with structlog.testing.capture_logs() as captured:
+            writer2.check_embedding_model()
+        writer2.close()
+        logs = _full_reembed_logs(captured)
+        assert len(logs) == 1
+        assert logs[0]["current_chunk_count"] == 2
+
     def test_returns_true_on_first_run(self, db_path: str) -> None:
         """With no stored model, a rebuild is needed and the model is recorded."""
         writer = open_writer(db_path, model="model-a", dimensions=4)
