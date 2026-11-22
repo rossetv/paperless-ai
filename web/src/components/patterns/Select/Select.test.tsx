@@ -364,6 +364,20 @@ describe('Select keyboard and semantics', () => {
     expect(trigger.getAttribute('aria-activedescendant')).toBe(before);
   });
 
+  it('a mousemove at the same coordinates after a keyboard move keeps the keyboard highlight', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    await userEvent.keyboard('{End}');
+    const cherry = screen.getByRole('option', { name: 'Cherry' });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 5, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(cherry.id);
+    fireEvent.mouseMove(apple, { clientX: 6, clientY: 5 });
+    expect(trigger.getAttribute('aria-activedescendant')).toBe(apple.id);
+  });
+
   it('scrolls to the selected option when reopened after hovering it', async () => {
     const scroll = vi.fn();
     Element.prototype.scrollIntoView = scroll;

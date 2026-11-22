@@ -98,6 +98,8 @@ export function FilterableListbox<T extends string | number = string>({
   const triggerRef = useRef<HTMLButtonElement>(null);
   // Set when the pointer moved the highlight, so the list is not scrolled under it.
   const pointerMoved = useRef(false);
+  // Last pointer position seen over the list; a scroll under a resting pointer repeats it.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
   // Set by close(true); the trigger is not mounted while open, so focus waits for it.
   const restoreFocus = useRef(false);
 
@@ -180,7 +182,10 @@ export function FilterableListbox<T extends string | number = string>({
   }, [open, highlight]);
 
   // Set on mousemove, not mouseenter: a keyboard scroll moves rows under a resting pointer.
-  function highlightFromPointer(index: number): void {
+  function highlightFromPointer(event: React.MouseEvent, index: number): void {
+    const last = lastPointer.current;
+    lastPointer.current = { x: event.clientX, y: event.clientY };
+    if (last && last.x === event.clientX && last.y === event.clientY) return;
     if (index === highlight) return;
     pointerMoved.current = true;
     setHighlight(index);
@@ -188,6 +193,7 @@ export function FilterableListbox<T extends string | number = string>({
 
   function openList(): void {
     pointerMoved.current = false;
+    lastPointer.current = null;
     setOpen(true);
     setHighlight(-1);
   }
@@ -355,7 +361,7 @@ export function FilterableListbox<T extends string | number = string>({
                       styles['clear'],
                       highlighted && styles['highlighted'],
                     )}
-                    onMouseMove={() => highlightFromPointer(index)}
+                    onMouseMove={(event) => highlightFromPointer(event, index)}
                     onClick={() => activateRow(row)}
                   >
                     {clearOption?.label}
@@ -374,7 +380,7 @@ export function FilterableListbox<T extends string | number = string>({
                       styles['create'],
                       highlighted && styles['highlighted'],
                     )}
-                    onMouseMove={() => highlightFromPointer(index)}
+                    onMouseMove={(event) => highlightFromPointer(event, index)}
                     onClick={() => activateRow(row)}
                   >
                     Create &ldquo;{query.trim()}&rdquo;
@@ -393,7 +399,7 @@ export function FilterableListbox<T extends string | number = string>({
                     isSelected && styles['selected'],
                     highlighted && styles['highlighted'],
                   )}
-                  onMouseMove={() => highlightFromPointer(index)}
+                  onMouseMove={(event) => highlightFromPointer(event, index)}
                   onClick={() => activateRow(row)}
                 >
                   <span className={styles['option-label']}>{row.item.label}</span>
