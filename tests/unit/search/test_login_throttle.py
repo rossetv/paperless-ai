@@ -34,10 +34,18 @@ def _key(username: str = "alice", ip: str = "10.0.0.1") -> AttemptKey:
     return AttemptKey(client_ip=ip, username=username)
 
 
+def _admits(throttle: LoginThrottle, key: AttemptKey) -> bool:
+    """Whether a login for *key* is let in; an admitted attempt is settled at once."""
+    if not throttle.begin_attempt(key):
+        return False
+    throttle.abandon_attempt(key)
+    return True
+
+
 def test_a_fresh_key_is_not_locked() -> None:
     """An untracked key — a first login attempt — is never locked."""
     throttle = LoginThrottle(clock=_FakeClock())
-    assert throttle.is_locked(_key()) is False
+    assert _admits(throttle, _key())
 
 
 def test_failures_below_the_threshold_do_not_lock() -> None:
@@ -46,7 +54,7 @@ def test_failures_below_the_threshold_do_not_lock() -> None:
     key = _key()
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT - 1):
         throttle.record_failure(key)
-    assert throttle.is_locked(key) is False
+    assert _admits(throttle, key)
 
 
 def test_a_burst_of_failures_locks_the_key() -> None:
@@ -55,7 +63,7 @@ def test_a_burst_of_failures_locks_the_key() -> None:
     key = _key()
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
         throttle.record_failure(key)
-    assert throttle.is_locked(key) is True
+    assert not _admits(throttle, key)
 
 
 def test_a_success_clears_the_failure_counter() -> None:
@@ -68,7 +76,7 @@ def test_a_success_clears_the_failure_counter() -> None:
     # After the reset a fresh burst must start from zero, so one more failure
     # does not lock.
     throttle.record_failure(key)
-    assert throttle.is_locked(key) is False
+    assert _admits(throttle, key)
 
 
 def test_failures_outside_the_window_do_not_count() -> None:
@@ -81,7 +89,7 @@ def test_failures_outside_the_window_do_not_count() -> None:
     # Move past the window so the earlier failures are pruned, then fail once.
     clock.advance(_FAILURE_WINDOW_SECONDS + 1)
     throttle.record_failure(key)
-    assert throttle.is_locked(key) is False
+    assert _admits(throttle, key)
 
 
 def test_the_lockout_expires_after_the_cooldown() -> None:
@@ -91,10 +99,10 @@ def test_the_lockout_expires_after_the_cooldown() -> None:
     key = _key()
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
         throttle.record_failure(key)
-    assert throttle.is_locked(key) is True
+    assert not _admits(throttle, key)
 
     clock.advance(_LOCKOUT_SECONDS + 1)
-    assert throttle.is_locked(key) is False
+    assert _admits(throttle, key)
 
 
 def test_distinct_keys_are_tracked_independently() -> None:
@@ -105,9 +113,9 @@ def test_distinct_keys_are_tracked_independently() -> None:
     other_ip = _key(username="alice", ip="10.0.0.2")
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
         throttle.record_failure(locked)
-    assert throttle.is_locked(locked) is True
-    assert throttle.is_locked(other_user) is False
-    assert throttle.is_locked(other_ip) is False
+    assert not _admits(throttle, locked)
+    assert _admits(throttle, other_user)
+    assert _admits(throttle, other_ip)
 
 
 def test_the_tracked_map_is_bounded() -> None:
@@ -142,7 +150,7 @@ def test_per_username_counter_locks_despite_rotating_ips() -> None:
         throttle.record_failure(_key(username="alice", ip=f"203.0.113.{index}"))
     # Any subsequent attempt for this username — even from yet another fresh IP —
     # is denied by the per-username lock.
-    assert throttle.is_locked(_key(username="alice", ip="198.51.100.7")) is True
+    assert not _admits(throttle, _key(username="alice", ip="198.51.100.7"))
 
 
 def test_per_username_threshold_is_higher_than_per_ip_threshold() -> None:
@@ -160,7 +168,7 @@ def test_distributed_failures_below_username_threshold_do_not_lock() -> None:
     throttle = LoginThrottle(clock=_FakeClock())
     for index in range(_MAX_FAILURES_PER_USERNAME - 1):
         throttle.record_failure(_key(username="alice", ip=f"203.0.113.{index}"))
-    assert throttle.is_locked(_key(username="alice", ip="203.0.113.250")) is False
+    assert _admits(throttle, _key(username="alice", ip="203.0.113.250"))
 
 
 def test_a_successful_login_clears_the_per_username_counter() -> None:
@@ -177,7 +185,7 @@ def test_a_successful_login_clears_the_per_username_counter() -> None:
     # After the reset the per-username burst restarts from zero, so one more
     # distributed failure does not lock.
     throttle.record_failure(_key(username="alice", ip="203.0.113.251"))
-    assert throttle.is_locked(_key(username="alice", ip="198.51.100.8")) is False
+    assert _admits(throttle, _key(username="alice", ip="198.51.100.8"))
 
 
 def test_per_username_failures_outside_the_window_do_not_count() -> None:
@@ -188,7 +196,7 @@ def test_per_username_failures_outside_the_window_do_not_count() -> None:
         throttle.record_failure(_key(username="alice", ip=f"203.0.113.{index}"))
     clock.advance(_FAILURE_WINDOW_SECONDS + 1)
     throttle.record_failure(_key(username="alice", ip="203.0.113.252"))
-    assert throttle.is_locked(_key(username="alice", ip="198.51.100.9")) is False
+    assert _admits(throttle, _key(username="alice", ip="198.51.100.9"))
 
 
 def test_the_per_username_lockout_expires_after_the_cooldown() -> None:
@@ -197,9 +205,9 @@ def test_the_per_username_lockout_expires_after_the_cooldown() -> None:
     throttle = LoginThrottle(clock=clock)
     for index in range(_MAX_FAILURES_PER_USERNAME):
         throttle.record_failure(_key(username="alice", ip=f"203.0.113.{index}"))
-    assert throttle.is_locked(_key(username="alice", ip="198.51.100.1")) is True
+    assert not _admits(throttle, _key(username="alice", ip="198.51.100.1"))
     clock.advance(_LOCKOUT_SECONDS + 1)
-    assert throttle.is_locked(_key(username="alice", ip="198.51.100.1")) is False
+    assert _admits(throttle, _key(username="alice", ip="198.51.100.1"))
 
 
 def test_per_username_lock_does_not_leak_across_usernames() -> None:
@@ -207,8 +215,8 @@ def test_per_username_lock_does_not_leak_across_usernames() -> None:
     throttle = LoginThrottle(clock=_FakeClock())
     for index in range(_MAX_FAILURES_PER_USERNAME):
         throttle.record_failure(_key(username="alice", ip=f"203.0.113.{index}"))
-    assert throttle.is_locked(_key(username="alice", ip="1.1.1.1")) is True
-    assert throttle.is_locked(_key(username="bob", ip="1.1.1.1")) is False
+    assert not _admits(throttle, _key(username="alice", ip="1.1.1.1"))
+    assert _admits(throttle, _key(username="bob", ip="1.1.1.1"))
 
 
 def test_the_per_username_map_is_also_bounded() -> None:
@@ -230,7 +238,6 @@ def test_attempts_under_way_count_toward_the_limit() -> None:
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
         assert throttle.begin_attempt(key) is True
     assert throttle.begin_attempt(key) is False
-    assert throttle.is_locked(key) is True
 
 
 def test_attempts_under_way_count_toward_the_per_username_limit() -> None:
@@ -270,5 +277,4 @@ def test_an_abandoned_attempt_frees_its_slot_and_counts_no_failure() -> None:
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
         assert throttle.begin_attempt(key) is True
         throttle.abandon_attempt(key)
-    assert throttle.is_locked(key) is False
     assert throttle.begin_attempt(key) is True

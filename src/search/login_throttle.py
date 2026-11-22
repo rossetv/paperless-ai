@@ -165,12 +165,6 @@ class LoginThrottle:
         self._pending: dict[AttemptKey, int] = {}
         self._username_pending: dict[str, int] = {}
 
-    def is_locked(self, key: AttemptKey) -> bool:
-        """Return whether a new attempt for *key* would be refused by either counter."""
-        now = self._clock()
-        with self._lock:
-            return self._is_locked(key, now)
-
     def begin_attempt(self, key: AttemptKey) -> bool:
         """Reserve a slot for a login attempt; ``False`` when *key* is locked.
 
