@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 _Username = Annotated[str, AfterValidator(validate_username)]
 _Password = Annotated[str, AfterValidator(validate_password)]
 # Login checks only that something was sent: the creation minimum is newer than
-# some existing accounts' passwords. The cap bounds the hashing work.
-_LoginPassword = Annotated[str, Field(min_length=1, max_length=1024)]
+# some existing accounts' passwords.
+_LoginPassword = Annotated[str, Field(min_length=1)]
 _Role = Annotated[str, AfterValidator(validate_role)]
 _DisplayName = Annotated[str | None, AfterValidator(validate_display_name)]
 _Email = Annotated[str | None, AfterValidator(validate_email)]
