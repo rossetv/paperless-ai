@@ -26,12 +26,13 @@ export function DocumentTitle({
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(title ?? '');
 
-  // Shrink the font just enough to keep a long title on one line. Text width is
-  // proportional to font-size, so scaling by clientWidth/scrollWidth fits in a
-  // single pass; a title beyond the floor ellipsises.
   // The element that clips the text: the heading, or the button inside it.
   const headingRef = React.useRef<HTMLHeadingElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+  // Shrink the font just enough to keep a long title on one line. Text width is
+  // proportional to font-size, so scaling by clientWidth/scrollWidth fits in a
+  // single pass; a title beyond the floor ellipsises.
   const [scale, setScale] = React.useState(1);
 
   React.useLayoutEffect(() => {
