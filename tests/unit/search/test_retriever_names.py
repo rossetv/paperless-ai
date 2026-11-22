@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from search.retriever import _match_name
+from search.retriever import _match_name, _tokenise
 from store.models import TaxonomyEntry
 
 
@@ -38,3 +38,19 @@ def test_accented_latin_keeps_its_letters():
 
 def test_ascii_names_still_match_loosely():
     assert _match_name("gas bill", _entries("Gas-Bill.")).method == "normalised"
+
+
+def test_vowel_signs_keep_a_hindi_name_in_one_token_per_word():
+    assert _tokenise("राजेश कुमार") == {"राजेश", "कुमार"}
+
+
+def test_hindi_names_differing_only_in_vowel_signs_do_not_match_each_other():
+    entries = _entries("सुनील", "सोनल")
+    assert _match_name("सोनल.", entries).id == 2
+    assert _match_name("सुनील.", entries).id == 1
+    assert _match_name("सनल", entries).id is None
+
+
+def test_accents_on_greek_and_cyrillic_letters_are_still_dropped():
+    assert _tokenise("Ελλάδα Йод") == {"ελλαδα", "иод"}
+    assert _tokenise("Café MÜLLER") == {"cafe", "muller"}

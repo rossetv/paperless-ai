@@ -39,14 +39,26 @@ log = structlog.get_logger(__name__)
 _RRF_K = 60
 
 
+# Accent marks are dropped only on these scripts. In others (Indic, Thai,
+# Arabic, ...) the marks carry vowels, so dropping them splits or merges words.
+_ACCENT_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC")
+
+
 def _fold(text: str) -> str:
-    """Lower-case, strip accents and map every non-letter/digit to a space."""
-    decomposed = unicodedata.normalize("NFKD", text).casefold()
-    return "".join(
-        ch if ch.isalnum() else " "
-        for ch in decomposed
-        if not unicodedata.combining(ch)
-    )
+    """Lower-case, strip Latin/Greek/Cyrillic accents, map non-word chars to space.
+
+    Combining marks on other scripts stay as part of their word.
+    """
+    out: list[str] = []
+    base_is_accentable = False
+    for ch in unicodedata.normalize("NFKD", text).casefold():
+        if unicodedata.category(ch).startswith("M"):
+            if not base_is_accentable:
+                out.append(ch)
+            continue
+        base_is_accentable = unicodedata.name(ch, "").startswith(_ACCENT_SCRIPTS)
+        out.append(ch if ch.isalnum() else " ")
+    return "".join(out)
 
 
 def _normalise(text: str) -> str:
