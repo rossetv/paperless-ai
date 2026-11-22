@@ -533,6 +533,7 @@ describe('LibraryScreen', () => {
       mockUseDocuments.mockReturnValue(loadedList());
       // Whatever key the new entry gets, the store answers with an old offset.
       vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('1806');
+      const removeItem = vi.spyOn(Storage.prototype, 'removeItem');
       function ToLibrary() {
         const navigate = useNavigate();
         return <button onClick={() => void navigate('/library')}>Library link</button>;
@@ -548,20 +549,25 @@ describe('LibraryScreen', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Library link' }));
       expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
       expect(scrollTo).not.toHaveBeenCalled();
+      expect(removeItem).toHaveBeenCalledWith(expect.stringMatching(/^library-scroll:/));
     });
 
-    it('forgets the saved position once it has been restored', async () => {
+    it('keeps the saved position after restoring it, so a second Back restores it too', () => {
       mockUseDocuments.mockReturnValue(loadedList());
       sessionStorage.setItem('library-scroll:default', '1806');
+      const first = renderScreen();
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
+      first.unmount();
+      scrollTo.mockReset();
       renderScreen();
       expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
-      expect(sessionStorage.getItem('library-scroll:default')).toBeNull();
     });
 
-    it('does not restore on the first screen of a fresh page load', async () => {
+    // Mounts the screen as the first one of a page load that was reached the given way.
+    async function mountOnPageLoad(type: string, loadedUrl = window.location.href) {
       vi.resetModules();
       vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
-        { type: 'navigate' } as PerformanceNavigationTiming,
+        { type, name: loadedUrl } as PerformanceNavigationTiming,
       ]);
       const { render: freshRender } = await import('@testing-library/react');
       const { MemoryRouter: FreshRouter, Routes: FreshRoutes, Route: FreshRoute } = await import('react-router-dom');
@@ -569,7 +575,6 @@ describe('LibraryScreen', () => {
       const hooks = await import('../../../api/hooks');
       (hooks.useDocuments as ReturnType<typeof vi.fn>).mockReturnValue(loadedList());
       (hooks.useFacets as ReturnType<typeof vi.fn>).mockReturnValue(facetsResult());
-      sessionStorage.setItem('library-scroll:default', '1806');
       freshRender(
         <FreshRouter initialEntries={['/library']}>
           <FreshRoutes>
@@ -577,7 +582,35 @@ describe('LibraryScreen', () => {
           </FreshRoutes>
         </FreshRouter>,
       );
+    }
+
+    it('drops a stale position on a fresh page load, so a later reload is left to the browser', async () => {
+      sessionStorage.setItem('library-scroll:default', '1806');
+      await mountOnPageLoad('navigate');
       expect(scrollTo).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem('library-scroll:default')).toBeNull();
+
+      await mountOnPageLoad('reload');
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+
+    it('leaves a reload to the browser and drops the saved position', async () => {
+      sessionStorage.setItem('library-scroll:default', '1806');
+      await mountOnPageLoad('reload');
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem('library-scroll:default')).toBeNull();
+    });
+
+    it('restores on the first screen of a Back or Forward page load', async () => {
+      sessionStorage.setItem('library-scroll:default', '1806');
+      await mountOnPageLoad('back_forward');
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
+    });
+
+    it('restores on Back after the page was reloaded on another screen', async () => {
+      sessionStorage.setItem('library-scroll:default', '1806');
+      await mountOnPageLoad('reload', `${window.location.origin}/library/document/5`);
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
     });
 
     it('does not scroll when nothing was saved for this history entry', () => {
