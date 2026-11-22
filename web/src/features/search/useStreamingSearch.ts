@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ApiError,
   parseNdjson,
@@ -153,6 +153,13 @@ export function useStreamingSearch(restore = false): UseStreamingSearch {
   const [kept] = useState<KeptSearch | undefined>(() => {
     const entry = queryClient.getQueryData<KeptSearch>(KEPT_QUERY_KEY);
     return restore && entry?.userId === currentUserId() ? entry : undefined;
+  });
+  // Observing the entry while the page is mounted makes its garbage-collection
+  // delay run from leaving the page rather than from when the answer finished.
+  useQuery({
+    queryKey: KEPT_QUERY_KEY,
+    queryFn: () => Promise.reject(new Error('The kept search is only ever set.')),
+    enabled: false,
   });
   const [state, dispatch] = useReducer(
     reducer,
