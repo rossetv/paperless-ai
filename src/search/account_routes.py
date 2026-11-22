@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from appdb import users as user_store
 from appdb.passwords import hash_password
 from appdb.users import Role, UsernameTakenError, UserStatus
+from common.config import current_settings
 from search.accounts import (
     GuardError,
     apply_guarded_delete,
@@ -63,8 +64,10 @@ log = structlog.get_logger(__name__)
 def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
     """Build the account ``/api`` router.
 
-    *settings* supplies ``SEARCH_SESSION_TTL`` for the "keep me signed in"
-    cookie; *store_reader* backs ``GET /api/stats/public``.
+    The "keep me signed in" cookie reads ``SEARCH_SESSION_TTL`` from the saved
+    settings on each login, so a Settings save applies without a restart.
+    *settings* is kept for the caller's signature; *store_reader* backs
+    ``GET /api/stats/public``.
     """
     router = APIRouter()
 
@@ -93,6 +96,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
         request: Request,
         response: Response,
         app_db: sqlite3.Connection = Depends(get_app_db),
+        state: AppState = Depends(get_app_state),
     ) -> UserEnvelope:
         """Verify credentials and set the session cookie.
 
@@ -105,7 +109,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
             request,
             response,
             app_db,
-            remember_ttl_seconds=settings.SEARCH_SESSION_TTL,
+            remember_ttl_seconds=current_settings(state.app_db_path).SEARCH_SESSION_TTL,
         )
 
     @router.post("/api/auth/logout", status_code=204)
