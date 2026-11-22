@@ -10,6 +10,8 @@ export interface BadgeProps {
   /** Badge content — typically a short string or number. */
   children: React.ReactNode;
   className?: string;
+  /** Tooltip with the full text, for a label that may be truncated. */
+  title?: string;
 }
 
 /**
@@ -22,6 +24,7 @@ export function Badge({
   variant = 'neutral',
   children,
   className,
+  title,
 }: BadgeProps): React.ReactElement {
   const classes = cn(
     styles['badge'],
@@ -30,8 +33,8 @@ export function Badge({
   );
 
   return (
-    <span className={classes}>
-      {children}
+    <span className={classes} title={title}>
+      <span className={styles['label']}>{children}</span>
     </span>
   );
 }

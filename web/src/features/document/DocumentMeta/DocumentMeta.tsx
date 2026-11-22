@@ -16,10 +16,14 @@ export function DocumentMeta({ source }: DocumentMetaProps): React.ReactElement 
   return (
     <Stack direction="horizontal" gap={4} wrap>
       {source.correspondent !== null && source.correspondent !== undefined && (
-        <Badge variant="neutral">{source.correspondent}</Badge>
+        <Badge variant="neutral" title={source.correspondent}>
+          {source.correspondent}
+        </Badge>
       )}
       {source.document_type !== null && source.document_type !== undefined && (
-        <Badge variant="neutral">{source.document_type}</Badge>
+        <Badge variant="neutral" title={source.document_type}>
+          {source.document_type}
+        </Badge>
       )}
       {source.created !== null && source.created !== undefined && (
         <time dateTime={source.created}>
