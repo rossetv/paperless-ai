@@ -45,4 +45,16 @@ describe('deriveInitials', () => {
     expect(deriveInitials('😀 Smile', 'x')).toBe('😀S');
     expect(deriveInitials('😀😀😀', 'x')).toBe('😀😀');
   });
+
+  it('still keeps an emoji whole when Intl.Segmenter is missing', async () => {
+    vi.stubGlobal('Intl', { ...Intl, Segmenter: undefined });
+    vi.resetModules();
+    try {
+      const { deriveInitials: withoutSegmenter } = await import('./deriveInitials');
+      expect(withoutSegmenter('😀 Smile', 'x')).toBe('😀S');
+      expect(withoutSegmenter('😀😀😀', 'x')).toBe('😀😀');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
