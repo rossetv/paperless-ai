@@ -36,6 +36,10 @@ import {
   EMPTY_FILTERS,
 } from '../features/search/useSearchUrlState';
 
+/** The ids of the one main search field each screen renders. */
+const MAIN_FIELD_SELECTOR =
+  '#idle-search, #loading-search, #results-search, #no-results-search, #search-error-search';
+
 export function SearchPage(): React.ReactElement {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -84,7 +88,8 @@ export function SearchPage(): React.ReactElement {
   }, [query, state.query, state.status, state.error, queryClient]);
 
   // Each screen has its own search field, so a submit unmounts the one the
-  // person typed in; focus goes back to the next enabled field that appears.
+  // person typed in; focus goes back to the new screen's own field, never to
+  // another search input such as the filter panel's tag search.
   const refocusField = React.useRef(false);
 
   function runSearch(submitted: string): void {
@@ -96,13 +101,24 @@ export function SearchPage(): React.ReactElement {
     setHighlightedIndex(undefined);
   }
 
+  // The person moving focus themselves while the search runs cancels the return.
+  React.useEffect(() => {
+    function onFocusIn(event: FocusEvent): void {
+      if (!(event.target instanceof Element) || !event.target.matches(MAIN_FIELD_SELECTOR)) {
+        refocusField.current = false;
+      }
+    }
+    document.addEventListener('focusin', onFocusIn);
+    return () => document.removeEventListener('focusin', onFocusIn);
+  }, []);
+
   const settled =
     state.query === query.trim() && (state.status === 'done' || state.status === 'error');
   React.useEffect(() => {
     if (!refocusField.current) {
       return;
     }
-    const field = document.querySelector<HTMLInputElement>('input[type="search"]:not(:disabled)');
+    const field = document.querySelector<HTMLInputElement>(`:is(${MAIN_FIELD_SELECTOR}):not(:disabled)`);
     if (field !== null) {
       field.focus();
       field.setSelectionRange(field.value.length, field.value.length);

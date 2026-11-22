@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { ViewToggle } from '../../../components/patterns/ViewToggle/ViewToggle';
@@ -69,6 +69,17 @@ function isNarrowViewport(): boolean {
 /** Where the list was scrolled to, per history entry, for the way back from a document. */
 const scrollKey = (locationKey: string): string => `library-scroll:${locationKey}`;
 
+// Only the first screen of a page load can be a fresh visit; later ones are in-app navigation.
+let firstScreenOfLoad = true;
+
+/** True when this is the first screen of a page load that was not Back or Forward. */
+function isFreshLoad(): boolean {
+  const first = firstScreenOfLoad;
+  firstScreenOfLoad = false;
+  const [nav] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+  return first && nav?.type === 'navigate';
+}
+
 /**
  * The Library browse screen. All state lives in the URL (`useLibraryUrlState`).
  * Opening a card keeps the search string so going back restores the query.
@@ -80,6 +91,11 @@ export function LibraryScreen(): React.ReactElement {
   const { query, view, setQuery, setView, searchString } = useLibraryUrlState();
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
+  const [isReturn] = React.useState(() => {
+    const fresh = isFreshLoad();
+    return navigationType === 'POP' && !fresh;
+  });
 
   const documents = useDocuments(query);
   const facets = useFacets();
@@ -193,17 +209,21 @@ export function LibraryScreen(): React.ReactElement {
 
   // The browser restores scroll before an uncached list has loaded, when the page is
   // still short, so it lands near the top. Put it back once the list has rendered.
+  // Only Back or Forward returns to a place; a fresh visit starts at the top.
   const scrollRestored = useRef(false);
   useLayoutEffect(() => {
     if (scrollRestored.current || documents.data === undefined) return;
     scrollRestored.current = true;
+    if (!isReturn) return;
     try {
-      const saved = Number(sessionStorage.getItem(scrollKey(location.key)));
+      const key = scrollKey(location.key);
+      const saved = Number(sessionStorage.getItem(key));
+      sessionStorage.removeItem(key);
       if (saved > 0) window.scrollTo({ top: saved, behavior: 'instant' });
     } catch {
       // Storage can be blocked; the browser's own restore is then all there is.
     }
-  }, [documents.data, location.key]);
+  }, [documents.data, location.key, isReturn]);
 
   // Stable so LibraryCard's React.memo is not defeated by a new arrow each render.
   const handleOpen = useCallback(

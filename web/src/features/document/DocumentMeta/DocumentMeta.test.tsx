@@ -69,4 +69,10 @@ describe('DocumentMeta', () => {
     expect(timeEl).toBeInTheDocument();
     expect(timeEl).toHaveAttribute('dateTime', '2023-04-12');
   });
+
+  it('gives the correspondent and type badges their full text as a tooltip', () => {
+    render(<DocumentMeta source={fullDocument} />);
+    expect(screen.getByText('British Gas').parentElement).toHaveAttribute('title', 'British Gas');
+    expect(screen.getByText('Invoice').parentElement).toHaveAttribute('title', 'Invoice');
+  });
 });

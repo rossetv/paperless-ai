@@ -1,6 +1,7 @@
 .badge {
-  display: inline-block;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-micro);
   padding: var(--spacing-1) var(--spacing-6);
   font-family: var(--font-text);
@@ -12,7 +13,12 @@
 
   /* A long label truncates inside its container instead of widening the page. */
   max-width: 100%;
-  overflow: clip;
+}
+
+/* text-overflow does not apply to a flex container, so the label carries it. */
+.label {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 

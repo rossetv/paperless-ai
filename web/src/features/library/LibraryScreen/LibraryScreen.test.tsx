@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { MemoryRouter, Routes, Route, useLocation, useNavigationType } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { LibraryScreen } from './LibraryScreen';
 import type {
   DocumentsResponse,
@@ -488,6 +488,7 @@ describe('LibraryScreen', () => {
       window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
       sessionStorage.clear();
     });
+    afterEach(() => vi.restoreAllMocks());
 
     it('restores the scroll position saved when a card was opened, once the list has rendered', async () => {
       const loaded = documentsResult({
@@ -523,6 +524,60 @@ describe('LibraryScreen', () => {
         </MemoryRouter>,
       );
       expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
+    });
+
+    const loadedList = () =>
+      documentsResult({ documents: [makeDoc(42, 'Invoice April')], total: 1, page: 1, page_size: 24 });
+
+    it('does not restore a saved position on a fresh visit that is not Back or Forward', async () => {
+      mockUseDocuments.mockReturnValue(loadedList());
+      // Whatever key the new entry gets, the store answers with an old offset.
+      vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('1806');
+      function ToLibrary() {
+        const navigate = useNavigate();
+        return <button onClick={() => void navigate('/library')}>Library link</button>;
+      }
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<ToLibrary />} />
+            <Route path="/library" element={<LibraryScreen />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Library link' }));
+      expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+
+    it('forgets the saved position once it has been restored', async () => {
+      mockUseDocuments.mockReturnValue(loadedList());
+      sessionStorage.setItem('library-scroll:default', '1806');
+      renderScreen();
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 1806 }));
+      expect(sessionStorage.getItem('library-scroll:default')).toBeNull();
+    });
+
+    it('does not restore on the first screen of a fresh page load', async () => {
+      vi.resetModules();
+      vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+        { type: 'navigate' } as PerformanceNavigationTiming,
+      ]);
+      const { render: freshRender } = await import('@testing-library/react');
+      const { MemoryRouter: FreshRouter, Routes: FreshRoutes, Route: FreshRoute } = await import('react-router-dom');
+      const { LibraryScreen: FreshScreen } = await import('./LibraryScreen');
+      const hooks = await import('../../../api/hooks');
+      (hooks.useDocuments as ReturnType<typeof vi.fn>).mockReturnValue(loadedList());
+      (hooks.useFacets as ReturnType<typeof vi.fn>).mockReturnValue(facetsResult());
+      sessionStorage.setItem('library-scroll:default', '1806');
+      freshRender(
+        <FreshRouter initialEntries={['/library']}>
+          <FreshRoutes>
+            <FreshRoute path="*" element={<FreshScreen />} />
+          </FreshRoutes>
+        </FreshRouter>,
+      );
+      expect(scrollTo).not.toHaveBeenCalled();
     });
 
     it('does not scroll when nothing was saved for this history entry', () => {
