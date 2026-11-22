@@ -559,10 +559,25 @@ async def _search_stream(
 
 
 def _reconcile(settings: Settings) -> Response:
-    """Reconcile handler body: touch the sentinel, return 202 Accepted."""
+    """Reconcile handler body: touch the sentinel, return 202 Accepted.
+
+    An unwritable sentinel directory is a misconfigured ``INDEX_DB_PATH``, so it
+    is a 503 like the rebuild trigger's, not a generic 500.
+    """
     db_dir = Path(settings.INDEX_DB_PATH).parent
     sentinel = db_dir / _RECONCILE_SENTINEL_NAME
-    sentinel.touch()
+    try:
+        sentinel.touch()
+    except OSError as exc:
+        log.error(
+            "api.reconcile_sentinel_write_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="cannot write sentinel: index data directory not writable",
+        ) from exc
     log.info("api.reconcile_triggered", sentinel=str(sentinel))
     return Response(status_code=202)
 

@@ -123,6 +123,19 @@ def test_reconcile_writes_sentinel_and_returns_202(tmp_path: Path) -> None:
     assert (tmp_path / "reconcile.request").exists(), "Sentinel was not created."
 
 
+def test_reconcile_answers_503_when_the_sentinel_cannot_be_written(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(db_path=str(tmp_path / "missing-dir" / "index.db"))
+    client = build_test_client(settings)
+    raw_key = _seed_api_key(settings)
+
+    response = client.post("/api/reconcile", headers=_bearer_headers(raw_key))
+
+    assert response.status_code == 503
+    assert "not writable" in response.json()["detail"]
+
+
 def test_reconcile_does_not_write_index_db(tmp_path: Path) -> None:
     """POST /api/reconcile must ONLY write the sentinel; never the index DB."""
     settings = _settings(db_path=str(tmp_path / "index.db"))
