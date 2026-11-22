@@ -67,7 +67,7 @@ _STRIP_ROWS = 256
 # error is not an OSError; uncaught it escapes the worker, the pre-tag stays,
 # and the document is re-downloaded and re-decoded every poll. So do the plain
 # errors Pillow raises on damaged header tags (a TIFF with a bad strip offset
-# gives a TypeError, a bad width a ValueError).
+# gives a TypeError, a bad width a ValueError, a cut-off GIF an IndexError).
 _UNDECODABLE = (
     UnidentifiedImageError,
     OSError,
@@ -77,6 +77,7 @@ _UNDECODABLE = (
     SyntaxError,
     struct.error,
     EOFError,
+    IndexError,
 )
 
 
