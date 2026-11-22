@@ -19,7 +19,12 @@ from pdf2image.exceptions import (
 )
 from PIL import Image, ImageOps
 
-from ocr.image_converter import ImageConversionError, PageSource, open_page_source
+from ocr.image_converter import (
+    ImageConversionError,
+    PageSource,
+    _apply_exif_orientation,
+    open_page_source,
+)
 
 
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
@@ -852,3 +857,12 @@ class TestImageMaxSide:
 
         with open_page_source(content, "image/png") as source:
             assert source.load_page(0).size == (300, 200)
+
+
+class TestExifOrientationDecodeErrors:
+    def test_a_decode_error_is_not_mistaken_for_junk_exif(self):
+        image = Image.new("RGB", (10, 10))
+
+        with patch.object(Image.Image, "load", side_effect=ValueError("bad data")):
+            with pytest.raises(ValueError, match="bad data"):
+                _apply_exif_orientation(image)
