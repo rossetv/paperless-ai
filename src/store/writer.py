@@ -288,9 +288,9 @@ class StoreWriter:
             configured_model=configured_model,
             configured_dimensions=configured_dims,
         )
-        # A fresh database has nothing to re-embed, so the alarm would be false.
+        # An index without chunks has nothing to re-embed, so the alarm would be false.
         # Read outside the write lock, before the wipe.
-        if stored_model is not None or project_reembed_scope(self._conn)[1] != 0:
+        if project_reembed_scope(self._conn)[1] != 0:
             log_reembed_projection(
                 self._conn,
                 trigger="embedding_model_change",

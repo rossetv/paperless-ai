@@ -110,6 +110,21 @@ class TestCheckEmbeddingModel:
         assert len(logs) == 1
         assert logs[0]["current_chunk_count"] == 2
 
+    def test_model_change_on_an_index_without_chunks_logs_no_full_reembed(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path, model="model-a", dimensions=4)
+        writer.check_embedding_model()
+        writer.close()
+
+        writer2 = open_writer(db_path, model="model-b", dimensions=4)
+        with structlog.testing.capture_logs() as captured:
+            writer2.check_embedding_model()
+        stored = writer2.read_meta("embedding_model")
+        writer2.close()
+        assert _full_reembed_logs(captured) == []
+        assert stored == "model-b"
+
     def test_returns_true_on_first_run(self, db_path: str) -> None:
         """With no stored model, a rebuild is needed and the model is recorded."""
         writer = open_writer(db_path, model="model-a", dimensions=4)
