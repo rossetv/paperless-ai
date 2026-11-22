@@ -52,6 +52,8 @@ export function Select<T extends string = string>({
 
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Set when the pointer moved the highlight, so the list is not scrolled under it.
+  const pointerMoved = useRef(false);
 
   // Close on outside pointer-down (bound only while open).
   // This also ensures a second dropdown opening dismisses this one, because
@@ -71,6 +73,10 @@ export function Select<T extends string = string>({
   // Keep the keyboard-highlighted option visible in a long, scrolling list.
   useEffect(() => {
     if (!isOpen || highlightedIndex < 0) return;
+    if (pointerMoved.current) {
+      pointerMoved.current = false;
+      return;
+    }
     const el = document.getElementById(optionId(highlightedIndex));
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- optionId only depends on id
@@ -106,6 +112,7 @@ export function Select<T extends string = string>({
   }
 
   function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void {
+    pointerMoved.current = false;
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
@@ -228,7 +235,10 @@ export function Select<T extends string = string>({
                   isHighlighted ? styles['highlighted'] : undefined,
                 )}
                 onClick={() => selectOption(option.value)}
-                onMouseEnter={() => setHighlightedIndex(index)}
+                onMouseEnter={() => {
+                  pointerMoved.current = true;
+                  setHighlightedIndex(index);
+                }}
               >
                 {option.label}
               </li>

@@ -96,6 +96,8 @@ export function FilterableListbox<T extends string | number = string>({
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Set when the pointer moved the highlight, so the list is not scrolled under it.
+  const pointerMoved = useRef(false);
 
   // Unique suffix so two instances sharing the same `id` prop never collide on
   // the generated option/listbox ids.
@@ -160,10 +162,19 @@ export function FilterableListbox<T extends string | number = string>({
   // Keep the keyboard-highlighted row visible in a long, scrolling list.
   useEffect(() => {
     if (!open || highlight < 0) return;
+    if (pointerMoved.current) {
+      pointerMoved.current = false;
+      return;
+    }
     const el = document.getElementById(optionId(highlight));
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- optionId only depends on id and uid
   }, [open, highlight]);
+
+  function highlightFromPointer(index: number): void {
+    pointerMoved.current = true;
+    setHighlight(index);
+  }
 
   function openList(): void {
     setOpen(true);
@@ -203,6 +214,7 @@ export function FilterableListbox<T extends string | number = string>({
   }
 
   function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>): void {
+    pointerMoved.current = false;
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
@@ -322,7 +334,7 @@ export function FilterableListbox<T extends string | number = string>({
                       styles['clear'],
                       highlighted && styles['highlighted'],
                     )}
-                    onMouseEnter={() => setHighlight(index)}
+                    onMouseEnter={() => highlightFromPointer(index)}
                     onClick={() => activateRow(row)}
                   >
                     {clearOption?.label}
@@ -341,7 +353,7 @@ export function FilterableListbox<T extends string | number = string>({
                       styles['create'],
                       highlighted && styles['highlighted'],
                     )}
-                    onMouseEnter={() => setHighlight(index)}
+                    onMouseEnter={() => highlightFromPointer(index)}
                     onClick={() => activateRow(row)}
                   >
                     Create &ldquo;{query.trim()}&rdquo;
@@ -360,7 +372,7 @@ export function FilterableListbox<T extends string | number = string>({
                     isSelected && styles['selected'],
                     highlighted && styles['highlighted'],
                   )}
-                  onMouseEnter={() => setHighlight(index)}
+                  onMouseEnter={() => highlightFromPointer(index)}
                   onClick={() => activateRow(row)}
                 >
                   <span className={styles['option-label']}>{row.item.label}</span>

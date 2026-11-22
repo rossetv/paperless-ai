@@ -287,6 +287,22 @@ describe('FilterableListbox keyboard and semantics', () => {
     }
   });
 
+  it('does not scroll the list when the pointer hovers an option', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const input = await openIt();
+      await userEvent.hover(screen.getByRole('option', { name: /Cherry/ }));
+      expect(input.getAttribute('aria-activedescendant')).toBe(
+        screen.getByRole('option', { name: /Cherry/ }).id,
+      );
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
   it('marks the listbox multiselectable only in multi mode', async () => {
     await openIt();
     expect(screen.getByRole('listbox')).not.toHaveAttribute('aria-multiselectable');

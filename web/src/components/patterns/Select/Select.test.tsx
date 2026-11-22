@@ -331,6 +331,23 @@ describe('Select keyboard and semantics', () => {
     }
   });
 
+  it('does not scroll the list when the pointer hovers an option', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const { trigger } = setup();
+      await userEvent.click(trigger);
+      await userEvent.hover(screen.getByRole('option', { name: 'Cherry' }));
+      expect(trigger.getAttribute('aria-activedescendant')).toBe(
+        screen.getByRole('option', { name: 'Cherry' }).id,
+      );
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      // @ts-expect-error jsdom has no scrollIntoView; restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
   it('builds option ids from the instance id and index, not the raw value', async () => {
     render(
       <Select id="odd" options={[{ value: 'a b/c', label: 'Odd' }]} onChange={vi.fn()} />,
