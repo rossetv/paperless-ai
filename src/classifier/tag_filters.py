@@ -82,16 +82,19 @@ def filter_blacklisted_tags(tags: Iterable[str]) -> list[str]:
 
 
 def extract_model_tags(text: str) -> list[str]:
-    """Extract model names from every ``Transcribed by model: a, b`` footer.
+    """Extract model names from the ``Transcribed by model: a, b`` lines ending *text*.
 
-    Content OCR'd more than once can carry several footers.
+    Only the block of consecutive footer lines at the very end counts; a
+    footer-like line anywhere else is document content, not ours.
     """
-    matches = list(MODEL_FOOTER_RE.finditer(text))
-    if not matches:
-        return []
+    values: list[str] = []
+    for line in reversed(text.rstrip().splitlines()):
+        match = MODEL_FOOTER_RE.fullmatch(line.strip())
+        if match is None:
+            break
+        values.append(match.group(1))
     tags: list[str] = []
-    for match in matches:
-        value = match.group(1).splitlines()[0]
+    for value in reversed(values):
         for token in value.split(","):
             tag = token.strip()
             if tag:
