@@ -44,13 +44,22 @@ def _is_symbol_or_other_number(ch: str) -> bool:
     return category.startswith("S") or category == "No"
 
 
+def _is_letter_with_word_marks(ch: str) -> bool:
+    """Whether marks on *ch* spell the word (Devanagari vowel signs) rather
+    than accent it (the umlaut in "Müller", which is folded away)."""
+    return ch.isalpha() and not unicodedata.name(ch, "").startswith(
+        ("LATIN", "GREEK", "CYRILLIC")
+    )
+
+
 def normalise_name(value: str) -> str:
     """
     Normalise an organisation name for fuzzy matching.
 
-    Strips punctuation and accents, lowercases, and removes trailing
-    corporate suffixes so that *"Revolut Ltd."* and *"Revolut"* compare as
-    equal. Letters of any script are kept.
+    Strips punctuation and the accents of Latin, Greek and Cyrillic letters,
+    lowercases, and removes trailing corporate suffixes so that
+    *"Revolut Ltd."* and *"Revolut"* compare as equal. Letters of any script
+    are kept, with the vowel signs of scripts that write vowels as marks.
 
     >>> normalise_name("Revolut Ltd.")
     'revolut'
@@ -60,11 +69,17 @@ def normalise_name(value: str) -> str:
     # Symbols and superscripts go first: NFKD would turn "™" into "TM", "²" into "2".
     kept = "".join(ch for ch in value if not _is_symbol_or_other_number(ch))
     folded = unicodedata.normalize("NFKD", kept).casefold()
-    cleaned = "".join(
-        ch
-        for ch in folded
-        if (ch.isalnum() or ch.isspace()) and not unicodedata.combining(ch)
-    )
+    chars: list[str] = []
+    base = ""
+    for ch in folded:
+        if unicodedata.category(ch).startswith("M"):
+            if _is_letter_with_word_marks(base):
+                chars.append(ch)
+            continue
+        base = ch
+        if ch.isalnum() or ch.isspace():
+            chars.append(ch)
+    cleaned = "".join(chars)
     parts = cleaned.split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
         parts.pop()

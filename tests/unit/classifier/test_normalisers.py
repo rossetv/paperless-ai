@@ -75,6 +75,12 @@ class TestNormaliseName:
     def test_keeps_non_latin_letters(self):
         assert normalise_name("東京電力 Co") == "東京電力"
 
+    def test_names_differing_only_in_indic_vowel_signs_stay_distinct(self):
+        assert normalise_name("किरण") != normalise_name("करण")
+
+    def test_keeps_marks_in_scripts_that_write_vowels_as_marks(self):
+        assert normalise_name("दिल्ली") == "दिल्ली"
+
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
