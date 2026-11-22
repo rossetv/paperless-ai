@@ -39,10 +39,10 @@ log = structlog.get_logger(__name__)
 # 5xx HTTPStatusError raised by _raise_for_status_if_server_error.
 RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
 
-# A POST is not idempotent (re-sending ``add_note`` duplicates the note), so it
-# retries only when the request provably was not applied: a failed or timed-out
-# connect, or a 5xx. ReadTimeout and RemoteProtocolError are excluded because
-# the server may already have applied the write.
+# A POST is not idempotent, so it retries only when the request provably was not
+# applied: a failed or timed-out connect, or a 5xx. ReadTimeout and
+# RemoteProtocolError are excluded because the server may already have applied
+# the write. add_note is stricter still (see _post_note): a 5xx may have stored it.
 RETRYABLE_POST_EXCEPTIONS = (
     httpx.ConnectError,
     httpx.ConnectTimeout,
