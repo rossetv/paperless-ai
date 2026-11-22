@@ -4,17 +4,19 @@ import { SaveBar } from './SaveBar';
 
 function renderBar(props: Partial<Parameters<typeof SaveBar>[0]> = {}) {
   return render(
-    <SaveBar
-      dirtyCount={0}
-      isPending={false}
-      onDiscard={() => {}}
-      onSave={() => {}}
-      {...props}
-    />,
+    <SaveBar dirtyCount={0} isPending={false} onDiscard={() => {}} onSave={() => {}} {...props} />,
   );
 }
 
 describe('SaveBar', () => {
+  it('reserves page space only while changes are pending', () => {
+    const { container, rerender } = renderBar({ dirtyCount: 0 });
+    expect(container.children).toHaveLength(1);
+    rerender(<SaveBar dirtyCount={2} isPending={false} onDiscard={() => {}} onSave={() => {}} />);
+    expect(container.children).toHaveLength(2);
+    expect(container.lastElementChild).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('is visually hidden when dirtyCount is zero', () => {
     const { container } = renderBar({ dirtyCount: 0 });
     const bar = container.firstElementChild as HTMLElement;

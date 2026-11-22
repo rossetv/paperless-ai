@@ -122,10 +122,28 @@
   }
 }
 
+/* Shown on phones only; see the phone rule below. */
+.spacer {
+  display: none;
+}
+
 /* Phone layout shows the fixed bottom tab bar; sit above it so both stay reachable. */
 @media (width <= 699.98px) {
   .bar {
     bottom: calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0%));
+  }
+
+  /* Clear the raised position too, so the exit never slides over the tab bar. */
+  .bar-hidden {
+    transform: translateY(
+      calc(100% + var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0%))
+    );
+  }
+
+  /* In-flow room under the page so the last field scrolls clear of the raised bar. */
+  .spacer {
+    display: block;
+    padding-top: calc(2 * var(--height-mobile-tab-bar));
   }
 }
 
