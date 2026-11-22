@@ -68,6 +68,5 @@ def test_valid_iso_date_still_works_as_single_day() -> None:
 
 
 def test_normalise_iso_date_returns_the_canonical_day_for_other_iso_spellings() -> None:
-    # Python 3.11 rejects the week date, so it only checks the canonical form where accepted.
     result = normalise_iso_date("2024-W03-1")
-    assert result in (None, "2024-01-15")
+    assert result == "2024-01-15"
