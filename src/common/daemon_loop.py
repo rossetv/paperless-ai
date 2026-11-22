@@ -47,8 +47,10 @@ def _process_batch(
 
     ``halt_check`` runs between sub-batches and before each item, so a circuit
     breaker that trips mid-pass over a deep queue wastes at most one sub-batch
-    of LLM calls instead of one per queued document. A halted skip is not a
-    failure. One item's exception is logged and does not affect the others.
+    of LLM calls instead of one per queued document. A requested shutdown stops
+    the pass the same way: documents in hand finish, no new one starts. A
+    halted skip is not a failure. One item's exception is logged and does not
+    affect the others.
 
     Returns the number of items actually run (fewer than ``len(items)`` after a
     halt).
@@ -56,7 +58,9 @@ def _process_batch(
     dispatched = 0
 
     def _run_one(item: T) -> bool:
-        if halt_check is not None and halt_check() is not None:
+        if is_shutdown_requested() or (
+            halt_check is not None and halt_check() is not None
+        ):
             # Halted while queued: skip before the LLM call, without a failure.
             return False
         process_item(item)
@@ -66,7 +70,9 @@ def _process_batch(
         max_workers=max_workers, thread_name_prefix=f"{daemon_name}-worker"
     ) as executor:
         for start in range(0, len(items), max_workers):
-            if halt_check is not None and halt_check() is not None:
+            if is_shutdown_requested() or (
+                halt_check is not None and halt_check() is not None
+            ):
                 break
             chunk = items[start : start + max_workers]
             future_to_item = {executor.submit(_run_one, item): item for item in chunk}

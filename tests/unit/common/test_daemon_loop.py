@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 from common.daemon_loop import _safe_item_summary, run_polling_threadpool
@@ -10,10 +11,16 @@ MODULE = "common.daemon_loop"
 
 
 def _make_shutdown_after(n_iterations: int):
-    """Stand-in for is_shutdown_requested: False n times, then True."""
+    """Stand-in for is_shutdown_requested: False for n polls of the loop, then True.
+
+    Only the polling loop's own checks count; the batch's per-document checks
+    just report the current state, so a test pins how many polls run.
+    """
     counter = {"calls": 0}
 
     def _is_shutdown():
+        if sys._getframe(1).f_code.co_name != "run_polling_threadpool":
+            return counter["calls"] > n_iterations
         counter["calls"] += 1
         return counter["calls"] > n_iterations
 
@@ -562,3 +569,46 @@ def test_a_failing_on_cycle_callback_does_not_crash_the_loop() -> None:
         )
     finally:
         reset_shutdown()
+
+
+def test_a_shutdown_requested_mid_batch_stops_before_the_next_document() -> None:
+    from common.daemon_loop import _process_batch
+    from common.shutdown import request_shutdown, reset_shutdown
+
+    started: list[int] = []
+
+    def process_item(item: int) -> None:
+        started.append(item)
+        request_shutdown()
+
+    try:
+        dispatched = _process_batch([1, 2, 3], process_item, 1, "test", None)
+    finally:
+        reset_shutdown()
+
+    assert started == [1]
+    assert dispatched == 1
+
+
+def test_a_queued_document_is_not_started_once_shutdown_is_requested() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from common.daemon_loop import _process_batch
+    from common.shutdown import request_shutdown, reset_shutdown
+
+    started: list[int] = []
+
+    def process_item(item: int) -> None:
+        started.append(item)
+        request_shutdown()
+
+    try:
+        # Two workers: the second item is queued in the same sub-batch, so only
+        # the check inside the per-item runner can keep it from starting.
+        with patch(f"{MODULE}.ThreadPoolExecutor") as pool:
+            pool.return_value = ThreadPoolExecutor(max_workers=1)
+            _process_batch([1, 2], process_item, 2, "test", None)
+    finally:
+        reset_shutdown()
+
+    assert started == [1]
