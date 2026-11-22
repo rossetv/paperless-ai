@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { Table } from './Table';
 import type { Column } from './Table';
 
@@ -122,6 +122,38 @@ describe('Table', () => {
       fireEvent.scroll(wrapper);
       expect(wrapper.dataset['fadeStart']).toBe('true');
       expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+    });
+
+    it('re-measures when the wrapper or table is resized, without a scroll', () => {
+      let notify: () => void = () => undefined;
+      const observed: Element[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback: () => void) {
+            notify = callback;
+          }
+          observe(target: Element): void {
+            observed.push(target);
+          }
+          disconnect(): void {}
+        },
+      );
+      try {
+        render(<Table columns={COLUMNS} rows={ROWS} getRowKey={(r) => r.id} />);
+        const table = screen.getByRole('table');
+        const wrapper = table.parentElement as HTMLElement;
+        expect(observed).toEqual(expect.arrayContaining([wrapper, table]));
+        expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+        sizeWrapper(wrapper, 600, 300);
+        act(() => notify());
+        expect(wrapper.dataset['fadeEnd']).toBe('true');
+        sizeWrapper(wrapper, 300, 300);
+        act(() => notify());
+        expect(wrapper.dataset['fadeEnd']).toBeUndefined();
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });
