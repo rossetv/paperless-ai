@@ -1,19 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { MemoryRouter } from 'react-router-dom';
 import { SettingsLayout } from './SettingsLayout';
 
 const meta = {
   title: 'Layout/SettingsLayout',
   component: SettingsLayout,
-  parameters: { layout: 'fullscreen' },
+  parameters: { layout: 'fullscreen', initialRoute: '/settings/users' },
   tags: ['autodocs'],
-  decorators: [
-    (Story) => (
-      <MemoryRouter initialEntries={['/settings/users']}>
-        <Story />
-      </MemoryRouter>
-    ),
-  ],
 } satisfies Meta<typeof SettingsLayout>;
 
 export default meta;

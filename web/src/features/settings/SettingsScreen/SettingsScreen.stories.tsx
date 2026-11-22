@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SettingsScreen } from './SettingsScreen';
 
@@ -10,14 +9,12 @@ import { SettingsScreen } from './SettingsScreen';
 const meta = {
   title: 'Features/Settings/SettingsScreen',
   component: SettingsScreen,
-  parameters: { layout: 'fullscreen' },
+  parameters: { layout: 'fullscreen', initialRoute: '/settings' },
   tags: ['autodocs'],
   decorators: [
     (Story) => (
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter initialEntries={['/settings']}>
-          <Story />
-        </MemoryRouter>
+        <Story />
       </QueryClientProvider>
     ),
   ],
