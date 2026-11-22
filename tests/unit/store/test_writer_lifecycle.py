@@ -70,7 +70,7 @@ class TestBulkDelete:
         writer = open_writer(db_path)
         count = 1100
         for doc_id in range(1, count + 1):
-            writer.upsert_document(make_document_meta(id=doc_id), make_chunks(1))
+            writer.upsert_document(make_document_meta(id=doc_id), make_chunks(2))
         writer._conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 600)
         writer.delete_documents(range(1, count + 1))
         conn = writer._conn

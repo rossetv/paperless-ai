@@ -231,7 +231,11 @@ class StoreWriter:
                             batch,
                         )
         except sqlite3.Error as exc:
-            raise StoreError(f"failed to delete documents {document_ids}") from exc
+            shown = ", ".join(str(i) for i in document_ids[:10])
+            more = ", ..." if len(document_ids) > 10 else ""
+            raise StoreError(
+                f"failed to delete {len(document_ids)} documents ({shown}{more})"
+            ) from exc
 
     def refresh_taxonomy(self, entries: Iterable[TaxonomyEntry]) -> None:
         """Replace the entire taxonomy table in one transaction.
