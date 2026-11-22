@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tanstack/react-query';
@@ -283,7 +283,7 @@ describe('DocumentScreen', () => {
     fireEvent.change(input, { target: { value: 'Renamed' } });
     fireEvent.blur(input);
     await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith({ id: 934, patch: { title: 'Renamed' } }),
+      expect(mutate).toHaveBeenCalledWith({ id: 934, patch: { title: 'Renamed' } }, expect.anything()),
     );
   });
 
@@ -303,7 +303,7 @@ describe('DocumentScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.click(screen.getByText('Revenue.ie'));
     await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 2 } }),
+      expect(mutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 2 } }, expect.anything()),
     );
   });
 
@@ -497,7 +497,7 @@ describe('DocumentScreen', () => {
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     expect(correspondentMutate).toHaveBeenCalledWith('New Corp', expect.objectContaining({ onSuccess: expect.any(Function) }));
-    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 50 } });
+    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 50 } }, expect.anything());
   });
 
   it('creating a new document type patches it onto the document', async () => {
@@ -521,7 +521,7 @@ describe('DocumentScreen', () => {
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     expect(documentTypeMutate).toHaveBeenCalledWith('New Type', expect.objectContaining({ onSuccess: expect.any(Function) }));
-    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } });
+    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } }, expect.anything());
   });
 
   it('createTagThenAdd keeps a tag added since render by reading the cached document', () => {
@@ -548,42 +548,53 @@ describe('DocumentScreen', () => {
     expect(call.patch.tags).toEqual([100, 101, 102, 103, 200]);
   });
 
-  it('discards a second mutate call while a save is already in flight', async () => {
-    const mutate = vi.fn();
-    // Not renderScreen(): it would overwrite the pending mutation stub.
-    mockUseUpdateDocument.mockReturnValue(
-      mutationStub({
-        mutate: mutate as unknown as UseMutateFunction<
-          LibraryDocument,
-          Error,
-          { id: number; patch: object }
-        >,
-        isPending: true,
-        isIdle: false,
-        status: 'pending',
-      }),
-    );
-
-    render(
-      <QueryClientProvider client={makeQueryClient()}>
-        <MemoryRouter>
-          <DocumentScreen
-            document={DOC}
-            parent="library"
-            parentSearch=""
-            role="member"
-          />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+  it('sends an edit made during a save once that save settles, merged with later edits', async () => {
+    type Opts = { onSuccess?: (doc: LibraryDocument) => void; onSettled?: () => void };
+    const calls: { args: { id: number; patch: object }; opts?: Opts }[] = [];
+    const mutate = vi.fn((args: { id: number; patch: object }, opts?: Opts) => {
+      calls.push({ args, ...(opts ? { opts } : {}) });
+    });
+    renderScreen({ role: 'member', mutate });
 
     fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
     const input = screen.getByDisplayValue('eBay Payslip 05/2026');
-    fireEvent.change(input, { target: { value: 'Attempted while pending' } });
+    fireEvent.change(input, { target: { value: 'Renamed' } });
     fireEvent.blur(input);
+    expect(mutate).toHaveBeenCalledTimes(1);
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(mutate).not.toHaveBeenCalled();
+    // Two edits while the title save is in flight; the second correspondent wins.
+    fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
+    fireEvent.click(screen.getByText('Revenue.ie'));
+    fireEvent.click(screen.getByRole('button', { name: 'Payslip' }));
+    fireEvent.click(screen.getByText('Invoice'));
+    expect(mutate).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      calls[0]?.opts?.onSuccess?.({ ...DOC, title: 'Renamed' });
+      calls[0]?.opts?.onSettled?.();
+    });
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(calls[1]?.args).toEqual({ id: 934, patch: { correspondent_id: 2, document_type_id: 11 } });
+  });
+
+  it('a tag edit made while another tag save is in flight keeps the first edit', () => {
+    type Opts = { onSuccess?: (doc: LibraryDocument) => void; onSettled?: () => void };
+    const calls: { args: { id: number; patch: { tags?: number[] } }; opts?: Opts }[] = [];
+    const mutate = vi.fn((args: { id: number; patch: { tags?: number[] } }, opts?: Opts) => {
+      calls.push({ args, ...(opts ? { opts } : {}) });
+    });
+    renderScreen({ role: 'member', mutate });
+
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.click(screen.getByRole('option', { name: /new-tag/i }));
+    fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
+    expect(mutate).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      calls[0]?.opts?.onSuccess?.({ ...DOC, tags: [...DOC.tags, 'new-tag'] });
+      calls[0]?.opts?.onSettled?.();
+    });
+    expect(calls[1]?.args.patch.tags).toEqual([100, 102, 103]);
   });
 
   it('retry button re-fires the last attempted PATCH with the same args', async () => {

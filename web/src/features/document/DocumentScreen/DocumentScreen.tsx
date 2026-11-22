@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
+import type { DocumentPatch, LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useUpdateDocument,
@@ -71,8 +71,8 @@ export interface DocumentScreenProps {
 }
 
 /**
- * Every edit goes through one `useUpdateDocument` mutation, whose lifecycle
- * drives the `SaveStatusPill`. A successful delete navigates back to the
+ * Every edit goes through one `useUpdateDocument` mutation, one save at a time,
+ * whose lifecycle drives the `SaveStatusPill`. A successful delete navigates back to the
  * breadcrumb target.
  */
 export function DocumentScreen({
@@ -98,17 +98,48 @@ export function DocumentScreen({
   const [toast, setToast] = React.useState<{ message: string; variant: ToastVariant } | null>(null);
 
   // The last attempted patch, so the retry button can re-fire it.
-  const lastAttemptRef = React.useRef<{ id: number; patch: Parameters<typeof update.mutate>[0]['patch'] } | null>(null);
+  const lastAttemptRef = React.useRef<DocumentPatch | null>(null);
+  const inFlightRef = React.useRef(false);
+  // Edits made while a save is in flight, merged so later edits to a field win.
+  const pendingRef = React.useRef<DocumentPatch | null>(null);
+  // The tag set last sent or queued: the base for the next tag edit until the
+  // saved document is back, since the document's own tags are still the old ones.
+  const sentTagsRef = React.useRef<number[] | null>(null);
 
-  /**
-   * Drops a save while another is in flight: both are built from render-time
-   * snapshots, so the second would clobber the first (e.g. a tag edit during a
-   * pending title save would write back the old title).
-   */
-  function mutate(args: Parameters<typeof update.mutate>[0]): void {
-    if (update.isPending) return;
-    lastAttemptRef.current = args;
-    update.mutate(args);
+  function save(patch: DocumentPatch): void {
+    if (patch.tags !== undefined) sentTagsRef.current = patch.tags;
+    if (inFlightRef.current) {
+      pendingRef.current = { ...pendingRef.current, ...patch };
+      return;
+    }
+    send(patch);
+  }
+
+  function send(patch: DocumentPatch): void {
+    lastAttemptRef.current = patch;
+    inFlightRef.current = true;
+    update.mutate(
+      { id: document.id, patch },
+      {
+        onSuccess: (saved) => {
+          if (pendingRef.current !== null) return;
+          qc.setQueryData(queryKeys.document(document.id), saved);
+          sentTagsRef.current = null;
+        },
+        onError: () => {
+          // Retry sends the failed patch together with anything queued behind it.
+          lastAttemptRef.current = { ...patch, ...pendingRef.current };
+          pendingRef.current = null;
+          sentTagsRef.current = null;
+        },
+        onSettled: () => {
+          inFlightRef.current = false;
+          const next = pendingRef.current;
+          pendingRef.current = null;
+          if (next !== null) send(next);
+        },
+      },
+    );
   }
 
   // Return the pill to idle 2 s after a successful save.
@@ -149,7 +180,7 @@ export function DocumentScreen({
   );
 
   function commitTitle(next: string): void {
-    mutate({ id: document.id, patch: { title: next === '' ? null : next } });
+    save({ title: next === '' ? null : next });
   }
 
   /**
@@ -163,9 +194,13 @@ export function DocumentScreen({
     const latestNames = (): string[] =>
       qc.getQueryData<LibraryDocument>(queryKeys.document(document.id))?.tags ?? document.tags;
     const send = (ids: number[]): void => {
-      mutate({ id: document.id, patch: { tags: change(ids) } });
+      save({ tags: change(sentTagsRef.current ?? ids) });
     };
 
+    if (sentTagsRef.current !== null) {
+      send(sentTagsRef.current);
+      return;
+    }
     const ids = resolveTagIds(latestNames(), [...(tags.data ?? []), ...known]);
     if (ids !== null) {
       send(ids);
@@ -210,7 +245,7 @@ export function DocumentScreen({
           <SaveStatusPill
             status={saveStatus}
             onRetry={() => {
-              if (lastAttemptRef.current !== null) mutate(lastAttemptRef.current);
+              if (lastAttemptRef.current !== null) send(lastAttemptRef.current);
             }}
           />
         ) : (
@@ -261,23 +296,15 @@ export function DocumentScreen({
             correspondents={correspondents.data ?? []}
             documentTypes={documentTypes.data ?? []}
             canEdit={canEdit}
-            onPatch={(patch) => mutate({ id: document.id, patch })}
+            onPatch={save}
             onCreateCorrespondent={(name) =>
               createCorrespondent.mutate(name, {
-                onSuccess: (created) =>
-                  mutate({
-                    id: document.id,
-                    patch: { correspondent_id: created.id },
-                  }),
+                onSuccess: (created) => save({ correspondent_id: created.id }),
               })
             }
             onCreateDocumentType={(name) =>
               createDocumentType.mutate(name, {
-                onSuccess: (created) =>
-                  mutate({
-                    id: document.id,
-                    patch: { document_type_id: created.id },
-                  }),
+                onSuccess: (created) => save({ document_type_id: created.id }),
               })
             }
           />
