@@ -11,6 +11,7 @@ import { ConnectionCard } from '../ConnectionCard/ConnectionCard';
 import type { StatusTone } from '../ConnectionCard/ConnectionCard';
 import { FieldRow } from '../SettingsSection/SettingsSection';
 import { SettingsBlock } from '../../../components/primitives/SettingsBlock/SettingsBlock';
+import { errorDetail } from '../../../api/client';
 import { useTestConnection } from '../../../api/hooks/settings';
 import { SECRET_MASK } from '../../../api/types/settings';
 
@@ -143,8 +144,8 @@ export function ConnectionsPanel({
       } else {
         setStatus(service, { tone: 'err', label: result.detail ?? 'Error' });
       }
-    } catch {
-      setStatus(service, { tone: 'err', label: 'Error' });
+    } catch (e) {
+      setStatus(service, { tone: 'err', label: errorDetail(e, 'Error') });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values]);
