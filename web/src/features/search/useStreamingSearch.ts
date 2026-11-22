@@ -243,7 +243,11 @@ export function useStreamingSearch(restore = false): UseStreamingSearch {
             case 'error':
               dispatch({
                 type: 'error',
-                error: { message: event.message },
+                error: {
+                  // Same state as a 503 on the initial response.
+                  ...(event.kind === 'index_not_ready' ? { status: 503 } : {}),
+                  message: event.message,
+                },
               });
               return;
             default:

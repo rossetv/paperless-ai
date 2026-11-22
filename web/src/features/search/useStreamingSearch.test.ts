@@ -181,6 +181,28 @@ describe('useStreamingSearch', () => {
     expect(result.current.state.phaseRecords).toHaveLength(1);
   });
 
+  it('maps an in-stream index_not_ready frame to the 503 status', async () => {
+    mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+    mockParseNdjson.mockReturnValue(
+      eventsGen([
+        {
+          type: 'error',
+          seq: 1,
+          kind: 'index_not_ready',
+          message: 'The search index is not ready',
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
+    await act(async () => {
+      result.current.run('q', EMPTY_FILTERS);
+    });
+
+    await waitFor(() => expect(result.current.state.status).toBe('error'));
+    expect(result.current.state.error?.status).toBe(503);
+  });
+
   it('surfaces a 401 from streamSearch with the status on the error', async () => {
     mockStreamSearch.mockRejectedValue(new Unauthenticated());
 
