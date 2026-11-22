@@ -7,15 +7,18 @@
  * run are dropped so a slow earlier stream never overwrites a newer one.
  */
 
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ApiError,
   parseNdjson,
   streamSearch,
   Unauthenticated,
 } from '../../api/client';
+import { queryKeys } from '../../api/hooks/keys';
 import type {
   FilterRequest,
+  MeResponse,
   PhaseRecord,
   SearchPhase,
   SearchResponse,
@@ -116,19 +119,20 @@ function toFailure(err: unknown): StreamFailure {
 }
 
 /**
- * The last finished search, kept across unmounts so Back from a preview shows
- * the answer again instead of paying for the same search twice. In memory only:
- * a reload searches afresh.
+ * The last finished search, kept in the query cache so Back from a preview shows
+ * the answer again instead of paying for the same search twice. Sign-out clears
+ * the cache, and the entry also names its user, so another user never sees it.
  */
-let lastDone: { key: string; state: StreamingSearchState } | null = null;
+const KEPT_QUERY_KEY = ['search', 'kept'] as const;
+
+interface KeptSearch {
+  userId: number;
+  key: string;
+  state: StreamingSearchState;
+}
 
 const searchKey = (query: string, filters: FilterRequest): string =>
   `${query}\u0000${JSON.stringify(filters)}`;
-
-/** Forgets the kept search; for tests. */
-export function clearLastSearch(): void {
-  lastDone = null;
-}
 
 export interface UseStreamingSearch {
   state: StreamingSearchState;
@@ -136,11 +140,23 @@ export interface UseStreamingSearch {
   run: (query: string, filters: FilterRequest) => void;
 }
 
-/** Runs agentic searches as a live NDJSON stream. */
-export function useStreamingSearch(): UseStreamingSearch {
+/**
+ * Runs agentic searches as a live NDJSON stream. With `restore` (read on the
+ * first render only), the signed-in user's last finished search is shown again
+ * without searching, as when the page is reached by Back.
+ */
+export function useStreamingSearch(restore = false): UseStreamingSearch {
+  const queryClient = useQueryClient();
+  const currentUserId = (): number | undefined =>
+    queryClient.getQueryData<MeResponse>(queryKeys.me())?.user.id;
+
+  const [kept] = useState<KeptSearch | undefined>(() => {
+    const entry = queryClient.getQueryData<KeptSearch>(KEPT_QUERY_KEY);
+    return restore && entry?.userId === currentUserId() ? entry : undefined;
+  });
   const [state, dispatch] = useReducer(
     reducer,
-    lastDone?.state ?? INITIAL_STATE,
+    kept?.state ?? INITIAL_STATE,
   );
 
   // Refs, not state: changing them must not re-render, and the async loop
@@ -149,13 +165,19 @@ export function useStreamingSearch(): UseStreamingSearch {
   const runIdRef = useRef(0);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const keyRef = useRef<string | null>(lastDone?.key ?? null);
+  const keyRef = useRef<string | null>(kept?.key ?? null);
 
   useEffect(() => {
-    if (state.status === 'done' && keyRef.current !== null) {
-      lastDone = { key: keyRef.current, state };
+    const userId = currentUserId();
+    if (state.status === 'done' && keyRef.current !== null && userId !== undefined) {
+      queryClient.setQueryData<KeptSearch>(KEPT_QUERY_KEY, {
+        userId,
+        key: keyRef.current,
+        state,
+      });
     }
-  }, [state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, queryClient]);
 
   const run = useCallback((query: string, filters: FilterRequest): void => {
     const key = searchKey(query, filters);

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createElement, type ReactNode } from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PhaseRecord, SearchResponse, StreamEvent } from '../../api/types';
 
 // Mock both halves of the streaming client so tests drive the event sequence.
@@ -13,7 +15,7 @@ vi.mock('../../api/client', async (importOriginal) => {
 });
 
 import { streamSearch, parseNdjson, ApiError, Unauthenticated } from '../../api/client';
-import { clearLastSearch, useStreamingSearch } from './useStreamingSearch';
+import { useStreamingSearch } from './useStreamingSearch';
 
 const mockStreamSearch = streamSearch as ReturnType<typeof vi.fn>;
 const mockParseNdjson = parseNdjson as ReturnType<typeof vi.fn>;
@@ -76,11 +78,20 @@ const PLAN_DONE: StreamEvent & PhaseRecord = {
   ms: 42,
 };
 
+let client: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) =>
+  createElement(QueryClientProvider, { client }, children);
+
+function signIn(id: number): void {
+  client.setQueryData(['auth', 'me'], { user: { id } });
+}
+
 describe('useStreamingSearch', () => {
   beforeEach(() => {
     mockStreamSearch.mockReset();
     mockParseNdjson.mockReset();
-    clearLastSearch();
+    client = new QueryClient();
+    signIn(1);
   });
 
   afterEach(() => {
@@ -88,7 +99,7 @@ describe('useStreamingSearch', () => {
   });
 
   it('starts idle', () => {
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     expect(result.current.state.status).toBe('idle');
     expect(result.current.state.phaseRecords).toEqual([]);
     expect(result.current.state.result).toBeNull();
@@ -106,7 +117,7 @@ describe('useStreamingSearch', () => {
       ]),
     );
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
 
     await act(async () => {
       result.current.run('npower bills', EMPTY_FILTERS);
@@ -133,7 +144,7 @@ describe('useStreamingSearch', () => {
       })(),
     );
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('q', EMPTY_FILTERS);
     });
@@ -160,7 +171,7 @@ describe('useStreamingSearch', () => {
       ]),
     );
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('q', EMPTY_FILTERS);
     });
@@ -173,7 +184,7 @@ describe('useStreamingSearch', () => {
   it('surfaces a 401 from streamSearch with the status on the error', async () => {
     mockStreamSearch.mockRejectedValue(new Unauthenticated());
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('q', EMPTY_FILTERS);
     });
@@ -185,7 +196,7 @@ describe('useStreamingSearch', () => {
   it('surfaces a 503 from streamSearch with the status on the error', async () => {
     mockStreamSearch.mockRejectedValue(new ApiError(503));
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('q', EMPTY_FILTERS);
     });
@@ -198,7 +209,7 @@ describe('useStreamingSearch', () => {
     mockStreamSearch.mockResolvedValue({ body: {} } as Response);
     mockParseNdjson.mockReturnValue(eventsGen([PLAN_START, PLAN_DONE]));
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('q', EMPTY_FILTERS);
     });
@@ -216,7 +227,7 @@ describe('useStreamingSearch', () => {
       mockParseNdjson.mockReturnValueOnce(
         eventsGen([{ type: 'result', seq: 1, result: makeResponse('kept') }]),
       );
-      const first = renderHook(() => useStreamingSearch());
+      const first = renderHook(() => useStreamingSearch(), { wrapper });
       await act(async () => {
         first.result.current.run(query, EMPTY_FILTERS);
       });
@@ -228,7 +239,7 @@ describe('useStreamingSearch', () => {
     it('shows the kept answer on remount and does not search again', async () => {
       await finishSearch('q');
 
-      const { result } = renderHook(() => useStreamingSearch());
+      const { result } = renderHook(() => useStreamingSearch(true), { wrapper });
       expect(result.current.state.status).toBe('done');
       expect(result.current.state.result?.answer).toBe('kept');
       await act(async () => {
@@ -242,7 +253,7 @@ describe('useStreamingSearch', () => {
       await finishSearch('q');
       mockParseNdjson.mockImplementation(() => neverGen());
 
-      const { result } = renderHook(() => useStreamingSearch());
+      const { result } = renderHook(() => useStreamingSearch(true), { wrapper });
       await act(async () => {
         result.current.run('other', EMPTY_FILTERS);
       });
@@ -253,12 +264,46 @@ describe('useStreamingSearch', () => {
       expect(mockStreamSearch).toHaveBeenCalledTimes(2);
     });
 
+    it('searches again when the page was not reached by Back', async () => {
+      await finishSearch('q');
+      mockParseNdjson.mockReturnValueOnce(neverGen());
+
+      const { result } = renderHook(() => useStreamingSearch(false), { wrapper });
+      expect(result.current.state.status).toBe('idle');
+      await act(async () => {
+        result.current.run('q', EMPTY_FILTERS);
+      });
+      expect(mockStreamSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not show the kept answer to another user', async () => {
+      await finishSearch('q');
+      signIn(2);
+      mockParseNdjson.mockReturnValueOnce(neverGen());
+
+      const { result } = renderHook(() => useStreamingSearch(true), { wrapper });
+      expect(result.current.state.status).toBe('idle');
+      await act(async () => {
+        result.current.run('q', EMPTY_FILTERS);
+      });
+      expect(mockStreamSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not show the kept answer after the cache is cleared at sign-out', async () => {
+      await finishSearch('q');
+      client.clear();
+      signIn(1);
+
+      const { result } = renderHook(() => useStreamingSearch(true), { wrapper });
+      expect(result.current.state.status).toBe('idle');
+    });
+
     it('does not keep a failed search, so Try again runs', async () => {
       mockStreamSearch.mockResolvedValue({ body: {} } as Response);
       mockParseNdjson.mockReturnValueOnce(
         eventsGen([{ type: 'error', seq: 1, kind: 'internal', message: 'boom' }]),
       );
-      const first = renderHook(() => useStreamingSearch());
+      const first = renderHook(() => useStreamingSearch(), { wrapper });
       await act(async () => {
         first.result.current.run('q', EMPTY_FILTERS);
       });
@@ -267,7 +312,7 @@ describe('useStreamingSearch', () => {
       mockStreamSearch.mockClear();
       mockParseNdjson.mockReturnValueOnce(neverGen());
 
-      const { result } = renderHook(() => useStreamingSearch());
+      const { result } = renderHook(() => useStreamingSearch(), { wrapper });
       expect(result.current.state.status).toBe('idle');
       await act(async () => {
         result.current.run('q', EMPTY_FILTERS);
@@ -288,7 +333,7 @@ describe('useStreamingSearch', () => {
       eventsGen([{ type: 'result', seq: 1, result: response }]),
     );
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('first', EMPTY_FILTERS);
     });
@@ -321,7 +366,7 @@ describe('useStreamingSearch', () => {
       eventsGen([{ type: 'result', seq: 1, result: fresh }]),
     );
 
-    const { result } = renderHook(() => useStreamingSearch());
+    const { result } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('first', EMPTY_FILTERS);
     });
@@ -343,7 +388,7 @@ describe('useStreamingSearch', () => {
     mockStreamSearch.mockResolvedValue({ body: {} } as Response);
     mockParseNdjson.mockReturnValue(neverGen());
 
-    const { result, unmount } = renderHook(() => useStreamingSearch());
+    const { result, unmount } = renderHook(() => useStreamingSearch(), { wrapper });
     await act(async () => {
       result.current.run('q', EMPTY_FILTERS);
     });

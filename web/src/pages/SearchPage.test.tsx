@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { SearchPage } from './SearchPage';
 
 // AppNavBar drives useAuth/useLogout + router; mock it to a plain div.
@@ -439,6 +439,32 @@ describe('SearchPage', () => {
         expect.any(Object),
       );
     });
+  });
+
+  it('asks the hook to restore a kept answer when reached by Back or a reload', () => {
+    mockUseStreamingSearch.mockReturnValue(streamState({ status: 'idle' }));
+    renderPage('/?q=invoice');
+    expect(mockUseStreamingSearch).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not restore a kept answer when reached by a link', async () => {
+    mockUseStreamingSearch.mockReturnValue(streamState({ status: 'idle' }));
+    function Away(): React.ReactElement {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/?q=invoice')}>go</button>;
+    }
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={['/away']}>
+          <Routes>
+            <Route path="/away" element={<Away />} />
+            <Route path="/" element={<SearchPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByText('go'));
+    expect(mockUseStreamingSearch).toHaveBeenLastCalledWith(false);
   });
 
   it('mounting at /?q=invoice triggers the search', async () => {

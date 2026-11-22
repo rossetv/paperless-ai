@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useNavigationType } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
@@ -43,7 +43,8 @@ export function SearchPage(): React.ReactElement {
     number | undefined
   >(undefined);
 
-  const { state, run } = useStreamingSearch();
+  // Only Back/Forward shows the kept answer; a link or new query searches.
+  const { state, run } = useStreamingSearch(useNavigationType() === 'POP');
 
   // Re-run the stream whenever the URL's query/filters change to a non-empty
   // query. Filters are serialised so a fresh-but-equal object does not
