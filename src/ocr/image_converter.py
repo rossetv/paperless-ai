@@ -17,7 +17,7 @@ from io import BytesIO
 from types import TracebackType
 from typing import Any, cast
 
-from PIL import Image, ImageOps, ImageSequence, UnidentifiedImageError
+from PIL import Image, ImageSequence, UnidentifiedImageError
 from pdf2image import convert_from_bytes
 from pdf2image.exceptions import (
     PDFPageCountError,
@@ -48,6 +48,16 @@ _PAGE_MODE_TARGETS = {
 }
 
 _EXIF_ORIENTATION = 0x0112
+# Orientation value -> the transpose that makes the pixels upright.
+_ORIENTATION_TRANSPOSE = {
+    2: Image.Transpose.FLIP_LEFT_RIGHT,
+    3: Image.Transpose.ROTATE_180,
+    4: Image.Transpose.FLIP_TOP_BOTTOM,
+    5: Image.Transpose.TRANSPOSE,
+    6: Image.Transpose.ROTATE_270,
+    7: Image.Transpose.TRANSVERSE,
+    8: Image.Transpose.ROTATE_90,
+}
 
 # Rows converted at a time for 16-bit greyscale, which Pillow cannot resize:
 # the 32-bit intermediate then stays a strip, not the whole page.
@@ -219,9 +229,9 @@ def _apply_exif_orientation(image: Image.Image) -> Image.Image:
     except (SyntaxError, ValueError, struct.error):
         # A junk EXIF block means "upright", not an undecodable image.
         return image
-    if orientation in (2, 3, 4, 5, 6, 7, 8):
-        return ImageOps.exif_transpose(image) or image
-    return image
+    method = _ORIENTATION_TRANSPOSE.get(orientation)
+    # Not ImageOps.exif_transpose: it re-writes the EXIF block, which a damaged tag breaks.
+    return image.transpose(method) if method is not None else image
 
 
 def _to_page_mode(image: Image.Image) -> Image.Image:
