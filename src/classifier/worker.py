@@ -330,7 +330,7 @@ class ClassificationProcessor:
         date_for_tags: str,
     ) -> list[str]:
         """Build the filtered and enriched tag name list from classification output."""
-        base_tags = self._drop_born_digital_tag(filter_blacklisted_tags(result.tags))
+        base_tags = self._drop_reserved_tags(filter_blacklisted_tags(result.tags))
         base_tags = filter_redundant_tags(
             base_tags,
             result.correspondent,
@@ -345,20 +345,29 @@ class ClassificationProcessor:
             self.settings.CLASSIFY_TAG_LIMIT,
         )
 
-    def _drop_born_digital_tag(self, tags: list[str]) -> list[str]:
-        """Remove the born-digital tag from the LLM's suggestions.
+    def _reserved_tag_ids(self) -> set[int]:
+        """Tag ids only the pipeline itself may set: pipeline and born-digital."""
+        reserved = pipeline_tag_ids(self.settings)
+        if self.settings.OCR_BORN_DIGITAL_TAG_ID is not None:
+            reserved.add(self.settings.OCR_BORN_DIGITAL_TAG_ID)
+        return reserved
 
-        The tag records the OCR gate's verdict that no transcription ran, but
-        the LLM sees it in the vocabulary and picks it for scanned documents, so
-        only the gate may set it. Dropped before the tag limit so it does not
-        use a slot; a tag already on the document is kept.
+    def _drop_reserved_tags(self, tags: list[str]) -> list[str]:
+        """Remove pipeline and born-digital tags from the LLM's suggestions.
+
+        The LLM sees these in the vocabulary and picks them (the born-digital
+        tag for scanned documents), but only the pipeline may set them. Dropped
+        before the tag limit so they do not use a slot; a born-digital tag
+        already on the document is kept.
         """
-        tag_id = self.settings.OCR_BORN_DIGITAL_TAG_ID
-        name = self.taxonomy_cache.tag_name(tag_id) if tag_id is not None else None
-        if name is None:
+        reserved: set[str] = set()
+        for tag_id in self._reserved_tag_ids():
+            name = self.taxonomy_cache.tag_name(tag_id)
+            if name is not None:
+                reserved.add(normalise_simple(name))
+        if not reserved:
             return tags
-        key = normalise_simple(name)
-        return [tag for tag in tags if normalise_simple(tag) != key]
+        return [tag for tag in tags if normalise_simple(tag) not in reserved]
 
     def _resolve_taxonomy_ids(
         self, result: ClassificationResult, tag_names: list[str]
@@ -368,9 +377,7 @@ class ClassificationProcessor:
         Pipeline and born-digital tag ids are dropped: the names come from the
         LLM and the document text, and only the pipeline itself may set those.
         """
-        blocked = pipeline_tag_ids(self.settings)
-        if self.settings.OCR_BORN_DIGITAL_TAG_ID is not None:
-            blocked.add(self.settings.OCR_BORN_DIGITAL_TAG_ID)
+        blocked = self._reserved_tag_ids()
         tag_ids = [
             tag_id
             for tag_id in self.taxonomy_cache.get_or_create_tag_ids(tag_names)

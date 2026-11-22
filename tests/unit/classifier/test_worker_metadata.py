@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from tests.helpers.factories import make_classification_result
 from tests.unit.classifier.conftest import make_doc_with_content, make_processor
 
@@ -190,7 +192,7 @@ class TestBornDigitalTag:
 
         proc.process()
 
-        proc.taxonomy_cache.tag_name.assert_called_once_with(1080)
+        proc.taxonomy_cache.tag_name.assert_any_call(1080)
         tag_names = proc.taxonomy_cache.get_or_create_tag_ids.call_args[0][0]
         assert "legal" in tag_names
         assert "born-digital" not in tag_names
@@ -233,6 +235,44 @@ class TestPipelineTagsNeverAdded:
             "tags"
         ]
         assert final_tags == {301, 555}
+
+    @pytest.mark.parametrize(
+        "setting",
+        ["ERROR_TAG_ID", "OCR_PROCESSING_TAG_ID", "CLASSIFY_PROCESSING_TAG_ID"],
+    )
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_error_and_processing_tag_ids_not_added(
+        self, mock_release, mock_claim, setting
+    ):
+        doc = make_doc_with_content("text\n\nTranscribed by model: gpt-5.4-mini")
+        proc = make_processor(doc=doc, settings_overrides={setting: 900})
+        proc.paperless_client.get_document.return_value = doc
+        proc.taxonomy_cache.get_or_create_tag_ids.return_value = [301, 900]
+
+        proc.process()
+
+        final_tags = proc.paperless_client.update_document_metadata.call_args.kwargs[
+            "tags"
+        ]
+        assert 900 not in final_tags
+        assert 301 in final_tags
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_pipeline_tag_name_dropped_before_tag_limit(self, mock_release, mock_claim):
+        doc = make_doc_with_content("text")
+        result = make_classification_result(tags=("Classify-Queue", "legal"))
+        proc = make_processor(doc=doc, settings_overrides={"CLASSIFY_TAG_LIMIT": 1})
+        proc.paperless_client.get_document.return_value = doc
+        proc.classifier.classify_text.return_value = (result, "gpt-5.4-mini")
+        proc.taxonomy_cache.tag_name.side_effect = {444: "classify-queue"}.get
+
+        proc.process()
+
+        tag_names = proc.taxonomy_cache.get_or_create_tag_ids.call_args[0][0]
+        assert "legal" in tag_names
+        assert "classify-queue" not in tag_names
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
