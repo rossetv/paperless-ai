@@ -79,3 +79,35 @@ def test_missing_dist_directory_is_a_no_op(tmp_path) -> None:
     client = TestClient(app)
     # No SPA mounted — root 404s rather than crashing.
     assert client.get("/").status_code == 404
+
+
+def test_index_shell_is_revalidated_on_every_load(tmp_path) -> None:
+    """The shell is never cached, so an upgrade cannot leave a stale one behind."""
+    client = TestClient(_app_with_dist(tmp_path))
+    for path in ("/", "/login", "/index.html"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path
+
+
+def test_hashed_assets_are_cached_for_a_year(tmp_path) -> None:
+    from fastapi import FastAPI
+
+    assets = tmp_path / "dist" / "assets"
+    assets.mkdir(parents=True)
+    (assets / "app-abc123.js").write_text("1")
+    app = FastAPI()
+    register_spa(app, tmp_path / "dist")
+    response = TestClient(app).get("/assets/app-abc123.js")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_other_dist_files_keep_default_caching(tmp_path) -> None:
+    client = TestClient(_app_with_dist(tmp_path))
+    assert "cache-control" not in client.get("/app.js").headers
+
+
+def test_a_path_with_a_nul_byte_serves_the_shell_not_a_500(tmp_path) -> None:
+    client = TestClient(_app_with_dist(tmp_path))
+    response = client.get("/%00")
+    assert response.status_code == 200
+    assert "id=root" in response.text

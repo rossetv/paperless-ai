@@ -14,8 +14,24 @@ import structlog
 from fastapi import FastAPI
 from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
 log = structlog.get_logger(__name__)
+
+# The shell must be revalidated so an upgrade never leaves a browser holding an
+# index.html that names bundles which no longer exist.
+_INDEX_HEADERS = {"Cache-Control": "no-cache"}
+_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class _ImmutableStaticFiles(StaticFiles):
+    """Static files whose names carry a content hash, so they never change."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = _ASSET_CACHE_CONTROL
+        return response
 
 
 def register_spa(app: FastAPI, dist_dir: Path) -> None:
@@ -40,7 +56,7 @@ def register_spa(app: FastAPI, dist_dir: Path) -> None:
     if assets_dir.is_dir():
         app.mount(
             "/assets",
-            StaticFiles(directory=str(assets_dir)),
+            _ImmutableStaticFiles(directory=str(assets_dir)),
             name="spa-assets",
         )
 
@@ -52,13 +68,22 @@ def register_spa(app: FastAPI, dist_dir: Path) -> None:
             return Response(status_code=404)
 
         # The parents check stops a path from escaping dist_dir.
-        candidate = (dist_dir / full_path).resolve()
-        dist_root = dist_dir.resolve()
-        if full_path and dist_root in candidate.parents and candidate.is_file():
-            return FileResponse(candidate)
+        try:
+            candidate = (dist_dir / full_path).resolve()
+            is_real_file = (
+                bool(full_path)
+                and dist_dir.resolve() in candidate.parents
+                and candidate.is_file()
+            )
+        except (ValueError, OSError):
+            # An embedded NUL or an over-long name is not a file, so serve the shell.
+            is_real_file = False
+        if is_real_file:
+            is_index = candidate == index_file.resolve()
+            return FileResponse(candidate, headers=_INDEX_HEADERS if is_index else None)
 
         if index_file.is_file():
-            return FileResponse(index_file)
+            return FileResponse(index_file, headers=_INDEX_HEADERS)
         return Response(status_code=404)
 
     log.info("search.spa_mounted", path=str(dist_dir))
