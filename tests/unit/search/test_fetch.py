@@ -125,3 +125,18 @@ def test_assemble_fetched_falls_back_to_paperless_metadata() -> None:
 
     assert doc.title == "From PL"
     assert doc.page_count == 4
+
+
+def test_assemble_fetched_oversized_id_is_not_found_without_any_lookup() -> None:
+    huge = 2**63
+    client = MagicMock()
+    client.get_document.side_effect = lambda doc_id: {"content": "text"}
+    reader = _reader({})
+
+    results = assemble_fetched([huge, 1], client, reader, "https://p.example", 100)
+
+    assert [r.document_id for r in results] == [huge, 1]
+    assert results[0].error == "not found"
+    assert results[1].content == "text"
+    assert [c.args[0] for c in client.get_document.call_args_list] == [1]
+    assert [c.args[0] for c in reader.get_document_summary.call_args_list] == [1]
