@@ -92,6 +92,7 @@ export function APIKeysScreen(): React.ReactElement {
     {
       key: 'name',
       header: 'Name & key',
+      width: '34%',
       render: (k) => {
         const state = keyStateOf(k);
         return (
@@ -107,9 +108,8 @@ export function APIKeysScreen(): React.ReactElement {
             </span>
             <span className={styles['key-meta']}>
               <span className={styles['key-prefix']}>
-                <span className={styles['key-prefix-part']}>{k.key_prefix}</span>
-                <wbr />
-                <span className={styles['key-prefix-part']}>••••••••••</span>
+                <span>{k.key_prefix}</span>
+                <span>••••••••••</span>
               </span>
               <span className={styles['key-count']}>
                 {k.request_count.toLocaleString()} requests · created{' '}

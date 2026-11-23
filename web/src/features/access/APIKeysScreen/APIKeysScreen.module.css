@@ -10,6 +10,9 @@
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption-bold);
   color: var(--colour-text-primary);
+
+  /* A name with no break points wraps inside its cell instead of widening the table. */
+  overflow-wrap: anywhere;
 }
 
 [data-muted='true'] .key-name {
@@ -42,26 +45,28 @@
   color: var(--colour-status-danger-fg);
 }
 
-/* The expired tag beside the name stays whole. */
+/* The key prefix and the expired tag beside the name stay whole. */
+.key-prefix,
 .key-name .expiry-expired {
   white-space: nowrap;
 }
 
-.key-prefix,
-.key-prefix-part {
-  white-space: nowrap;
-}
-
-/* Beside the side nav the Name column is the one that gives: the prefix may
-   drop its masked tail to a second line and the expired tag under the name,
-   but neither half of the prefix breaks. */
+/* Beside the side nav the masked tail may drop under the prefix, never split,
+   and the expired tag under the name. */
 @media (width >= 700px) {
   .key-name {
     flex-wrap: wrap;
   }
 
   .key-prefix {
-    white-space: normal;
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  /* The buttons stay right-aligned; the start margin lets the column close 14px
+     tighter so the table fits its card where the side nav first appears. */
+  .row-actions {
+    margin-inline-start: calc(-1 * var(--spacing-10));
   }
 }
 
