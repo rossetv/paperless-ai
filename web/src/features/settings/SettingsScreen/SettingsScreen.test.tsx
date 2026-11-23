@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SettingsScreen } from './SettingsScreen';
 
@@ -139,17 +139,27 @@ function mockFetchSequence(responses: { status: number; body: unknown }[]): void
   vi.stubGlobal('fetch', fn);
 }
 
-function renderScreen(): void {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+function renderScreen(path = '/settings', client = newClient()) {
+  // useBlocker needs a data router; /library stands in for any other in-app page.
+  const router = createMemoryRouter(
+    [
+      { path: '/settings', element: <SettingsScreen /> },
+      { path: '/library', element: <p>Library page</p> },
+    ],
+    { initialEntries: [path] },
+  );
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/settings']}>
-        <SettingsScreen />
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return router;
+}
+
+function newClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
 }
 
 describe('SettingsScreen', () => {
@@ -194,16 +204,8 @@ describe('SettingsScreen', () => {
       { status: 200, body: toSettingsBody(SETTINGS) },
       { status: 500, body: { detail: 'boom' } },
     ]);
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/settings']}>
-          <SettingsScreen />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    const client = newClient();
+    renderScreen('/settings', client);
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await client.invalidateQueries();
     await waitFor(() =>
@@ -216,16 +218,8 @@ describe('SettingsScreen', () => {
   it('scrolls to the section named in the url once the settings have loaded', async () => {
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/settings#search']}>
-          <SettingsScreen />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    const client = newClient();
+    renderScreen('/settings#search', client);
     await screen.findByRole('spinbutton', { name: 'Top K' });
     expect(scrollTo).toHaveBeenCalledTimes(1);
     expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'instant' }));
@@ -561,6 +555,85 @@ describe('SettingsScreen', () => {
     expect(fire()).toBe(false);
     await userEvent.click(screen.getByRole('button', { name: /discard/i }));
     expect(fire()).toBe(true);
+  });
+
+  describe('leaving with unsaved changes', () => {
+    async function editTopK(): Promise<HTMLElement> {
+      const topK = await screen.findByRole('spinbutton', { name: 'Top K' });
+      await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+      return topK;
+    }
+
+    it('asks before an in-app navigation away, with Stay focused', async () => {
+      mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+      const router = renderScreen();
+      await editTopK();
+      await act(() => router.navigate('/library'));
+      const dialog = await screen.findByRole('dialog', { name: 'Leave without saving?' });
+      expect(within(dialog).getByText('Your changes to settings will be lost.')).toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: 'Stay' })).toHaveFocus();
+      expect(router.state.location.pathname).toBe('/settings');
+    });
+
+    it('keeps the edits and the place on Stay, and on Escape', async () => {
+      mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+      const router = renderScreen();
+      const topK = await editTopK();
+      await act(() => router.navigate('/library'));
+      await userEvent.click(await screen.findByRole('button', { name: 'Stay' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/settings');
+      expect(topK).toHaveValue(11);
+      await act(() => router.navigate('/library'));
+      await screen.findByRole('dialog');
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/settings');
+      expect(topK).toHaveValue(11);
+    });
+
+    it('goes on Leave', async () => {
+      mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+      const router = renderScreen();
+      await editTopK();
+      await act(() => router.navigate('/library'));
+      await userEvent.click(await screen.findByRole('button', { name: 'Leave' }));
+      expect(await screen.findByText('Library page')).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/library');
+    });
+
+    it('does not ask when nothing is unsaved or after Discard', async () => {
+      mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+      const router = renderScreen();
+      await editTopK();
+      await userEvent.click(screen.getByRole('button', { name: /discard/i }));
+      await act(() => router.navigate('/library'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/library');
+    });
+
+    it('does not ask after a save', async () => {
+      mockFetchSequence([
+        { status: 200, body: toSettingsBody(SETTINGS) },
+        { status: 200, body: { ...toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }), reindex_triggered: false } },
+      ]);
+      const router = renderScreen();
+      await editTopK();
+      await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+      await screen.findByText('Settings saved.');
+      await act(() => router.navigate('/library'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/library');
+    });
+
+    it('never asks for a section change within Settings', async () => {
+      mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+      const router = renderScreen();
+      await editTopK();
+      await act(() => router.navigate('/settings#logging'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(router.state.location.hash).toBe('#logging');
+    });
   });
 
   it('shows no re-indexing toast when the save does not trigger one', async () => {
