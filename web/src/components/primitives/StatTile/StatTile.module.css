@@ -25,7 +25,7 @@
   line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-tile);
   color: var(--colour-text-primary);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .accent {

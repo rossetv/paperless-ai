@@ -152,7 +152,11 @@ export function IndexScreen(): React.ReactElement {
               />
               {/* No dimension sub-line: GET /api/stats does not expose it, and a
                   hard-coded figure is wrong for any non-default model. */}
-              <StatTile value={breakableName(stats.embedding_model ?? '—')} label="Embedding model" />
+              <StatTile
+                value={breakableName(stats.embedding_model ?? '—')}
+                label="Embedding model"
+                className={styles['model-tile']}
+              />
               <StatTile
                 value={
                   stats.last_reconcile_at !== null
