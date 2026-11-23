@@ -37,7 +37,7 @@
 
 /* The API pill is the same tint as the row; a lighter row keeps its text at 4.5:1. */
 :root:not([data-theme='dark']) .scope-row-on {
-  background-color: rgb(0 113 227 / 4%);
+  background-color: var(--colour-status-info-bg-soft);
 }
 
 .scope-text {
