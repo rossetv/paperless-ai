@@ -57,6 +57,8 @@
 
 .item-title {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption-bold);
