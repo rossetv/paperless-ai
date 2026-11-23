@@ -324,7 +324,7 @@ export function LibraryScreen(): React.ReactElement {
         {/* In-library search */}
         <SearchField
           id="library-search"
-          className={styles['search']}
+          className={styles['search']!}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           allowEmpty
