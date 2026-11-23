@@ -268,6 +268,19 @@ describe('useStreamingSearch', () => {
       expect((await failWith(new TypeError('Failed to fetch')))?.message).toBe(SENTENCE);
     });
 
+    it('does not hide a TypeError thrown while the stream is read', async () => {
+      mockStreamSearch.mockResolvedValue({ body: {} } as Response);
+      mockParseNdjson.mockImplementation(() => {
+        throw new TypeError('x is not a function');
+      });
+      const { result } = renderHook(() => useStreamingSearch(), { wrapper });
+      await act(async () => {
+        result.current.run('q', EMPTY_FILTERS);
+      });
+      await waitFor(() => expect(result.current.state.status).toBe('error'));
+      expect(result.current.state.error?.message).toBe('x is not a function');
+    });
+
     it('keeps the server detail when it sent one', async () => {
       const error = await failWith(new ApiError(500, undefined, 'Paperless is down'));
       expect(error?.message).toBe('Paperless is down');
