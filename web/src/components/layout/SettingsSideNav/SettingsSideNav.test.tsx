@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { SettingsSideNav } from './SettingsSideNav';
 import type { SettingsNavGroup } from './SettingsSideNav';
 
@@ -187,6 +187,79 @@ describe('SettingsSideNav', () => {
       renderNav('/settings/keys');
       expect(screen.getByRole('navigation').scrollLeft).toBe(1150 - 390);
     } finally {
+      restore();
+    }
+  });
+
+  const ANCHORS: SettingsNavGroup = {
+    title: 'Configuration',
+    items: [
+      { id: 'search', label: 'Search', to: '/settings#search' },
+      { id: 'logging', label: 'Logging', to: '/settings#logging' },
+    ],
+  };
+
+  function HashButton(): JSX.Element {
+    const navigate = useNavigate();
+    return (
+      <button type="button" onClick={() => navigate('#logging')}>
+        go
+      </button>
+    );
+  }
+
+  it('re-centres the active tab when the in-page hash changes', () => {
+    const restore = mockStrip(1600, 997, 1100);
+    try {
+      render(
+        <MemoryRouter initialEntries={['/settings#search']}>
+          <HashButton />
+          <SettingsSideNav groups={[ANCHORS]} />
+        </MemoryRouter>,
+      );
+      const nav = screen.getByRole('navigation');
+      nav.scrollLeft = 0;
+      fireEvent.click(screen.getByRole('button', { name: 'go' }));
+      expect(nav.scrollLeft).toBe(854);
+    } finally {
+      restore();
+    }
+  });
+
+  it('re-centres the active tab when scrolling the page moves the scroll-spy', () => {
+    const restore = mockStrip(1600, 997, 1100);
+    const sections = ANCHORS.items.map((item) => {
+      const el = document.createElement('section');
+      el.id = item.id;
+      document.body.append(el);
+      return el;
+    });
+    const top = vi
+      .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.id === 'logging' ? 1000 : 0;
+      });
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(5000);
+    try {
+      render(
+        <MemoryRouter initialEntries={['/settings']}>
+          <SettingsSideNav groups={[ANCHORS]} />
+        </MemoryRouter>,
+      );
+      const nav = screen.getByRole('navigation');
+      expect(screen.getByRole('link', { name: 'Search' })).toHaveAttribute('aria-current', 'page');
+      nav.scrollLeft = 0;
+      act(() => {
+        window.scrollY = 1200;
+        window.dispatchEvent(new Event('scroll'));
+      });
+      expect(screen.getByRole('link', { name: 'Logging' })).toHaveAttribute('aria-current', 'page');
+      expect(nav.scrollLeft).toBe(854);
+    } finally {
+      window.scrollY = 0;
+      top.mockRestore();
+      height.mockRestore();
+      sections.forEach((el) => el.remove());
       restore();
     }
   });
