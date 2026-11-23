@@ -99,9 +99,9 @@ function SettingsContent({
         onSuccess: (data) => {
           if (data.reindex_triggered) {
             setReindexNotice(true);
-            return;
+          } else {
+            setSavedNotice(true);
           }
-          setSavedNotice(true);
           // The save bar goes inert with the focused button inside it; park focus on the page
           // heading rather than let it fall to the body, without scrolling the person's place.
           const heading = screenRef.current?.querySelector('h1');

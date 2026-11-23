@@ -316,6 +316,67 @@ describe('SettingsScreen', () => {
     focus.mockRestore();
   });
 
+  it('keeps focus on Save while a save is pending and sends only one request', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    let resolvePut: (value: object) => void = () => {};
+    const put = new Promise((resolve) => {
+      resolvePut = resolve;
+    });
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation((_url, init?: RequestInit) =>
+      init?.method === 'PUT'
+        ? put
+        : Promise.resolve(mockResponse({ status: 200, body: toSettingsBody(SETTINGS) })),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    // A text query: role queries over the whole settings form are slow enough to time out.
+    const saving = (await screen.findByText('Saving…')).closest('button');
+    expect(saving).toHaveFocus();
+    expect(saving).toBeEnabled();
+    await userEvent.click(saving as HTMLButtonElement);
+    await userEvent.keyboard('{Enter}');
+    const puts = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(puts).toHaveLength(1);
+    resolvePut(mockResponse({ status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) }));
+    expect(await screen.findByText('Settings saved.')).toBeInTheDocument();
+  });
+
+  it('keeps focus on Save when the save fails', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockResponse({ status: 422, body: { detail: 'SEARCH_TOP_K is out of range' } }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: /save changes/i })).toHaveFocus();
+  });
+
+  it('moves focus to the heading after a save that starts a re-index', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      {
+        status: 200,
+        body: {
+          ...toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }),
+          reindex_triggered: true,
+        },
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText(/re-embedding your library/i);
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
+  });
+
   it('shows the server error in a toast and keeps the edit when the save fails', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();

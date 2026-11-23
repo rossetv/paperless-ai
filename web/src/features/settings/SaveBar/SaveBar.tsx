@@ -52,6 +52,7 @@ export function SaveBar({
         className={cn(styles['bar'], isHidden && styles['bar-hidden'])}
         aria-live="polite"
         aria-atomic="true"
+        aria-busy={isPending ? true : undefined}
       >
         <div className={styles['inner']}>
           <span className={styles['dot']} aria-hidden="true" />
@@ -63,10 +64,25 @@ export function SaveBar({
               ? 'Saving rebuilds the search index — every document will be re-embedded.'
               : 'Daemons hot-load saved settings — no restart needed'}
           </span>
-          <Button variant="secondary" size="small" disabled={isPending} onClick={onDiscard}>
+          {/* Not disabled while pending: a disabled button would drop keyboard focus. */}
+          <Button
+            variant="secondary"
+            size="small"
+            className={cn(isPending && styles['pending-secondary'])}
+            onClick={() => {
+              if (!isPending) onDiscard();
+            }}
+          >
             Discard
           </Button>
-          <Button variant="primary" size="small" disabled={isPending} onClick={onSave}>
+          <Button
+            variant="primary"
+            size="small"
+            className={cn(isPending && styles['pending-primary'])}
+            onClick={() => {
+              if (!isPending) onSave();
+            }}
+          >
             {isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </div>
