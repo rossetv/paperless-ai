@@ -47,6 +47,7 @@ from search.wire import (
     to_search_response,
     to_stats_response,
 )
+from search.wire.search import FILTER_ID_MAX, FILTER_ID_MIN, FilterId
 from search.wire.stream import error_line, event_line, result_line
 from store import SchemaNotReadyError, StoreError
 
@@ -302,9 +303,13 @@ def build_api_router(
         sort: BrowseSort = Query(default="added"),
         descending: bool = Query(default=True),
         query: str | None = Query(default=None, max_length=MAX_QUERY_LENGTH),
-        correspondent_id: int | None = Query(default=None),
-        document_type_id: int | None = Query(default=None),
-        tag_ids: list[int] = Query(default_factory=list, max_length=64),
+        correspondent_id: int | None = Query(
+            default=None, ge=FILTER_ID_MIN, le=FILTER_ID_MAX
+        ),
+        document_type_id: int | None = Query(
+            default=None, ge=FILTER_ID_MIN, le=FILTER_ID_MAX
+        ),
+        tag_ids: list[FilterId] = Query(default_factory=list, max_length=64),
         date_from: str | None = Query(default=None),
         date_to: str | None = Query(default=None),
     ) -> DocumentListResponse:
