@@ -147,8 +147,8 @@ export function SettingsSideNav({
 
   const scrolledActiveId = useAnchorScrollSpy(anchorIds);
 
-  // On phones the rail is a horizontal tab strip: bring the routed tab into view. Scrolling the
-  // strip itself, not scrollIntoView, keeps the page from moving.
+  // On phones the rail is a horizontal tab strip: centre the routed tab, clear of the edge fades.
+  // Scrolling the strip itself, not scrollIntoView, keeps the page from moving.
   const navRef = React.useRef<HTMLElement>(null);
   React.useEffect(() => {
     const nav = navRef.current;
@@ -156,8 +156,9 @@ export function SettingsSideNav({
     if (nav === null || nav === undefined || active === null || active === undefined) return;
     const navBox = nav.getBoundingClientRect();
     const box = active.getBoundingClientRect();
-    if (box.left < navBox.left) nav.scrollLeft -= navBox.left - box.left;
-    else if (box.right > navBox.right) nav.scrollLeft += box.right - navBox.right;
+    const offset = (box.left + box.right) / 2 - (navBox.left + navBox.right) / 2;
+    const max = Math.max(0, nav.scrollWidth - nav.clientWidth);
+    nav.scrollLeft = Math.min(max, Math.max(0, Math.round(nav.scrollLeft + offset)));
   }, [location.pathname]);
 
   /** Scroll the target section into view, offset by the sticky header height. */

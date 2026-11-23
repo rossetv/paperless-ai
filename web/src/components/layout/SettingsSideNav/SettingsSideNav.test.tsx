@@ -152,21 +152,42 @@ describe('SettingsSideNav', () => {
     expect(container.querySelector('[class*="eyebrow"]')).toBeNull();
   });
 
-  it('scrolls the tab strip so an off-screen active tab is in view', () => {
-    const rect = (left: number, right: number) => () =>
-      ({ left, right, top: 0, bottom: 0, width: right - left, height: 0, x: left, y: 0 }) as DOMRect;
-    const spy = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(function (this: HTMLElement) {
-        if (this.tagName === 'NAV') return rect(0, 390)();
-        if (this.getAttribute('aria-current') === 'page') return rect(997, 1100)();
-        return rect(0, 80)();
-      });
+  /** Lays the strip out 390 wide with `scrollWidth` of content and the active tab at [left, right). */
+  function mockStrip(scrollWidth: number, left: number, right: number): () => void {
+    const rect = (l: number, r: number) =>
+      ({ left: l, right: r, top: 0, bottom: 0, width: r - l, height: 0, x: l, y: 0 }) as DOMRect;
+    const spies = [
+      vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          if (this.tagName === 'NAV') return rect(0, 390);
+          if (this.getAttribute('aria-current') === 'page') return rect(left, right);
+          return rect(0, 80);
+        }),
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(scrollWidth),
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390),
+    ];
+    return () => spies.forEach((spy) => spy.mockRestore());
+  }
+
+  it('centres an off-screen active tab in the tab strip', () => {
+    const restore = mockStrip(1600, 997, 1100);
     try {
       renderNav('/settings/keys');
-      expect(screen.getByRole('navigation').scrollLeft).toBe(1100 - 390);
+      // Tab centre 1048.5 minus the strip's centre 195.
+      expect(screen.getByRole('navigation').scrollLeft).toBe(854);
     } finally {
-      spy.mockRestore();
+      restore();
+    }
+  });
+
+  it('stops at the end of the strip when the active tab is the last one', () => {
+    const restore = mockStrip(1150, 997, 1100);
+    try {
+      renderNav('/settings/keys');
+      expect(screen.getByRole('navigation').scrollLeft).toBe(1150 - 390);
+    } finally {
+      restore();
     }
   });
 });
