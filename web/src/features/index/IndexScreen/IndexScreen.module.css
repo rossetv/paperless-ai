@@ -141,13 +141,27 @@
   padding: var(--spacing-section) var(--spacing-14);
 }
 
+/* A model name needs a full row to break at its hyphens rather than mid-word; it goes last so
+   the other three tiles fill the rows above it. */
+@media (width <= 1049px) {
+  .stat-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .model-tile {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+}
+
 @media (width <= 834px) {
-  .quad-row {
+  .quad-row,
+  .stat-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* A model name needs a full row to break at its hyphens rather than mid-word. */
-  .model-tile {
+  /* With two columns the third tile would sit alone in a half-empty row. */
+  .reconcile-tile {
     grid-column: 1 / -1;
   }
 
