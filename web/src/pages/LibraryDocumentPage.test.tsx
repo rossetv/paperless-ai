@@ -205,6 +205,34 @@ describe('LibraryDocumentPage', () => {
     expect(screen.queryByText(/could not load document/i)).not.toBeInTheDocument();
   });
 
+  it('shows not-found when a refetch of the cached document answers 404', async () => {
+    const getDocument = vi.spyOn(client, 'getDocument').mockResolvedValueOnce({
+      id: 42,
+      title: 'Deleted doc',
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+      paperless_url: 'https://paperless.test/documents/42/',
+    });
+    getDocument.mockRejectedValue(new ApiError(404, 'gone'));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/library/document/42']}>
+          <Routes>
+            <Route path="/library/document/:id" element={<LibraryDocumentPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Deleted doc');
+    await qc.invalidateQueries();
+    expect(await screen.findByText(/document not found/i)).toBeInTheDocument();
+    expect(screen.queryByText('Deleted doc')).not.toBeInTheDocument();
+  });
+
   it('shows the index-initialising screen with a retry on a 503', async () => {
     const getDocument = vi
       .spyOn(client, 'getDocument')
