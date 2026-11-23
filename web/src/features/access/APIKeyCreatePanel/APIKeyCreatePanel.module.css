@@ -29,6 +29,11 @@
   background-color: var(--colour-surface-dark);
 }
 
+/* The box is dark in both themes, so the Copy label needs the on-dark link colour. */
+.secret-box .secret-copy {
+  color: var(--colour-link-on-dark);
+}
+
 .secret-value {
   flex: 1;
   min-width: 0;
