@@ -1,4 +1,4 @@
-/** Application root. Providers (`QueryClient`, `BrowserRouter`) are wired in `main.tsx`. */
+/** Application root. Providers (`QueryClient`, `RouterProvider`) are wired in `main.tsx`. */
 
 import { AppRoutes } from './routes';
 

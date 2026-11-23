@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, useRouteError } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 // Import only the base declarations and the solid set — brands and regular are
 // unused and add ~130 KB of woff2 font files to the bundle.
@@ -13,6 +13,15 @@ import { ErrorBoundary } from './components/layout/ErrorBoundary/ErrorBoundary';
 
 const queryClient = createQueryClient();
 
+// A data router, so Settings can block in-app navigation while it holds unsaved edits.
+// The router would show its own error page; handing the error on lets the ErrorBoundary above
+// render the app's fallback, as it did before the data router.
+function RethrowRouteError(): never {
+  throw useRouteError();
+}
+
+const router = createBrowserRouter([{ path: '*', element: <App />, errorElement: <RethrowRouteError /> }]);
+
 const rootElement = document.getElementById('root');
 if (rootElement === null) {
   throw new Error('Root element #root not found in the document');
@@ -22,9 +31,7 @@ ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>,

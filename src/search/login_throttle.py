@@ -38,7 +38,7 @@ _MAX_FAILURES_PER_USERNAME = 20
 _FAILURE_WINDOW_SECONDS = 900
 #: How long (seconds) a key stays locked once it trips.
 _LOCKOUT_SECONDS = 900
-#: Memory-leak guard, not a tuning knob; oldest keys are evicted first.
+#: Memory-leak guard, not a tuning knob; oldest unlocked keys are evicted first.
 _MAX_TRACKED_KEYS = 4096
 
 
@@ -118,6 +118,22 @@ def _settle(pending: dict[_K, int], key: _K) -> None:
         pending[key] = count - 1
 
 
+def _evict_one(
+    records: OrderedDict[_K, _AttemptRecord], newest: _K, now: float
+) -> None:
+    """Drop the oldest unlocked record other than *newest*, else the oldest.
+
+    Unlocked records go first so a flood of throwaway keys cannot end a real
+    lockout early. Cost is a scan past the locked records at the old end, at
+    most the cap. The caller holds the lock.
+    """
+    for candidate, record in records.items():
+        if candidate != newest and not _is_record_locked(record, now):
+            del records[candidate]
+            return
+    records.popitem(last=False)
+
+
 def _register_failure(
     records: OrderedDict[_K, _AttemptRecord],
     key: _K,
@@ -143,7 +159,7 @@ def _register_failure(
         record.locked_until = now + _LOCKOUT_SECONDS
 
     while len(records) > _MAX_TRACKED_KEYS:
-        records.popitem(last=False)
+        _evict_one(records, key, now)
 
 
 class LoginThrottle:

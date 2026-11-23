@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useBlocker, useLocation } from 'react-router-dom';
 import { SettingsLayout } from '../../../components/layout/SettingsLayout/SettingsLayout';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
@@ -17,6 +17,7 @@ import { useUnsavedSettings } from '../useUnsavedSettings';
 import { SettingsSection } from '../SettingsSection/SettingsSection';
 import { ConnectionsPanel } from '../ConnectionsPanel/ConnectionsPanel';
 import { readStickyOffset } from '../../../components/layout/SettingsSideNav/SettingsSideNav';
+import { LeaveSettingsModal } from '../LeaveSettingsModal/LeaveSettingsModal';
 import { SaveBar } from '../SaveBar/SaveBar';
 import { Toast } from '../../../components/patterns/Toast/Toast';
 
@@ -119,8 +120,8 @@ function SettingsContent({
     heading?.focus({ preventScroll: true });
   };
 
-  // Reload, closing the tab and leaving the site would drop the edits. In-app navigation is not
-  // intercepted: BrowserRouter has no blocker.
+  // Reload, closing the tab and leaving the site would drop the edits; in-app navigation is
+  // caught by the blocker below.
   React.useEffect(() => {
     if (!isDirty) return;
     const warn = (event: BeforeUnloadEvent): void => {
@@ -129,6 +130,15 @@ function SettingsContent({
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [isDirty]);
+
+  // A hash or search change within /settings moves between sections and never asks.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty &&
+      currentLocation.pathname !== nextLocation.pathname &&
+      // Sign-out and a lapsed session end here; they must never wait on a prompt.
+      nextLocation.pathname !== '/login',
+  );
 
   const handleChange = (key: string, value: ConfigValue | null): void => {
     // `null` is an untouched secret: restore the baseline (the server mask) so the key counts as
@@ -217,6 +227,9 @@ function SettingsContent({
           reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
         />
       </div>
+      {blocker.state === 'blocked' && (
+        <LeaveSettingsModal onStay={() => blocker.reset()} onLeave={() => blocker.proceed()} />
+      )}
       {saveError !== null && (
         <Toast
           message={saveError}

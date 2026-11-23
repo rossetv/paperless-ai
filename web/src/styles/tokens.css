@@ -39,6 +39,9 @@
   --colour-border:                  rgb(0 0 0 / 4%);
   --colour-border-button:           rgb(0 0 0 / 12%);
 
+  /* Resting edge of a form control: 3:1 against the page and the field surface (WCAG 1.4.11). */
+  --colour-field-border:            #8a8a8e;
+
   /* Button states */
   --colour-button-active-bg:        #ededf2;
   --colour-button-light-bg:         #fafafc;
@@ -436,6 +439,9 @@
   --colour-dark-border:         rgb(255 255 255 / 10%);
   --colour-dark-border-card:    rgb(255 255 255 / 6%);
 
+  /* Resting edge of a field on the dark island: 3:1 against the island and the control well */
+  --colour-dark-field-border:   #707076;
+
   /* Label text on the dark island */
   --colour-dark-label:          rgb(255 255 255 / 50%);
 
@@ -551,7 +557,7 @@
 
   /* Connection provider glyph tile — a slate neutral, deliberately not green:
    * it sits beside the green "Connected" status dot and the two would muddle.
-   * Identical in both themes. */
+   * Identical in both themes; each holds white initials at 4.5:1 or better. */
   --colour-glyph-neutral:       #4b4d52;
 
   /* Settings form controls — Toggle, Segmented, NumberStepper, fields.
@@ -587,13 +593,13 @@
   --width-doc-sidebar-max:   360px;
 
   /* Avatar palette — UsersScreen picks a colour by user_id modulo 6.
-   * Identical in both themes. */
+   * Identical in both themes; each holds white initials at 4.5:1 or better. */
 
   --colour-avatar-0:   #3a6df0;   /* Apple Blue     */
-  --colour-avatar-1:   #34c759;   /* Apple Green    */
-  --colour-avatar-2:   #ff9500;   /* Apple Orange   */
+  --colour-avatar-1:   #238039;   /* Apple Green    */
+  --colour-avatar-2:   #a96200;   /* Apple Orange   */
   --colour-avatar-3:   #5856d6;   /* Apple Purple   */
-  --colour-avatar-4:   #ff3b30;   /* Apple Red      */
+  --colour-avatar-4:   #e60c00;   /* Apple Red      */
   --colour-avatar-5:   #0071e3;   /* Accent Blue    */
 }
 

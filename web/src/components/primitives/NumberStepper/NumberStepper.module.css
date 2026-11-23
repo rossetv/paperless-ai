@@ -11,7 +11,7 @@
      column width when a parent flex or grid column is wider than the control. */
   width: max-content;
   align-self: flex-end;
-  border: var(--spacing-1) solid var(--colour-border-button);
+  border: var(--spacing-1) solid var(--colour-field-border);
   border-radius: var(--radius-large);
   background-color: var(--colour-surface);
   overflow: hidden;
@@ -83,8 +83,8 @@
 .value-cell {
   display: inline-flex;
   align-items: stretch;
-  border-left: var(--spacing-1) solid var(--colour-border-button);
-  border-right: var(--spacing-1) solid var(--colour-border-button);
+  border-left: var(--spacing-1) solid var(--colour-field-border);
+  border-right: var(--spacing-1) solid var(--colour-field-border);
 }
 
 .input {
