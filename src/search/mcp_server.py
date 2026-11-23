@@ -303,7 +303,7 @@ def _register_search_tools(
         capture it. With *bills_llm* the per-key spend quota is checked before
         the body (again once the slot is held) and the query's tokens are
         recorded after (none when *cache_hits* shows a cached answer). A body
-        that fails is charged for the tokens *spent* tallied before it failed.
+        that fails is charged for the tokens *spent* by its LLM calls.
         """
         core = await run_blocking(lambda: resolve_core(app_db_path))
         api_key_id = mcp_api_key_id.get()
@@ -464,8 +464,8 @@ def _register_search_tools(
                 query=text,
                 ui_filters=ui_filters,
                 asker=asker,
-                on_event=spent,
                 on_cache_hit=hit,
+                on_usage=spent,
             ),
             error_event="mcp.deep_search_error",
             bills_llm=True,

@@ -378,7 +378,7 @@ async def _search(
     The quota is checked again once the slot is held, since requests that
     passed the early check together may have spent it while waiting. The
     search's tokens are then charged to the API key; a cached answer is free,
-    and a failed one is charged for the phases it finished.
+    and a failed one is charged for every token its LLM calls spent.
 
     A search during an index rebuild hits a missing schema; that becomes a 503
     like the other index-not-ready endpoints, not a 500.
@@ -397,8 +397,8 @@ async def _search(
                     query=body.query,
                     ui_filters=ui_filters,
                     asker=asker,
-                    on_event=spent,
                     on_cache_hit=lambda: cache_hits.append(None),
+                    on_usage=spent,
                 )
             )
         except Exception as exc:
@@ -457,7 +457,7 @@ async def _search_stream(
     the loop then closes the request's connection while this worker may still
     be running; separate connections avoid that race. ``app_db_path=None``
     skips both writes and the quota re-check. A pipeline that fails is still
-    charged for the phases it finished.
+    charged for every token its LLM calls spent.
 
     The search slot is released when the worker ends, not when the client
     goes: an abandoned pipeline keeps running and spending tokens. Once the
@@ -476,15 +476,16 @@ async def _search_stream(
     def run() -> None:
         """Run the blocking pipeline on a worker thread, feeding the queue."""
         cache_hits: list[None] = []
-        spent = TokenTally(on_event)
+        spent = TokenTally()
         answered = False
         try:
             result = core.answer(
                 query=body.query,
                 ui_filters=ui_filters,
                 asker=asker,
-                on_event=spent,
+                on_event=on_event,
                 on_cache_hit=lambda: cache_hits.append(None),
+                on_usage=spent,
             )
             answered = True
             loop.call_soon_threadsafe(queue.put_nowait, ("result", result))

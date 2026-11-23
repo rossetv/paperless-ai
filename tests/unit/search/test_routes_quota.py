@@ -136,6 +136,32 @@ def _core_failing_after_the_planner(error: Exception) -> Any:
     )
 
 
+class _EmptyReplyLLMClient(_BilledLLMClient):
+    """Bills every call, but the planner's reply carries no choices."""
+
+    def route(self, **kwargs: Any) -> Any:
+        completion = super().route(**kwargs)
+        completion.choices = []
+        return completion
+
+
+def _core_failing_inside_the_planner() -> Any:
+    """A real pipeline whose planner call bills tokens and then raises."""
+    store_reader = MagicMock()
+    store_reader.list_facets.return_value = make_facet_set()
+    return build_search_core(
+        settings=make_search_settings(SEARCH_CACHE_TTL_SECONDS=0),
+        llm_client=_EmptyReplyLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer [1].", citations=[1])
+            ],
+        ),
+        store_reader=store_reader,
+        embedding_client=MagicMock(),
+    )
+
+
 def _client(path: str, core: MagicMock) -> TestClient:
     settings = make_search_settings(
         APP_DB_PATH=path, SEARCH_KEY_DAILY_TOKEN_QUOTA=_QUOTA
@@ -318,6 +344,46 @@ async def test_tokens_spent_before_a_failed_stream_count_against_the_key(
     resp = await _search_stream(
         SearchRequest(query="when does my boiler warranty expire?"),
         core,
+        LazySemaphore(1),
+        app_db_path=path,
+        api_key_id=key_id,
+        quota=_QUOTA,
+    )
+    lines = await _lines(resp)
+
+    assert (lines[-1]["type"], lines[-1]["kind"]) == ("error", "internal")
+    assert _tokens_used(path, key_id) == _PLANNER_TOKENS
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_inside_the_phase_that_fails_count_against_the_key(
+    tmp_path: Path,
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+
+    with pytest.raises(IndexError):
+        await routes._search(
+            SearchRequest(query="when does my boiler warranty expire?"),
+            _core_failing_inside_the_planner(),
+            LazySemaphore(1),
+            asker=None,
+            app_db_path=path,
+            api_key_id=key_id,
+            quota=_QUOTA,
+        )
+
+    assert _tokens_used(path, key_id) == _PLANNER_TOKENS
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_inside_the_phase_that_fails_a_stream_count_against_the_key(
+    tmp_path: Path,
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+
+    resp = await _search_stream(
+        SearchRequest(query="when does my boiler warranty expire?"),
+        _core_failing_inside_the_planner(),
         LazySemaphore(1),
         app_db_path=path,
         api_key_id=key_id,

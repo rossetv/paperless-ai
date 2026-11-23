@@ -372,3 +372,46 @@ async def test_tokens_spent_before_a_failed_deep_search_count_against_the_key(
 
     assert result.isError is True
     assert _tokens_used(app_db_path) == 30
+
+
+class _EmptyReplyLLMClient(_BilledLLMClient):
+    """Bills every call, but the planner's reply carries no choices."""
+
+    def route(self, **kwargs: Any) -> Any:
+        completion = super().route(**kwargs)
+        completion.choices = []
+        return completion
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_inside_the_phase_that_fails_a_deep_search_count_against_the_key(
+    app_db_path: str,
+) -> None:
+    from tests.helpers.mcp_client import connect_client
+
+    store_reader = MagicMock()
+    store_reader.list_facets.return_value = make_facet_set()
+    core = build_search_core(
+        settings=make_search_settings(
+            SEARCH_KEY_DAILY_TOKEN_QUOTA=QUOTA, SEARCH_CACHE_TTL_SECONDS=0
+        ),
+        llm_client=_EmptyReplyLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer [1].", citations=[1])
+            ],
+        ),
+        store_reader=store_reader,
+        embedding_client=MagicMock(),
+    )
+    app = build_mcp_app(
+        lambda _path: core, app_db_path, search_semaphore=LazySemaphore(4)
+    )
+
+    async with connect_client(app._server) as client:
+        result = await client.call_tool(
+            "deep_search", {"question": "when does my boiler warranty expire?"}
+        )
+
+    assert result.isError is True
+    assert _tokens_used(app_db_path) == 30

@@ -78,7 +78,7 @@ from search.text import (
     is_trivial_query,
 )
 from search.fetch import assemble_fetched
-from search.trace import OnEvent, PhaseEvent, PhaseRecord, PhaseStart, _Telemetry
+from search.trace import OnEvent, PhaseRecord, PhaseStart, _Telemetry
 from store import StoreError
 from store.models import DocumentBrowseQuery, KeywordHit, KeywordPage, SearchFilters
 
@@ -129,9 +129,18 @@ class _LlmBudget:
     query.
     """
 
-    def __init__(self, max_calls: int) -> None:
+    def __init__(
+        self,
+        max_calls: int,
+        on_usage: Callable[[LlmCallUsage], None] | None = None,
+    ) -> None:
         self.count = 0
         self.max_calls = max_calls
+        self._on_usage = on_usage
+
+    def usage_sink(self) -> list[LlmCallUsage]:
+        """Return a fresh per-phase usage sink that reports each call to *on_usage*."""
+        return _UsageSink(self._on_usage)
 
     def record(self) -> None:
         """Register one LLM chat call; fail loud if the limit is breached.
@@ -149,22 +158,35 @@ class _LlmBudget:
             )
 
 
-class TokenTally:
-    """An ``on_event`` sink that sums the tokens of each finished phase.
+class _UsageSink(list["LlmCallUsage"]):
+    """A phase's usage sink that also reports each call the moment it lands.
 
-    Lets a caller charge a search that fails part-way for the tokens it had
-    already spent; *forward*, when given, still receives every event.
+    A phase hands its sink to the telemetry only when it finishes, so this is
+    what lets a caller see the tokens of a phase that raises part-way.
     """
 
-    def __init__(self, forward: OnEvent | None = None) -> None:
-        self.total = 0
-        self._forward = forward
+    def __init__(self, on_usage: Callable[[LlmCallUsage], None] | None) -> None:
+        super().__init__()
+        self._on_usage = on_usage
 
-    def __call__(self, event: PhaseEvent) -> None:
-        if isinstance(event, PhaseRecord) and event.tokens is not None:
-            self.total += event.tokens.total
-        if self._forward is not None:
-            self._forward(event)
+    def append(self, usage: LlmCallUsage, /) -> None:
+        super().append(usage)
+        if self._on_usage is not None:
+            self._on_usage(usage)
+
+
+class TokenTally:
+    """An ``on_usage`` sink that sums the tokens of every LLM call a search makes.
+
+    Lets a caller charge a search that fails part-way for every token it
+    spent, the calls of the phase that failed included.
+    """
+
+    def __init__(self) -> None:
+        self.total = 0
+
+    def __call__(self, usage: LlmCallUsage) -> None:
+        self.total += usage.total
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +262,7 @@ class SearchCore:
         asker: str | None = None,
         on_event: OnEvent | None = None,
         on_cache_hit: Callable[[], None] | None = None,
+        on_usage: Callable[[LlmCallUsage], None] | None = None,
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
@@ -263,6 +286,8 @@ class SearchCore:
             on_cache_hit: Called once when the result is served from the cache,
                 so a caller charging a token quota charges nothing for it; the
                 result's own cost still reports the original spend.
+            on_usage: Called with each LLM call's usage as the call returns,
+                so a caller can charge a search that raises for what it spent.
         """
         # A core retired by a settings save must not build the cache (it would
         # fix the old TTL into it) nor read or fill it.
@@ -288,7 +313,9 @@ class SearchCore:
                     on_cache_hit()
                 return cached
 
-        result = self._answer_uncached(query, ui_filters, asker, on_event=on_event)
+        result = self._answer_uncached(
+            query, ui_filters, asker, on_event=on_event, on_usage=on_usage
+        )
 
         if cache is not None and cache_key is not None and is_cacheable(result):
             cache.put(cache_key, result)
@@ -323,6 +350,7 @@ class SearchCore:
         ui_filters: SearchFilters | None,
         asker: str | None = None,
         on_event: OnEvent | None = None,
+        on_usage: Callable[[LlmCallUsage], None] | None = None,
     ) -> SearchResult:
         """Run the bounded pipeline once, ignoring the cache.
 
@@ -341,7 +369,7 @@ class SearchCore:
         """
         started = time.monotonic()
         tele = _Telemetry(on_event)
-        budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
+        budget = _LlmBudget(max_calls=_max_llm_calls(self._settings), on_usage=on_usage)
 
         # Degenerate-input guard, before any phase, so the trace is empty.
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
@@ -628,7 +656,7 @@ class SearchCore:
         """Run the plan stage, emitting the ``plan`` phase with its detail."""
         tele.start("plan", "Planning the query")
         started = time.monotonic()
-        sink: list[LlmCallUsage] = []
+        sink = budget.usage_sink()
         skipped_trivial = (
             self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query)
         )
@@ -899,7 +927,7 @@ class SearchCore:
         candidates = self._judge_candidates(chunks, documents_by_id=documents_by_id)
         tele.start("judge", "Judging relevance")
         started = time.monotonic()
-        sink: list[LlmCallUsage] = []
+        sink = budget.usage_sink()
         budget.record()
         verdict = self._judge.judge(
             query, candidates, asker=asker, today=today, usage_sink=sink
@@ -968,7 +996,7 @@ class SearchCore:
         """
         tele.start("synthesise", "Synthesising the answer")
         started = time.monotonic()
-        sink: list[LlmCallUsage] = []
+        sink = budget.usage_sink()
         budget.record()
         outcome = self._synthesizer.synthesise(
             query,
@@ -1136,7 +1164,7 @@ class SearchCore:
         """
         tele.start("replan", "Re-planning")
         started = time.monotonic()
-        sink: list[LlmCallUsage] = []
+        sink = budget.usage_sink()
         budget.record()
         taxonomy_block = build_planner_taxonomy_block(
             facets, self._settings.SEARCH_PLANNER_TAXONOMY_LIMIT
