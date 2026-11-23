@@ -4,7 +4,9 @@ import { SearchErrorScreen } from './SearchErrorScreen';
 
 // FilterControls calls useFacets (needs a query client); a probe stands in for it.
 vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
-  FilterControls: () => <div data-testid="mock-filter-controls" />,
+  FilterControls: ({ defaultExpanded }: { defaultExpanded?: boolean }) => (
+    <div data-testid="mock-filter-controls" data-expanded={String(defaultExpanded)} />
+  ),
 }));
 
 function renderScreen(overrides = {}) {
@@ -42,6 +44,11 @@ describe('SearchErrorScreen', () => {
   it('renders the filter rail — same chrome as the no-match screen', () => {
     renderScreen();
     expect(screen.getByTestId('mock-filter-controls')).toBeInTheDocument();
+  });
+
+  it('hands the filter panel state to the rail', () => {
+    renderScreen({ filterPanel: { defaultExpanded: true, onExpandedChange: () => {} } });
+    expect(screen.getByTestId('mock-filter-controls')).toHaveAttribute('data-expanded', 'true');
   });
 
   it('renders a "Try again" action', () => {

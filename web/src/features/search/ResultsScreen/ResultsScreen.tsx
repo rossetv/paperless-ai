@@ -4,6 +4,7 @@ import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { Text } from '../../../components/primitives/Text/Text';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
+import type { FilterPanelState } from '../../../components/patterns/FilterControls/FilterControls';
 import { AnswerCard } from '../AnswerCard/AnswerCard';
 import { SourceList } from '../SourceList/SourceList';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
@@ -18,6 +19,8 @@ export interface ResultsScreenProps {
   /** Matched document count for the active-filters strip. */
   docCount: number;
   onFiltersChange: (filters: FilterRequest) => void;
+  /** The filter panel's open state, held by the page across screens. */
+  filterPanel?: FilterPanelState;
   onSearch: (query: string) => void;
   onClearFilters: () => void;
   /** Called with the 1-based index of the activated citation. */
@@ -34,6 +37,7 @@ export function ResultsScreen({
   result,
   docCount,
   onFiltersChange,
+  filterPanel,
   onSearch,
   onClearFilters,
   onCitationActivate,
@@ -68,7 +72,11 @@ export function ResultsScreen({
     <SearchScreenLayout
       variant="rail"
       rail={
-        <FilterControls filters={filters} onFiltersChange={onFiltersChange} />
+        <FilterControls
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          {...filterPanel}
+        />
       }
     >
       <Stack direction="vertical" gap={10}>

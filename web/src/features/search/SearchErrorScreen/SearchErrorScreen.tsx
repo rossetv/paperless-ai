@@ -5,6 +5,7 @@ import { SearchField } from '../../../components/patterns/SearchField/SearchFiel
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Button } from '../../../components/primitives/Button/Button';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
+import type { FilterPanelState } from '../../../components/patterns/FilterControls/FilterControls';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
 import type { FilterRequest, PhaseRecord } from '../../../api/types';
 
@@ -15,6 +16,8 @@ export interface SearchErrorScreenProps {
   /** Shown in the rail so this screen keeps the results screens' chrome. */
   filters: FilterRequest;
   onFiltersChange: (filters: FilterRequest) => void;
+  /** The filter panel's open state, held by the page across screens. */
+  filterPanel?: FilterPanelState;
   onRetry: () => void;
   /** Called when the recap field is submitted, so the user is not stranded. */
   onSearch: (query: string) => void;
@@ -32,6 +35,7 @@ export function SearchErrorScreen({
   message,
   filters,
   onFiltersChange,
+  filterPanel,
   onRetry,
   onSearch,
   phaseRecords = [],
@@ -40,7 +44,11 @@ export function SearchErrorScreen({
     <SearchScreenLayout
       variant="rail"
       rail={
-        <FilterControls filters={filters} onFiltersChange={onFiltersChange} />
+        <FilterControls
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          {...filterPanel}
+        />
       }
     >
       <Stack direction="vertical" gap={10} align="center">

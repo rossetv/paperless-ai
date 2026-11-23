@@ -8,6 +8,7 @@ import { Text } from '../../../components/primitives/Text/Text';
 import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
 import { PipelineStages } from '../../../components/primitives/PipelineStages/PipelineStages';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
+import type { FilterPanelState } from '../../../components/patterns/FilterControls/FilterControls';
 import {
   formatCostLabel,
   formatElapsed,
@@ -24,6 +25,8 @@ export interface LoadingScreenProps {
   query: string;
   filters: FilterRequest;
   onFiltersChange: (filters: FilterRequest) => void;
+  /** The filter panel's open state, held by the page across screens. */
+  filterPanel?: FilterPanelState;
   /** Completed phases in order; empty until the first `phase_done`. */
   phaseRecords: PhaseRecord[];
   /** The running phase, shown as the "in progress" row. */
@@ -43,6 +46,7 @@ export function LoadingScreen({
   query,
   filters,
   onFiltersChange,
+  filterPanel,
   phaseRecords,
   activePhase,
   onPreview,
@@ -80,7 +84,11 @@ export function LoadingScreen({
     <SearchScreenLayout
       variant="rail"
       rail={
-        <FilterControls filters={filters} onFiltersChange={onFiltersChange} />
+        <FilterControls
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          {...filterPanel}
+        />
       }
     >
       <Stack direction="vertical" gap={10}>
