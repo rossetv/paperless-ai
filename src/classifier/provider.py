@@ -77,6 +77,10 @@ class ClassificationProvider(OpenAIChatMixin):
             if response is None:
                 continue
 
+            if not response.choices:
+                log.warning("classification.empty_choices", model=model)
+                continue
+
             try:
                 content = response.choices[0].message.content or ""
                 result = parse_classification_response(content)
