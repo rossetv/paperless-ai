@@ -151,4 +151,22 @@ describe('SettingsSideNav', () => {
     );
     expect(container.querySelector('[class*="eyebrow"]')).toBeNull();
   });
+
+  it('scrolls the tab strip so an off-screen active tab is in view', () => {
+    const rect = (left: number, right: number) => () =>
+      ({ left, right, top: 0, bottom: 0, width: right - left, height: 0, x: left, y: 0 }) as DOMRect;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.tagName === 'NAV') return rect(0, 390)();
+        if (this.getAttribute('aria-current') === 'page') return rect(997, 1100)();
+        return rect(0, 80)();
+      });
+    try {
+      renderNav('/settings/keys');
+      expect(screen.getByRole('navigation').scrollLeft).toBe(1100 - 390);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

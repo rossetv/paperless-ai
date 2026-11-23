@@ -147,6 +147,19 @@ export function SettingsSideNav({
 
   const scrolledActiveId = useAnchorScrollSpy(anchorIds);
 
+  // On phones the rail is a horizontal tab strip: bring the routed tab into view. Scrolling the
+  // strip itself, not scrollIntoView, keeps the page from moving.
+  const navRef = React.useRef<HTMLElement>(null);
+  React.useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector('[aria-current="page"]');
+    if (nav === null || nav === undefined || active === null || active === undefined) return;
+    const navBox = nav.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    if (box.left < navBox.left) nav.scrollLeft -= navBox.left - box.left;
+    else if (box.right > navBox.right) nav.scrollLeft += box.right - navBox.right;
+  }, [location.pathname]);
+
   /** Scroll the target section into view, offset by the sticky header height. */
   const handleAnchorClick = React.useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>, anchorId: string): void => {
@@ -161,7 +174,7 @@ export function SettingsSideNav({
   );
 
   return (
-    <nav className={cn(styles['nav'], className)} aria-label="Settings">
+    <nav ref={navRef} className={cn(styles['nav'], className)} aria-label="Settings">
       {eyebrow !== undefined && (
         <span className={styles['eyebrow']}>{eyebrow}</span>
       )}
