@@ -74,13 +74,13 @@
 }
 
 .destructive:hover:not(:disabled) {
-  opacity: var(--opacity-subdued);
+  background-color: var(--colour-button-destructive-bg-hover);
   transform: translateY(-1px);
   box-shadow: var(--shadow-card);
 }
 
 .destructive:active:not(:disabled) {
-  opacity: var(--opacity-pressed);
+  background-color: var(--colour-button-destructive-bg-active);
   box-shadow: none;
   transform: scale(0.97); /* override the hover lift — reads as a press */
 }
