@@ -38,3 +38,17 @@
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
 }
+
+/* In the PDF error overlay (dark in both themes) the light-surface button hides its on-dark label. */
+[role='alert'] .action {
+  background-color: transparent;
+  color: var(--colour-link-on-dark);
+}
+
+[role='alert'] .action:hover {
+  background-color: var(--colour-dark-surface);
+}
+
+[role='alert'] .action:active {
+  background-color: var(--colour-dark-bg);
+}
