@@ -81,8 +81,13 @@ class ClassificationProvider(OpenAIChatMixin):
                 log.warning("classification.empty_choices", model=model)
                 continue
 
+            message = response.choices[0].message
+            if message is None or not isinstance(message.content, str | None):
+                log.warning("classification.unusable_message", model=model)
+                continue
+
             try:
-                content = response.choices[0].message.content or ""
+                content = message.content or ""
                 result = parse_classification_response(content)
                 if model != primary_model:
                     self._stats.inc("fallback_successes")

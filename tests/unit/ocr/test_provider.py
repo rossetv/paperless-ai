@@ -6,6 +6,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 import openai
+import pytest
 from PIL import Image
 
 from common.content_checks import is_error_content
@@ -269,6 +270,46 @@ class TestOcrProviderEmptyChoices:
             _make_settings(OCR_MODELS=["model-a"], REFUSAL_MARK="REFUSED")
         )
         provider._create_completion = MagicMock(return_value=MagicMock(choices=[]))
+
+        page = provider.transcribe_image(_make_test_image())
+
+        assert page.text == "REFUSED"
+        assert page.model == ""
+
+
+class TestOcrProviderUnusableMessage:
+    @pytest.mark.parametrize(
+        "bad_message_content",
+        [None, [{"type": "text", "text": "parts"}]],
+        ids=["message-missing", "content-not-a-string"],
+    )
+    def test_falls_back_when_a_model_returns_no_usable_message(
+        self, bad_message_content
+    ):
+        provider = OcrProvider(_make_settings(OCR_MODELS=["model-a", "model-b"]))
+        bad = MagicMock()
+        bad.choices = [MagicMock()]
+        if bad_message_content is None:
+            bad.choices[0].message = None
+        else:
+            bad.choices[0].message.content = bad_message_content
+        provider._create_completion = MagicMock(
+            side_effect=[bad, _make_response("Fallback text")]
+        )
+
+        page = provider.transcribe_image(_make_test_image())
+
+        assert page.text == "Fallback text"
+        assert page.model == "model-b"
+
+    def test_unusable_message_without_fallback_returns_refusal_mark(self):
+        provider = OcrProvider(
+            _make_settings(OCR_MODELS=["model-a"], REFUSAL_MARK="REFUSED")
+        )
+        bad = MagicMock()
+        bad.choices = [MagicMock()]
+        bad.choices[0].message = None
+        provider._create_completion = MagicMock(return_value=bad)
 
         page = provider.transcribe_image(_make_test_image())
 

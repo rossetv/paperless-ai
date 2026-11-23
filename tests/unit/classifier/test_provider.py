@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from classifier.prompts import CLASSIFICATION_PROMPT, DOCUMENT_FENCE_LABEL
 from classifier.result import ClassificationResult
 from classifier.taxonomy import TaxonomyContext
@@ -125,6 +127,42 @@ class TestClassifyTextEmptyChoices:
     def test_no_choices_without_fallback_returns_none(self):
         provider = make_provider(CLASSIFY_MODELS=["model-a"])
         provider._create_completion = MagicMock(return_value=MagicMock(choices=[]))
+
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert result is None
+        assert model == ""
+
+
+class TestClassifyTextUnusableMessage:
+    @pytest.mark.parametrize(
+        "bad_message_content",
+        [None, [{"type": "text", "text": "parts"}]],
+        ids=["message-missing", "content-not-a-string"],
+    )
+    def test_falls_back_when_a_model_returns_no_usable_message(
+        self, bad_message_content
+    ):
+        provider = make_provider(CLASSIFY_MODELS=["model-a", "model-b"])
+        bad = make_completion_response(None)
+        if bad_message_content is None:
+            bad.choices[0].message = None
+        else:
+            bad.choices[0].message.content = bad_message_content
+        good = make_completion_response(valid_classification_json())
+        provider._create_completion = MagicMock(side_effect=[bad, good])
+
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert result is not None
+        assert model == "model-b"
+        assert provider.get_stats()["fallback_successes"] == 1
+
+    def test_unusable_message_without_fallback_returns_none(self):
+        provider = make_provider(CLASSIFY_MODELS=["model-a"])
+        bad = make_completion_response(None)
+        bad.choices[0].message = None
+        provider._create_completion = MagicMock(return_value=bad)
 
         result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
 

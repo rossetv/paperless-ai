@@ -117,7 +117,12 @@ class OcrProvider(OpenAIChatMixin):
                 log.warning("Model returned no choices", model=model, **log_ctx)
                 continue
 
-            text = (response.choices[0].message.content or "").strip()
+            message = response.choices[0].message
+            if message is None or not isinstance(message.content, str | None):
+                log.warning("Model returned no usable message", model=model, **log_ctx)
+                continue
+
+            text = (message.content or "").strip()
 
             if is_model_refusal(
                 text,
