@@ -126,6 +126,43 @@ def test_the_tracked_map_is_bounded() -> None:
     assert throttle.size() <= _MAX_TRACKED_KEYS
 
 
+def test_a_lock_survives_the_map_filling_with_other_keys() -> None:
+    """Filling the map with other failures does not end a lock before its time."""
+    clock = _FakeClock()
+    throttle = LoginThrottle(clock=clock)
+    key = _key()
+    for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+        throttle.record_failure(key)
+    for index in range(_MAX_TRACKED_KEYS + 50):
+        throttle.record_failure(_key(username=f"other-{index}", ip="10.0.0.2"))
+    clock.advance(_LOCKOUT_SECONDS - 1)
+    assert not _admits(throttle, key)
+    clock.advance(1)
+    assert _admits(throttle, key)
+
+
+def test_a_per_username_lock_survives_the_map_filling_with_other_names() -> None:
+    """The per-username lock also outlasts a map full of other usernames."""
+    clock = _FakeClock()
+    throttle = LoginThrottle(clock=clock)
+    for index in range(_MAX_FAILURES_PER_USERNAME):
+        throttle.record_failure(_key(ip=f"203.0.113.{index}"))
+    for index in range(_MAX_TRACKED_KEYS + 50):
+        throttle.record_failure(_key(username=f"other-{index}", ip="10.0.0.2"))
+    clock.advance(_LOCKOUT_SECONDS - 1)
+    assert not _admits(throttle, _key(ip="198.51.100.7"))
+
+
+def test_the_map_stays_bounded_when_every_record_is_locked() -> None:
+    """With only locked records left, the oldest goes and the cap still holds."""
+    throttle = LoginThrottle(clock=_FakeClock())
+    for index in range(_MAX_TRACKED_KEYS + 10):
+        for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+            throttle.record_failure(_key(username=f"user-{index}"))
+    assert throttle.size() == _MAX_TRACKED_KEYS
+    assert not _admits(throttle, _key(username=f"user-{_MAX_TRACKED_KEYS + 9}"))
+
+
 def test_build_attempt_key_lowercases_username_and_defaults_ip() -> None:
     """The key folds username case and tolerates a missing client IP."""
     key = build_attempt_key(client_ip=None, username="Alice")
