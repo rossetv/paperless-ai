@@ -392,7 +392,11 @@ class OpenAIChatMixin:
             if not completion.choices:
                 log.warning("llm.empty_choices", stage=log_event_prefix, model=model)
                 continue
-            return completion.choices[0].message.content or ""
+            message = completion.choices[0].message
+            if message is None or not isinstance(message.content, str | None):
+                log.warning("llm.unusable_message", stage=log_event_prefix, model=model)
+                continue
+            return message.content or ""
 
         return None
 

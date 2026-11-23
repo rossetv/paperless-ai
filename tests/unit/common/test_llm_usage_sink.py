@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from common.llm import LlmCallUsage, OpenAIChatMixin
 
 
@@ -131,3 +133,48 @@ def test_reply_without_choices_and_no_fallback_ends_like_exhausted_chain():
     )
     assert out is None
     assert len(sink) == 1
+
+
+def _unusable_message(content, *, message_missing):
+    reply = _completion("", prompt=1, completion=0, reasoning=0, total=5)
+    reply.choices[0].message = (
+        None if message_missing else SimpleNamespace(content=content)
+    )
+    return reply
+
+
+@pytest.mark.parametrize(
+    ("content", "message_missing"),
+    [(None, True), ([{"type": "text", "text": "parts"}], False)],
+    ids=["message-missing", "content-not-a-string"],
+)
+def test_reply_without_usable_message_falls_back_to_next_model_and_keeps_usage(
+    content, message_missing
+):
+    sink: list[LlmCallUsage] = []
+    stub = _PerModelStub(
+        {
+            "a": _unusable_message(content, message_missing=message_missing),
+            "b": _completion("from b", prompt=2, completion=3, reasoning=0, total=5),
+        }
+    )
+    out = stub._complete_with_model_fallback(
+        primary_model="a",
+        messages=[],
+        fallback_models=["b"],
+        log_event_prefix="x",
+        usage_sink=sink,
+    )
+    assert out == "from b"
+    assert [u.model for u in sink] == ["a", "b"]
+
+
+def test_reply_without_usable_message_and_no_fallback_returns_none():
+    stub = _PerModelStub({"a": _unusable_message(None, message_missing=True)})
+    out = stub._complete_with_model_fallback(
+        primary_model="a",
+        messages=[],
+        fallback_models=[],
+        log_event_prefix="x",
+    )
+    assert out is None
