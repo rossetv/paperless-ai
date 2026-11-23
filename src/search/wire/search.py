@@ -27,13 +27,13 @@ FilterId = Annotated[int, Field(ge=FILTER_ID_MIN, le=FILTER_ID_MAX)]
 
 
 def _readable_date(value: str | None) -> str | None:
-    """Pass an empty or absent date through; refuse one that cannot be read."""
-    if value and normalise_iso_date(value) is None:
+    """Pass a blank or absent date through; refuse one that cannot be read."""
+    if value and value.strip() and normalise_iso_date(value) is None:
         raise ValueError("must be a date in YYYY-MM-DD form")
     return value
 
 
-# An empty date means no filter; anything else must be readable as a date.
+# A blank date means no filter; anything else must be readable as a date.
 FilterDate = Annotated[str | None, AfterValidator(_readable_date)]
 
 
