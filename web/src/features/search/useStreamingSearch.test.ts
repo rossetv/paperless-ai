@@ -242,6 +242,42 @@ describe('useStreamingSearch', () => {
     expect(result.current.state.error?.status).toBe(503);
   });
 
+  describe('failure wording', () => {
+    const SENTENCE = 'The search is unavailable right now. Try again in a moment.';
+
+    async function failWith(err: unknown) {
+      mockStreamSearch.mockRejectedValue(err);
+      const { result } = renderHook(() => useStreamingSearch(), { wrapper });
+      await act(async () => {
+        result.current.run('q', EMPTY_FILTERS);
+      });
+      await waitFor(() => expect(result.current.state.status).toBe('error'));
+      return result.current.state.error;
+    }
+
+    it('shows a plain sentence for a 5xx without a server detail', async () => {
+      expect((await failWith(new ApiError(500)))?.message).toBe(SENTENCE);
+    });
+
+    it('shows a plain sentence for a non-JSON response', async () => {
+      const error = await failWith(new ApiError(200, 'Server returned a non-JSON response'));
+      expect(error?.message).toBe(SENTENCE);
+    });
+
+    it('shows a plain sentence when the network fails', async () => {
+      expect((await failWith(new TypeError('Failed to fetch')))?.message).toBe(SENTENCE);
+    });
+
+    it('keeps the server detail when it sent one', async () => {
+      const error = await failWith(new ApiError(500, undefined, 'Paperless is down'));
+      expect(error?.message).toBe('Paperless is down');
+    });
+
+    it('leaves a 4xx message as it is', async () => {
+      expect((await failWith(new ApiError(404)))?.message).toBe('API error 404');
+    });
+  });
+
   it('goes to the error state when the stream ends without a result or error', async () => {
     mockStreamSearch.mockResolvedValue({ body: {} } as Response);
     mockParseNdjson.mockReturnValue(eventsGen([PLAN_START, PLAN_DONE]));

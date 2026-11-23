@@ -106,12 +106,20 @@ function reducer(
   }
 }
 
+const UNAVAILABLE = 'The search is unavailable right now. Try again in a moment.';
+
 function toFailure(err: unknown): StreamFailure {
   if (err instanceof Unauthenticated) {
     return { status: 401, message: err.message };
   }
   if (err instanceof ApiError) {
-    return { status: err.status, message: err.message };
+    // Without a server detail, a 5xx or a non-JSON 2xx has only generic text.
+    const generic = err.detail === undefined && (err.status >= 500 || err.status < 400);
+    return { status: err.status, message: generic ? UNAVAILABLE : err.message };
+  }
+  // fetch rejects with a TypeError when the network fails.
+  if (err instanceof TypeError) {
+    return { message: UNAVAILABLE };
   }
   return {
     message: err instanceof Error ? err.message : 'The search failed.',
