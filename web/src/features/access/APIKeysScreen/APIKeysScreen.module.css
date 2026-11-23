@@ -20,22 +20,21 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-6);
+  flex-wrap: wrap;
   margin-top: var(--spacing-3);
   font-family: var(--font-mono);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
 }
 
-/* Phones: the request count drops under the key prefix and the expired label stays whole. */
+/* The key prefix and the expired tag beside the name stay whole. */
+.key-prefix,
+.key-name .expiry-expired {
+  white-space: nowrap;
+}
+
+/* Phones: the Expires cell's label stays whole too. */
 @media (width <= 699.98px) {
-  .key-meta {
-    flex-wrap: wrap;
-  }
-
-  .key-prefix {
-    white-space: nowrap;
-  }
-
   .expiry-expired {
     white-space: nowrap;
   }
