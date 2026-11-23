@@ -7,17 +7,12 @@ import type { SettingsSection } from './types';
 import { searchStageFields } from './helpers';
 
 /**
- * Model choices for the planner/answer/judge selects. The 5.6 family are the defaults; the
- * cheaper 5.4-era models stay as cost escape hatches, since 5.6 is markedly dearer.
+ * Model choices for the planner/answer/judge selects, cheapest first.
  */
 export const MODEL_OPTIONS = [
-  { value: 'gpt-5.6-luna', label: 'gpt-5.6-luna' },
-  { value: 'gpt-5.6-terra', label: 'gpt-5.6-terra' },
-  { value: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
-  { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
-  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-  { value: 'gpt-5.4', label: 'gpt-5.4' },
-  { value: 'gpt-5.5', label: 'gpt-5.5' },
+  { value: 'gpt-6-luna', label: 'gpt-6-luna' },
+  { value: 'gpt-6.1-terra', label: 'gpt-6.1-terra' },
+  { value: 'gpt-6.2-sol', label: 'gpt-6.2-sol' },
 ];
 
 /**

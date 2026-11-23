@@ -77,8 +77,8 @@ class TestDefaults:
 
     def test_ocr_and_classify_models_default_openai(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
-        assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
-        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+        assert s.OCR_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
+        assert s.CLASSIFY_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
 
     def test_ocr_refusal_markers_default(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
@@ -504,7 +504,7 @@ class TestModelListsValidation:
 
     def test_ocr_models_empty_string_uses_default(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ""})
-        assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+        assert s.OCR_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
 
     def test_classify_models_all_commas_raises(self, mocker):
         with pytest.raises(
@@ -514,7 +514,7 @@ class TestModelListsValidation:
 
     def test_classify_models_empty_string_uses_default(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ""})
-        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+        assert s.CLASSIFY_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
 
     def test_ocr_models_single_model(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": "model-a"})
@@ -937,7 +937,7 @@ class TestPerStepProviders:
             {**_MINIMAL_ENV, "OCR_PROVIDER": "ollama", "OLLAMA_BASE_URL": _OLLAMA_URL},
         )
         assert s.OCR_MODELS == ["gemma3:27b", "gemma3:12b"]
-        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+        assert s.CLASSIFY_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
 
     def test_search_model_default_follows_step_provider(self, mocker):
         s = _build(
@@ -949,7 +949,7 @@ class TestPerStepProviders:
             },
         )
         assert s.SEARCH_ANSWER_MODEL == "gemma3:27b"
-        assert s.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
+        assert s.SEARCH_PLANNER_MODEL == "gpt-6.1-terra"
 
     def test_invalid_value_rejected_naming_the_key(self, mocker):
         with pytest.raises(ValueError, match="OCR_PROVIDER"):

@@ -73,11 +73,11 @@ def _default_models_for(provider: Literal["openai", "ollama"]) -> _ProviderDefau
             judge_model="gemma3:12b",
         )
     return _ProviderDefaults(
-        ocr_models=["gpt-5.6-luna", "gpt-5.6-terra"],
-        classify_models=["gpt-5.6-luna", "gpt-5.6-terra"],
-        planner_model="gpt-5.6-terra",
-        answer_model="gpt-5.6-terra",
-        judge_model="gpt-5.6-luna",
+        ocr_models=["gpt-6-luna", "gpt-6.1-terra"],
+        classify_models=["gpt-6-luna", "gpt-6.1-terra"],
+        planner_model="gpt-6.1-terra",
+        answer_model="gpt-6.1-terra",
+        judge_model="gpt-6-luna",
     )
 
 
@@ -258,7 +258,7 @@ class Settings:
     """
     SEARCH_JUDGE_MODEL: str
     """The model for the relevance judge. On ``openai`` defaults to
-    ``gpt-5.6-luna`` (independent of the planner's ``gpt-5.6-terra``); on
+    ``gpt-6-luna`` (independent of the planner's ``gpt-6.1-terra``); on
     ``ollama`` it still follows the planner default (``gemma3:12b``). Set
     independently to run the judge on a cheaper or sharper model than the
     planner."""

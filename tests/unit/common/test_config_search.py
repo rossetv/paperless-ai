@@ -29,8 +29,8 @@ def _build(mocker, env: dict[str, str]) -> Settings:
 _SEARCH_DEFAULTS_OPENAI = [
     ("SEARCH_TOP_K", 10),
     ("SEARCH_MAX_REFINEMENTS", 1),
-    ("SEARCH_PLANNER_MODEL", "gpt-5.6-terra"),
-    ("SEARCH_ANSWER_MODEL", "gpt-5.6-terra"),
+    ("SEARCH_PLANNER_MODEL", "gpt-6.1-terra"),
+    ("SEARCH_ANSWER_MODEL", "gpt-6.1-terra"),
     ("SEARCH_SERVER_HOST", "0.0.0.0"),
     ("SEARCH_SERVER_PORT", 8080),
     ("SEARCH_FORWARDED_ALLOW_IPS", "*"),
@@ -191,9 +191,9 @@ class TestSearchRagCostSettings:
 
 
 class TestSearchFailFastGateDefaults:
-    def test_planner_model_defaults_to_gpt_5_6_terra_for_openai(self, mocker) -> None:
+    def test_planner_model_defaults_to_gpt_6_1_terra_for_openai(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
-        assert settings.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
+        assert settings.SEARCH_PLANNER_MODEL == "gpt-6.1-terra"
 
     def test_gate_adequacy_defaults_true(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
@@ -281,8 +281,8 @@ class TestJudgeSettings:
     def test_judge_and_planner_openai_defaults(self, mocker) -> None:
         """On openai the judge does not mirror the planner model; on ollama it does."""
         settings = _build(mocker, _MINIMAL_ENV)
-        assert settings.SEARCH_JUDGE_MODEL == "gpt-5.6-luna"
-        assert settings.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
+        assert settings.SEARCH_JUDGE_MODEL == "gpt-6-luna"
+        assert settings.SEARCH_PLANNER_MODEL == "gpt-6.1-terra"
 
     def test_judge_model_defaults_to_planner_model_ollama(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_OLLAMA_ENV)

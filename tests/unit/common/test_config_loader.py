@@ -151,8 +151,8 @@ def test_openai_defaults_produce_ocr_and_classify_model_lists() -> None:
     with patch.dict(os.environ, _MINIMAL_ENV, clear=True):
         s = Settings.from_environment()
 
-    assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
-    assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+    assert s.OCR_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
+    assert s.CLASSIFY_MODELS == ["gpt-6-luna", "gpt-6.1-terra"]
     assert not hasattr(s, "AI_MODELS")
 
 
@@ -202,7 +202,7 @@ def test_empty_ai_models_falls_to_provider_default() -> None:
     with patch.dict(os.environ, env, clear=True):
         s = Settings.from_environment()
 
-    openai_defaults = ["gpt-5.6-luna", "gpt-5.6-terra"]
+    openai_defaults = ["gpt-6-luna", "gpt-6.1-terra"]
     assert s.OCR_MODELS == openai_defaults
     assert s.CLASSIFY_MODELS == openai_defaults
 
@@ -265,7 +265,7 @@ def test_blank_model_list_means_the_default(key: str, blank: str) -> None:
     with patch.dict(os.environ, {**_MINIMAL_ENV, key: blank}, clear=True):
         s = Settings.from_environment()
 
-    assert getattr(s, key) == ["gpt-5.6-luna", "gpt-5.6-terra"]
+    assert getattr(s, key) == ["gpt-6-luna", "gpt-6.1-terra"]
 
 
 @pytest.mark.parametrize("blank", ["", "  "])

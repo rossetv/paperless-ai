@@ -24,9 +24,8 @@ class ModelPrice:
 
 
 # OpenAI list prices, USD per 1M tokens — Standard tier, short context
-# (https://openai.com/api/pricing). 5.4-era rows confirmed on 2026-06-10, 5.6
-# rows on 2026-07-14. Ollama models are absent: the provider check prices them
-# as free.
+# (https://openai.com/api/pricing), all rows confirmed on 2026-11-23. Ollama
+# models are absent: the provider check prices them as free.
 #
 # Cached-input discounts are not modelled: every prompt token is priced at the
 # full input rate, a deliberate small over-estimate. The synthesiser's input is
@@ -34,19 +33,21 @@ class ModelPrice:
 #
 # The search path never uses Flex, so Flex pricing is not modelled either.
 MODEL_PRICES: dict[str, ModelPrice] = {
-    "gpt-5.6-sol": ModelPrice(input_per_mtok=5.0, output_per_mtok=30.0),
-    "gpt-5.6-terra": ModelPrice(input_per_mtok=2.5, output_per_mtok=15.0),
-    "gpt-5.6-luna": ModelPrice(input_per_mtok=1.0, output_per_mtok=6.0),
+    "gpt-6.2-sol": ModelPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+    "gpt-6.1-terra": ModelPrice(input_per_mtok=1.0, output_per_mtok=5.0),
+    "gpt-6-luna": ModelPrice(input_per_mtok=0.1, output_per_mtok=0.5),
+    "gpt-5.6-sol": ModelPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+    "gpt-5.6-terra": ModelPrice(input_per_mtok=2.0, output_per_mtok=12.0),
+    "gpt-5.6-luna": ModelPrice(input_per_mtok=0.2, output_per_mtok=1.2),
     "gpt-5.5": ModelPrice(input_per_mtok=5.0, output_per_mtok=30.0),
     "gpt-5.4": ModelPrice(input_per_mtok=2.5, output_per_mtok=15.0),
     "gpt-5.4-mini": ModelPrice(input_per_mtok=0.75, output_per_mtok=4.5),
     "gpt-5.4-nano": ModelPrice(input_per_mtok=0.2, output_per_mtok=1.25),
-    "o4-mini": ModelPrice(input_per_mtok=1.1, output_per_mtok=4.4),
 }
 
 # When MODEL_PRICES was last confirmed; the price book stamps its bundled seed
 # with it. Update it together with the table.
-SEED_PRICES_AS_OF: str = "2026-07-14"
+SEED_PRICES_AS_OF: str = "2026-11-23"
 
 
 def price_call(

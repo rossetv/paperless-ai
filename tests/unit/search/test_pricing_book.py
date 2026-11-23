@@ -31,7 +31,7 @@ _URL = "https://prices.example/openai.json"
 
 # Every model in the prod search chain — the seed-path dollar figures must match
 # the bare-constant figures for each.
-_PROD_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "o4-mini"]
+_PROD_MODELS = ["gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna"]
 
 
 def _valid_payload() -> dict:

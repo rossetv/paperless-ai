@@ -224,9 +224,9 @@ def _resolve_ocr_image_detail(
     return detail  # type: ignore[return-value]
 
 
-# What the live OpenAI API accepts (checked 2026-07-15 against gpt-5.6-sol,
-# -terra, -luna and gpt-5.4-mini). "minimal" no longer exists and is coerced to
-# "none" below. "max" is listed in the docs but rejected by the API, and the
+# What the live OpenAI API accepts (checked 2026-11-23 against gpt-6-luna,
+# gpt-6.1-terra and gpt-6.2-sol; gpt-6.2-sol alone rejects "none"). "minimal" no
+# longer exists and is coerced to "none" below. "max" is listed in the docs but rejected by the API, and the
 # compat layer would strip it so the model silently runs at its pricier default.
 # Verify against the live API before adding a value.
 _REASONING_EFFORT_CHOICES: frozenset[str] = frozenset(

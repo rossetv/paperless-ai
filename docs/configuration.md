@@ -25,11 +25,11 @@ Each step can use its own provider. A step's provider defaults to `LLM_PROVIDER`
 | `OPENAI_API_KEY` | | Required while any step, or embeddings, uses OpenAI. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1/` | Must end in `/v1/`. |
 | `OPENAI_FLEX_TIER` | `true` | Run OCR and classification on OpenAI's Flex tier: about half price, slower. Search always uses the standard tier. |
-| `OCR_MODELS` | `gpt-5.6-luna,gpt-5.6-terra` | Fallback chain, tried in order. Ollama: `gemma3:27b,gemma3:12b`. |
-| `CLASSIFY_MODELS` | `gpt-5.6-luna,gpt-5.6-terra` | Fallback chain. Ollama: `gemma3:27b,gemma3:12b`. |
-| `SEARCH_PLANNER_MODEL` | `gpt-5.6-terra` | Ollama: `gemma3:12b`. |
-| `SEARCH_JUDGE_MODEL` | `gpt-5.6-luna` | Ollama: `gemma3:12b`. |
-| `SEARCH_ANSWER_MODEL` | `gpt-5.6-terra` | Ollama: `gemma3:27b`. |
+| `OCR_MODELS` | `gpt-6-luna,gpt-6.1-terra` | Fallback chain, tried in order. Ollama: `gemma3:27b,gemma3:12b`. |
+| `CLASSIFY_MODELS` | `gpt-6-luna,gpt-6.1-terra` | Fallback chain. Ollama: `gemma3:27b,gemma3:12b`. |
+| `SEARCH_PLANNER_MODEL` | `gpt-6.1-terra` | Ollama: `gemma3:12b`. |
+| `SEARCH_JUDGE_MODEL` | `gpt-6-luna` | Ollama: `gemma3:12b`. |
+| `SEARCH_ANSWER_MODEL` | `gpt-6.1-terra` | Ollama: `gemma3:27b`. |
 | `OCR_REASONING_EFFORT` | `none` | Each effort is one of `none`, `low`, `medium`, `high`, `xhigh`. Models that don't take the parameter ignore it. |
 | `CLASSIFY_REASONING_EFFORT` | `low` | |
 | `SEARCH_PLANNER_REASONING_EFFORT` | `medium` | |
@@ -140,7 +140,7 @@ The list's format, with illustrative prices:
   "as_of": "2026-06-10",
   "currency": "USD",
   "models": {
-    "gpt-5.6-terra": { "input_per_mtok": 5.0, "output_per_mtok": 30.0 }
+    "gpt-6.1-terra": { "input_per_mtok": 1.0, "output_per_mtok": 5.0 }
   }
 }
 ```

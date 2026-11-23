@@ -54,8 +54,8 @@ RETRYABLE_OPENAI_EXCEPTIONS = (
 # cannot loop forever. ``stat_key`` is counted only if the provider declares it.
 # Order matters: ``max_completion_tokens`` must precede ``max_tokens`` so the
 # more specific message matches first. The ``reasoning_effort`` and
-# ``temperature`` matchers were verified against live gpt-5.6 400 responses
-# (2026-07-15); ``verbosity`` and ``max_completion_tokens`` are unverified.
+# ``temperature`` matchers were verified against live gpt-6 400 responses
+# (2026-11-23); ``verbosity`` and ``max_completion_tokens`` are unverified.
 _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("temperature", "temperature", "temperature_retries"),
     ("response_format", "response_format", "response_format_retries"),

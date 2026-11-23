@@ -18,7 +18,7 @@ export interface LibraryCardProps {
 }
 
 /**
- * Model-name tags (e.g. "gpt-5.4-mini") added by the AI classification step;
+ * Model-name tags (e.g. "gpt-6-luna") added by the AI classification step;
  * they mean nothing to a reader, so the card hides them.
  */
 const PIPELINE_TAG_PATTERN = /^gpt-|^claude-|^gemini-|^llama-|^mistral-|^ollama-/i;

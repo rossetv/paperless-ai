@@ -17,8 +17,8 @@ The refresh URL must serve::
       "as_of": "YYYY-MM-DD",
       "currency": "USD",
       "models": {
-        "gpt-5.5":      {"input_per_mtok": 5.0, "output_per_mtok": 30.0},
-        "gpt-5.4-mini": {"input_per_mtok": 0.75, "output_per_mtok": 4.5}
+        "gpt-6.2-sol": {"input_per_mtok": 2.0, "output_per_mtok": 10.0},
+        "gpt-6-luna":  {"input_per_mtok": 0.1, "output_per_mtok": 0.5}
       }
     }
 

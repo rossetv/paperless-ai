@@ -48,12 +48,12 @@ def test_seed_prices_as_of_is_an_iso_date():
 @pytest.mark.parametrize(
     ("model", "input_rate", "output_rate"),
     [
-        ("gpt-5.6-sol", 5.0, 30.0),
-        ("gpt-5.6-terra", 2.5, 15.0),
-        ("gpt-5.6-luna", 1.0, 6.0),
+        ("gpt-6.2-sol", 2.0, 10.0),
+        ("gpt-6.1-terra", 1.0, 5.0),
+        ("gpt-6-luna", 0.1, 0.5),
     ],
 )
-def test_gpt56_family_is_priced(model, input_rate, output_rate):
+def test_gpt6_family_is_priced(model, input_rate, output_rate):
     price = MODEL_PRICES[model]
     assert price.input_per_mtok == input_rate
     assert price.output_per_mtok == output_rate
