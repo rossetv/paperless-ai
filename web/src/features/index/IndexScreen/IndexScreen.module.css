@@ -110,8 +110,9 @@
   color: var(--colour-text-primary);
 }
 
+/* Sits as far under its head as Failed documents' empty line does under its header. */
 .activity-empty {
-  margin: 0;
+  margin: var(--spacing-10) 0 var(--spacing-14);
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption);
