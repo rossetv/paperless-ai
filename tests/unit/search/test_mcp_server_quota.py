@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import gc
 import threading
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import anyio
@@ -23,10 +25,17 @@ from search.mcp_server import build_mcp_app
 from search.offload import LazySemaphore
 from search.spend_quota import mcp_api_key_id
 from tests.helpers.factories import (
+    make_facet_set,
     make_search_result,
     make_search_settings,
     make_search_stats,
 )
+from tests.helpers.llm import (
+    ScriptedLLMClient,
+    answered_response_json,
+    planner_response_json,
+)
+from tests.helpers.search import build_search_core
 
 QUOTA = 100
 
@@ -311,3 +320,55 @@ async def test_work_of_a_cancelled_deep_search_that_then_fails_is_logged_not_dro
     failures = [e for e in logs if e["log_level"] == "error"]
     assert len(failures) == 1
     assert "database is locked" in str(failures[0]["exc_info"])
+
+
+class _BilledLLMClient(ScriptedLLMClient):
+    """Every chat call reports 30 tokens used."""
+
+    def route(self, **kwargs: Any) -> Any:
+        completion = super().route(**kwargs)
+        completion.usage = SimpleNamespace(
+            prompt_tokens=20,
+            completion_tokens=10,
+            total_tokens=30,
+            completion_tokens_details=None,
+        )
+        return completion
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_before_a_failed_deep_search_count_against_the_key(
+    app_db_path: str,
+) -> None:
+    from tests.helpers.mcp_client import connect_client
+
+    store_reader = MagicMock()
+    store_reader.list_facets.return_value = make_facet_set()
+    store_reader.vector_search.side_effect = RuntimeError("store fault")
+    store_reader.keyword_search.side_effect = RuntimeError("store fault")
+    embedding_client = MagicMock()
+    embedding_client.embed.return_value = [[0.1, 0.2, 0.3]]
+    core = build_search_core(
+        settings=make_search_settings(
+            SEARCH_KEY_DAILY_TOKEN_QUOTA=QUOTA, SEARCH_CACHE_TTL_SECONDS=0
+        ),
+        llm_client=_BilledLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer [1].", citations=[1])
+            ],
+        ),
+        store_reader=store_reader,
+        embedding_client=embedding_client,
+    )
+    app = build_mcp_app(
+        lambda _path: core, app_db_path, search_semaphore=LazySemaphore(4)
+    )
+
+    async with connect_client(app._server) as client:
+        result = await client.call_tool(
+            "deep_search", {"question": "when does my boiler warranty expire?"}
+        )
+
+    assert result.isError is True
+    assert _tokens_used(app_db_path) == 30

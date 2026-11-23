@@ -78,7 +78,7 @@ from search.text import (
     is_trivial_query,
 )
 from search.fetch import assemble_fetched
-from search.trace import OnEvent, PhaseRecord, PhaseStart, _Telemetry
+from search.trace import OnEvent, PhaseEvent, PhaseRecord, PhaseStart, _Telemetry
 from store import StoreError
 from store.models import DocumentBrowseQuery, KeywordHit, KeywordPage, SearchFilters
 
@@ -147,6 +147,24 @@ class _LlmBudget:
                 f"LLM-call limit breached: {self.count} calls made, "
                 f"the per-query limit is {self.max_calls}."
             )
+
+
+class TokenTally:
+    """An ``on_event`` sink that sums the tokens of each finished phase.
+
+    Lets a caller charge a search that fails part-way for the tokens it had
+    already spent; *forward*, when given, still receives every event.
+    """
+
+    def __init__(self, forward: OnEvent | None = None) -> None:
+        self.total = 0
+        self._forward = forward
+
+    def __call__(self, event: PhaseEvent) -> None:
+        if isinstance(event, PhaseRecord) and event.tokens is not None:
+            self.total += event.tokens.total
+        if self._forward is not None:
+            self._forward(event)
 
 
 @dataclass(frozen=True, slots=True)
