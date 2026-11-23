@@ -36,7 +36,7 @@ export function DocumentPage(): React.ReactElement {
     if (docQuery.error instanceof ApiError && docQuery.error.status === 503) {
       return (
         <Page nav={<AppNavBar />}>
-          <IndexNotReadyScreen onRetry={() => void docQuery.refetch()} />
+          <IndexNotReadyScreen messageAs="h1" onRetry={() => void docQuery.refetch()} />
         </Page>
       );
     }

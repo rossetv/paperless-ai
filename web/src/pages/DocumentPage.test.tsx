@@ -179,7 +179,9 @@ describe('DocumentPage', () => {
       paperless_url: 'https://paperless.test/documents/42/',
     });
     renderAt('/document/42');
-    expect(await screen.findByText('The index is initialising.')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'The index is initialising.' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/could not load document/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
     expect(await screen.findByText('Ready doc')).toBeInTheDocument();
