@@ -10,6 +10,8 @@ export interface FilterPanelProps {
   children: React.ReactNode;
   /** Whether the panel is initially expanded. Defaults to true. */
   defaultExpanded?: boolean;
+  /** Called with the new state when the toggle is used. */
+  onExpandedChange?: (expanded: boolean) => void;
   className?: string;
 }
 
@@ -21,6 +23,7 @@ export function FilterPanel({
   title,
   children,
   defaultExpanded = true,
+  onExpandedChange,
   className,
 }: FilterPanelProps): React.ReactElement {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -28,7 +31,8 @@ export function FilterPanel({
   const contentId = `filter-panel-content-${autoId}`;
 
   function toggle(): void {
-    setIsExpanded((prev) => !prev);
+    setIsExpanded(!isExpanded);
+    onExpandedChange?.(!isExpanded);
   }
 
   const rootClasses = cn(styles['filter-panel'], className);

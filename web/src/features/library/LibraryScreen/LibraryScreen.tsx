@@ -9,6 +9,7 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
+import { isNarrowViewport } from '../../../lib/isNarrowViewport';
 import { LibraryCard } from '../LibraryCard/LibraryCard';
 import { useDocuments, useFacets } from '../../../api/hooks';
 import { formatShortDate } from '../../../lib/formatDate';
@@ -52,18 +53,6 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
 function dateLabel(iso: string): string {
   const formatted = formatShortDate(iso);
   return formatted === '—' ? iso : formatted;
-}
-
-/**
- * True below SearchScreenLayout's 834px breakpoint, where the rail stacks above
- * the content. matchMedia is missing in some test environments.
- */
-function isNarrowViewport(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(max-width: 834px)').matches
-  );
 }
 
 /** Where the list was scrolled to, per history entry, for the way back from a document. */

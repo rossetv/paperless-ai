@@ -288,6 +288,20 @@ describe('FilterControls', () => {
       );
     });
 
+    it('reports when the person opens and closes the Filters panel', async () => {
+      const onExpandedChange = vi.fn();
+      render(
+        <FilterControls
+          filters={emptyFilters}
+          onFiltersChange={vi.fn()}
+          onExpandedChange={onExpandedChange}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      expect(onExpandedChange.mock.calls).toEqual([[true], [false]]);
+    });
+
     it('starts the Filters panel as the caller asks', () => {
       render(
         <FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} defaultExpanded />,

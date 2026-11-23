@@ -10,6 +10,7 @@ import { Button } from '../../primitives/Button/Button';
 import { Stack } from '../../layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
 import { useDebounce } from '../../../hooks/useDebounce';
+import { isNarrowViewport } from '../../../lib/isNarrowViewport';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
 import styles from './FilterControls.module.css';
 
@@ -30,16 +31,17 @@ export interface FilterControlsProps {
    * below the fold.
    */
   defaultExpanded?: boolean;
+  /** Called when the person opens or closes the "Filters" panel. */
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
-/** True below the 834px breakpoint; matchMedia is missing in some test environments. */
-function isNarrowViewport(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(max-width: 834px)').matches
-  );
-}
+/**
+ * The panel's open state, held above the screens that each mount their own
+ * FilterControls, so a screen change keeps the person's choice.
+ */
+export type FilterPanelState = Required<
+  Pick<FilterControlsProps, 'defaultExpanded' | 'onExpandedChange'>
+>;
 
 function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
   return entries.map((e) => ({ value: String(e.id), label: e.name }));
@@ -57,6 +59,7 @@ export function FilterControls({
   filters,
   onFiltersChange,
   defaultExpanded,
+  onExpandedChange,
 }: FilterControlsProps): React.ReactElement {
   const { data: facets, isLoading, isError } = useFacets();
 
@@ -150,7 +153,11 @@ export function FilterControls({
   const hasTags = facets.tags.length > 0;
 
   return (
-    <FilterPanel title="Filters" defaultExpanded={defaultExpanded ?? !isNarrowViewport()}>
+    <FilterPanel
+      title="Filters"
+      defaultExpanded={defaultExpanded ?? !isNarrowViewport()}
+      {...(onExpandedChange !== undefined ? { onExpandedChange } : {})}
+    >
       <Stack direction="vertical" gap={8}>
         {/* Conditional spread: exactOptionalPropertyTypes forbids passing undefined to value. */}
         <Select
