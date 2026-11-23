@@ -165,5 +165,6 @@ async def test_mcp_search_tools_reject_an_out_of_range_filter_id(tool: str) -> N
         )
 
     assert result.isError is True
+    assert "correspondent_id" in result.content[0].text
     core.answer.assert_not_called()
     core.retrieve.assert_not_called()

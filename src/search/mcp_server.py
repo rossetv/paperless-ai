@@ -219,15 +219,15 @@ def _run_search_tool(
     A core failure is logged server-side and raised to the client as a
     sanitised :class:`ToolError` with no internal detail.
     """
-    # Outside the try so an invalid query gets its own message, not the
-    # sanitised fallback.
+    # Outside the try so an invalid query or filter gets its own message, not
+    # the sanitised fallback.
     try:
         query = normalise_query(query)
+        ui_filters = _to_search_filters(filters)
     except ValueError as exc:
         raise ToolError(str(exc)) from None
 
     try:
-        ui_filters = _to_search_filters(filters)
         result = core_call(query, ui_filters, asker)
         return _serialise_result(result)
     except Exception:
