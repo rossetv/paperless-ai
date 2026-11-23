@@ -1,3 +1,4 @@
+import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { SettingsSideNav } from './SettingsSideNav';
@@ -199,7 +200,7 @@ describe('SettingsSideNav', () => {
     ],
   };
 
-  function HashButton(): JSX.Element {
+  function HashButton(): React.ReactElement {
     const navigate = useNavigate();
     return (
       <button type="button" onClick={() => navigate('#logging')}>
