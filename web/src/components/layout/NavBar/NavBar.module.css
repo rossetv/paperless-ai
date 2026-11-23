@@ -51,3 +51,8 @@
 .spacer {
   flex: 1;
 }
+
+/* The nav bar is dark in both themes; the light-theme ring is 2.8:1 on it. */
+:root:not([data-theme="dark"]) .navbar :focus-visible {
+  outline-color: var(--colour-link-on-dark);
+}
