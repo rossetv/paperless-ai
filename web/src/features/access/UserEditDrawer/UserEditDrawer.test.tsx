@@ -222,6 +222,19 @@ describe('UserEditDrawer — edit mode', () => {
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('does not suspend twice while a save is already running', async () => {
+    const mutateAsync = vi.fn(() => new Promise<UserResponse>(() => {}));
+    mockUpdate.mockReturnValue(stubMutation(mutateAsync));
+    const { rerender } = render(
+      <UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    mockUpdate.mockReturnValue(stubMutation(mutateAsync, { isPending: true }));
+    rerender(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('disables delete and suspend for one\'s own account', () => {
     render(<UserEditDrawer user={SAMPLE_USER} isSelf onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: /delete account/i })).toBeDisabled();
