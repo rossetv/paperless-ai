@@ -69,6 +69,24 @@ function SettingsContent({
   const barRef = React.useRef<HTMLDivElement>(null);
   // The last settings control the person focused, where focus returns after a save.
   const lastFieldRef = React.useRef<HTMLElement | null>(null);
+  // The last input the person used. Focusing a text field after a tap raises the on-screen
+  // keyboard, so only a keyboard save returns focus to a field.
+  const keyboardRef = React.useRef(false);
+
+  React.useEffect(() => {
+    const onKey = (): void => {
+      keyboardRef.current = true;
+    };
+    const onPointer = (): void => {
+      keyboardRef.current = false;
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, []);
 
   React.useEffect(() => {
     const screen = screenRef.current;
@@ -84,12 +102,12 @@ function SettingsContent({
   }, []);
 
   // After a save the focused Save button goes inert with the bar. Leave focus alone if the person
-  // has moved on to a field; otherwise return it to the last field, or the heading as a last resort.
-  const restoreFocus = (): void => {
+  // has moved on to a field; otherwise, after a keyboard save, return it to the last field, or the heading as a last resort.
+  const restoreFocus = (fromKeyboard: boolean): void => {
     const active = document.activeElement;
     if (active !== null && active !== document.body && !barRef.current?.contains(active)) return;
     const field = lastFieldRef.current;
-    if (field?.isConnected === true && !field.hasAttribute('disabled') && !field.closest('[inert]')) {
+    if (fromKeyboard && field?.isConnected === true && !field.hasAttribute('disabled') && !field.closest('[inert]')) {
       field.focus({ preventScroll: true });
       return;
     }
@@ -123,6 +141,7 @@ function SettingsContent({
     for (const [key, value] of Object.entries(changedValues())) {
       changes[key] = serialiseValue(value);
     }
+    const fromKeyboard = keyboardRef.current;
     setSaveError(null);
     setSavedNotice(false);
     setReindexNotice(false);
@@ -135,7 +154,7 @@ function SettingsContent({
           } else {
             setSavedNotice(true);
           }
-          restoreFocus();
+          restoreFocus(fromKeyboard);
         },
         onError: (error) => {
           setSaveError(errorDetail(error, 'Could not save the settings. Try again.'));

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -285,6 +285,27 @@ describe('SettingsScreen', () => {
     ).toBeInTheDocument();
   });
 
+  // Activates Save the way a keyboard user does: focus it and press Enter.
+  async function saveWithKeyboard(): Promise<void> {
+    screen.getByRole('button', { name: /save changes/i }).focus();
+    await userEvent.keyboard('{Enter}');
+  }
+
+  // Holds the save request open; the returned function lets it finish.
+  function holdSave(): (body?: object) => void {
+    let resolvePut: (value: object) => void = () => {};
+    const put = new Promise((resolve) => {
+      resolvePut = resolve;
+    });
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation((_url, init?: RequestInit) =>
+      init?.method === 'PUT'
+        ? put
+        : Promise.resolve(mockResponse({ status: 200, body: toSettingsBody(SETTINGS) })),
+    );
+    return () =>
+      resolvePut(mockResponse({ status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) }));
+  }
+
   it('confirms a plain save with a toast and returns focus to the field last edited', async () => {
     mockFetchSequence([
       { status: 200, body: toSettingsBody(SETTINGS) },
@@ -293,9 +314,22 @@ describe('SettingsScreen', () => {
     renderScreen();
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await saveWithKeyboard();
     expect(await screen.findByText('Settings saved.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Increase Top K' })).toHaveFocus();
+  });
+
+  it('puts focus on the heading, not the field, after a pointer save so no keyboard opens', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      { status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText('Settings saved.');
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
   });
 
   it('falls back to the heading when no field was focused, without scrolling the page', async () => {
@@ -381,31 +415,41 @@ describe('SettingsScreen', () => {
     renderScreen();
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await saveWithKeyboard();
     await screen.findByText(/re-embedding your library/i);
     expect(screen.getByRole('button', { name: 'Increase Top K' })).toHaveFocus();
   });
 
-  it('leaves focus in the field the person moved to while a slow save finishes', async () => {
+  it('leaves focus on an element outside the settings the person moved to while a slow save finishes', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    const topK = await screen.findByRole('spinbutton', { name: 'Top K' });
+    await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    let resolvePut: (value: object) => void = () => {};
-    const put = new Promise((resolve) => {
-      resolvePut = resolve;
-    });
-    (fetch as ReturnType<typeof vi.fn>).mockImplementation((_url, init?: RequestInit) =>
-      init?.method === 'PUT'
-        ? put
-        : Promise.resolve(mockResponse({ status: 200, body: toSettingsBody(SETTINGS) })),
-    );
-    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    const finish = holdSave();
+    await saveWithKeyboard();
     await screen.findByText('Saving…');
-    await userEvent.click(topK);
-    resolvePut(mockResponse({ status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) }));
+    // An element outside the screen is never remembered as the last field.
+    const elsewhere = document.body.appendChild(document.createElement('button'));
+    act(() => elsewhere.focus());
+    finish();
     await screen.findByText('Settings saved.');
-    expect(topK).toHaveFocus();
+    expect(elsewhere).toHaveFocus();
+    elsewhere.remove();
+  });
+
+  it('falls back to the heading when the remembered field is disabled before the save finishes', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    const increase = screen.getByRole('button', { name: 'Increase Top K' });
+    await userEvent.click(increase);
+    const finish = holdSave();
+    await saveWithKeyboard();
+    await screen.findByText('Saving…');
+    increase.setAttribute('disabled', '');
+    finish();
+    await screen.findByText('Settings saved.');
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
   });
 
   it('clears the saved notice when a later save fails', async () => {
