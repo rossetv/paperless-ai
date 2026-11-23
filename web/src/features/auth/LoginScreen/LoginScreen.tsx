@@ -49,6 +49,11 @@ export function LoginScreen(): React.ReactElement {
     login.mutate({ username, password, remember }, {});
   }
 
+  // The fields are disabled while signing in, which drops focus to the page.
+  React.useEffect(() => {
+    if (login.isError) document.getElementById('login-password')?.focus();
+  }, [login.isError]);
+
   const errorMessage =
     login.isError && login.error !== null ? loginErrorMessage(login.error) : null;
 

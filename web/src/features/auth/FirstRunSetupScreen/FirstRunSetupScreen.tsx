@@ -15,6 +15,19 @@ function setupErrorMessage(e: Error): string {
 }
 
 /**
+ * The id of the field a failed setup belongs to: the token for a bad token, the
+ * username or password when the server's validation message names it (the
+ * message is all the client gets of a 422), else the first field.
+ */
+function setupErrorFieldId(e: Error): string {
+  if (e instanceof ApiError && e.status === 422 && e.detail !== undefined) {
+    if (/\busername\b/i.test(e.detail)) return 'setup-username';
+    if (/\bpassword\b/i.test(e.detail)) return 'setup-password';
+  }
+  return 'setup-token';
+}
+
+/**
  * First-run setup screen, shown while no users exist: takes the setup token
  * from the container logs and creates the first admin. Dark in both themes.
  *
@@ -51,6 +64,13 @@ export function FirstRunSetupScreen(): React.ReactElement {
     }
     setup.mutate({ token: token.trim(), username, password }, {});
   }
+
+  // The fields are disabled while creating the account, which drops focus to the page.
+  React.useEffect(() => {
+    if (setup.isError && setup.error !== null) {
+      document.getElementById(setupErrorFieldId(setup.error))?.focus();
+    }
+  }, [setup.isError, setup.error]);
 
   const errorMessage =
     setup.isError && setup.error !== null ? setupErrorMessage(setup.error) : null;

@@ -139,6 +139,39 @@ describe('FirstRunSetupScreen', () => {
     expect(screen.getByRole('button', { name: /creating/i })).toBeDisabled();
   });
 
+  it('puts focus back in the setup token field when setup fails', async () => {
+    const { rerender } = renderScreen();
+    await userEvent.type(screen.getByLabelText(/setup token/i), 'wrong');
+    // A browser drops focus to the body when the focused field gets disabled; jsdom does not.
+    (document.activeElement as HTMLElement).blur();
+    mockUseSetup.mockReturnValue(makeSetup({ isPending: true }));
+    rerender(<FirstRunSetupScreen />);
+    mockUseSetup.mockReturnValue(makeSetup({ isError: true, error: new ApiError(403) }));
+    rerender(<FirstRunSetupScreen />);
+    expect(screen.getByLabelText(/setup token/i)).toHaveFocus();
+  });
+
+  it.each([
+    ['username', 'Value error, username may contain only letters, digits, and so on', /^username/i],
+    ['password', 'Value error, password must be at least 12 characters', /^password/i],
+  ])('puts focus in the %s field when the server rejects it', async (_field, detail, label) => {
+    const { rerender } = renderScreen();
+    mockUseSetup.mockReturnValue(makeSetup({ isPending: true }));
+    rerender(<FirstRunSetupScreen />);
+    mockUseSetup.mockReturnValue(
+      makeSetup({ isError: true, error: new ApiError(422, undefined, detail) }),
+    );
+    rerender(<FirstRunSetupScreen />);
+    expect(screen.getByLabelText(label)).toHaveFocus();
+  });
+
+  it('puts focus in the first field when the error names no field', () => {
+    const { rerender } = renderScreen();
+    mockUseSetup.mockReturnValue(makeSetup({ isError: true, error: new ApiError(500) }));
+    rerender(<FirstRunSetupScreen />);
+    expect(screen.getByLabelText(/setup token/i)).toHaveFocus();
+  });
+
   it('maps ApiError 403 (bad setup token) to a friendly message', () => {
     renderScreen(makeSetup({ isError: true, error: new ApiError(403) }));
     expect(screen.getByRole('alert')).toHaveTextContent(/invalid setup token/i);

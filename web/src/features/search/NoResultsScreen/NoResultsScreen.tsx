@@ -8,6 +8,7 @@ import { Icon } from '../../../components/primitives/Icon/Icon';
 import { Text } from '../../../components/primitives/Text/Text';
 import { Card } from '../../../components/primitives/Card/Card';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
+import type { FilterPanelState } from '../../../components/patterns/FilterControls/FilterControls';
 import { ActiveFiltersStrip } from '../ActiveFiltersStrip/ActiveFiltersStrip';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
 import { hasActiveFilters } from '../filters';
@@ -21,6 +22,8 @@ export interface NoResultsScreenProps {
   query: string;
   filters: FilterRequest;
   onFiltersChange: (filters: FilterRequest) => void;
+  /** The filter panel's open state, held by the page across screens. */
+  filterPanel?: FilterPanelState;
   onSearch: (query: string) => void;
   onClearFilters: () => void;
   onSearchWithoutFilters: () => void;
@@ -44,6 +47,7 @@ export function NoResultsScreen({
   query,
   filters,
   onFiltersChange,
+  filterPanel,
   onSearch,
   onClearFilters,
   onSearchWithoutFilters,
@@ -102,7 +106,11 @@ export function NoResultsScreen({
     <SearchScreenLayout
       variant="rail"
       rail={
-        <FilterControls filters={filters} onFiltersChange={onFiltersChange} />
+        <FilterControls
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          {...filterPanel}
+        />
       }
     >
       <Stack direction="vertical" gap={10}>

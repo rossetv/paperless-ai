@@ -10,6 +10,7 @@ import { Button } from '../../primitives/Button/Button';
 import { Stack } from '../../layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
 import { useDebounce } from '../../../hooks/useDebounce';
+import { isNarrowViewport } from '../../../lib/isNarrowViewport';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
 import styles from './FilterControls.module.css';
 
@@ -25,11 +26,22 @@ export interface FilterControlsProps {
   /** Called with the updated filters whenever the user changes one. */
   onFiltersChange: (filters: FilterRequest) => void;
   /**
-   * Whether the "Filters" panel starts expanded. Defaults to true. Library passes
-   * `false` on narrow viewports so the document list is not pushed below the fold.
+   * Whether the "Filters" panel starts expanded. Defaults to true, except on a
+   * narrow viewport, where the rail stacks above the content and would push it
+   * below the fold.
    */
   defaultExpanded?: boolean;
+  /** Called when the person opens or closes the "Filters" panel. */
+  onExpandedChange?: (expanded: boolean) => void;
 }
+
+/**
+ * The panel's open state, held above the screens that each mount their own
+ * FilterControls, so a screen change keeps the person's choice.
+ */
+export type FilterPanelState = Required<
+  Pick<FilterControlsProps, 'defaultExpanded' | 'onExpandedChange'>
+>;
 
 function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
   return entries.map((e) => ({ value: String(e.id), label: e.name }));
@@ -46,7 +58,8 @@ function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
 export function FilterControls({
   filters,
   onFiltersChange,
-  defaultExpanded = true,
+  defaultExpanded,
+  onExpandedChange,
 }: FilterControlsProps): React.ReactElement {
   const { data: facets, isLoading, isError } = useFacets();
 
@@ -140,7 +153,11 @@ export function FilterControls({
   const hasTags = facets.tags.length > 0;
 
   return (
-    <FilterPanel title="Filters" defaultExpanded={defaultExpanded}>
+    <FilterPanel
+      title="Filters"
+      defaultExpanded={defaultExpanded ?? !isNarrowViewport()}
+      {...(onExpandedChange !== undefined ? { onExpandedChange } : {})}
+    >
       <Stack direction="vertical" gap={8}>
         {/* Conditional spread: exactOptionalPropertyTypes forbids passing undefined to value. */}
         <Select

@@ -79,18 +79,20 @@ export function DocumentTitle({
 
   if (editing) {
     return (
-      <input
-        className={styles['title-input']}
-        value={draft}
-        autoFocus
-        aria-label="Document title"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); restoreFocus.current = true; commit(); }
-          if (e.key === 'Escape') { restoreFocus.current = true; setDraft(title ?? ''); setEditing(false); }
-        }}
-      />
+      <h1 className={styles['title']}>
+        <input
+          className={styles['title-input']}
+          value={draft}
+          autoFocus
+          aria-label="Document title"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); restoreFocus.current = true; commit(); }
+            if (e.key === 'Escape') { restoreFocus.current = true; setDraft(title ?? ''); setEditing(false); }
+          }}
+        />
+      </h1>
     );
   }
 

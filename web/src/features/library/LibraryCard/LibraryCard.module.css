@@ -204,7 +204,8 @@
   line-height: var(--line-height-body-emphasis);
   color: var(--colour-text-primary);
 
-  /* Two-line clamp. */
+  /* Two-line clamp. An unbroken word wraps so the clamp can ellipsise it. */
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

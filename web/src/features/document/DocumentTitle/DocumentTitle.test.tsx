@@ -74,6 +74,13 @@ describe('DocumentTitle', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('keeps the title input inside the level-1 heading while editing', () => {
+    render(<DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit title/i }));
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(within(heading).getByRole('textbox', { name: 'Document title' })).toBeInTheDocument();
+  });
+
   it('returns focus to the title after Enter and after Escape', () => {
     render(<DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />);
     for (const key of ['Enter', 'Escape']) {

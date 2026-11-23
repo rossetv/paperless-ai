@@ -36,6 +36,9 @@
   box-shadow: var(--shadow-dark-card);
   padding: var(--spacing-section);
   box-sizing: border-box;
+
+  /* The card is dark in both themes, so its field errors take the dark theme's red. */
+  --colour-status-danger-fg: var(--colour-dark-danger);
 }
 
 .brand-row {

@@ -1,10 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NoResultsScreen } from './NoResultsScreen';
+import type { FilterPanelState } from '../../../components/patterns/FilterControls/FilterControls';
 import type { FilterRequest, SearchResponse } from '../../../api/types';
 
 vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
-  FilterControls: () => <div data-testid="mock-filter-controls" />,
+  FilterControls: ({ defaultExpanded }: { defaultExpanded?: boolean }) => (
+    <div data-testid="mock-filter-controls" data-expanded={String(defaultExpanded)} />
+  ),
 }));
 
 // ActiveFiltersStrip calls useFacets, which needs a query client.
@@ -59,7 +62,7 @@ const BASE_RESULT: SearchResponse = {
 function renderScreen(
   resultOverrides: Partial<SearchResponse> = {},
   filters = EMPTY_FILTERS,
-  props: Partial<{ onSearch: (q: string) => void; onClearFilters: () => void; onSearchWithoutFilters: () => void }> = {},
+  props: Partial<{ onSearch: (q: string) => void; onClearFilters: () => void; onSearchWithoutFilters: () => void; filterPanel: FilterPanelState }> = {},
 ) {
   const result = { ...BASE_RESULT, ...resultOverrides };
   return render(
@@ -72,6 +75,7 @@ function renderScreen(
       onClearFilters={props.onClearFilters ?? (() => {})}
       onSearchWithoutFilters={props.onSearchWithoutFilters ?? (() => {})}
       onPreview={() => {}}
+      {...(props.filterPanel !== undefined ? { filterPanel: props.filterPanel } : {})}
     />,
   );
 }
@@ -283,5 +287,12 @@ describe('NoResultsScreen', () => {
       screen.getByRole('button', { name: /search without filters/i }),
     );
     expect(onSearchWithoutFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the filter panel state to the rail', () => {
+    renderScreen({ outcome_kind: 'no_match', no_match_reason: 'empty_retrieval' }, EMPTY_FILTERS, {
+      filterPanel: { defaultExpanded: true, onExpandedChange: () => {} },
+    });
+    expect(screen.getByTestId('mock-filter-controls')).toHaveAttribute('data-expanded', 'true');
   });
 });

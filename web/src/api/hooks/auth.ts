@@ -24,6 +24,11 @@ import { queryKeys } from './keys';
 /** Marks requests whose 401 is an answer, not a lapsed session; the query client skips its session re-check. */
 const skipSessionCheck = { skipSessionCheck: true };
 
+/** Cached queries a sign-in leaves alone, as joined keys. */
+const KEPT_ON_LOGIN: ReadonlySet<string> = new Set(
+  [queryKeys.me(), queryKeys.setupStatus(), queryKeys.publicStats()].map((key) => key.join('/')),
+);
+
 /**
  * The current authenticated user — GET /api/auth/me. `useAuth` is built on it.
  *
@@ -73,7 +78,8 @@ export function usePublicStats(): UseQueryResult<PublicStats, Error> {
 }
 
 /**
- * Login mutation — POST /api/auth/login. Invalidates `me` so `useAuth` re-resolves.
+ * Login mutation — POST /api/auth/login. Clears the earlier session's cached data, seeds
+ * `me` with the signed-in user and invalidates it so `useAuth` re-resolves.
  *
  * Fails with `Unauthenticated` (401) or `ApiError` (403, suspended account).
  */
@@ -82,7 +88,15 @@ export function useLogin(): UseMutationResult<LoginResponse, Error, LoginRequest
   return useMutation({
     mutationFn: login,
     meta: skipSessionCheck,
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // A lapsed session leaves its cached data behind and the next sign-in may be
+      // another user, so drop all of it. `me` stays, to be re-checked below; the
+      // setup status and public stats are not per-user, and the sign-in gate needs them.
+      queryClient.removeQueries({
+        predicate: (query) => !KEPT_ON_LOGIN.has(query.queryKey.join('/')),
+      });
+      // Seed `me` from the response so a failed re-check keeps this user, not the lapsed one.
+      queryClient.setQueryData<MeResponse>(queryKeys.me(), { user: data.user });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
   });

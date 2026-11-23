@@ -1,6 +1,6 @@
 .surface {
   display: grid;
-  grid-template-columns: 1fr var(--size-doc-thumb-width);
+  grid-template-columns: minmax(0, 1fr) var(--size-doc-thumb-width);
   gap: var(--spacing-14);
   align-items: start;
   background-color: var(--colour-surface);
@@ -15,9 +15,10 @@
   outline: var(--spacing-1) solid var(--colour-accent-ring);
 }
 
-/* The content column — min-width 0 so long text can ellipsate/wrap. */
+/* The content column — min-width 0 so long text can wrap; anywhere breaks an unbroken title. */
 .content {
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The thumbnail column — relatively positioned so the badge can overlap. */
@@ -60,7 +61,7 @@
 /* Stack the columns on narrow viewports. */
 @media (width <= 640px) {
   .surface {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .thumb {

@@ -269,4 +269,47 @@ describe('FilterControls', () => {
     );
     expect(screen.queryByRole('combobox', { name: /correspondent/i })).not.toBeInTheDocument();
   });
+
+  describe('on a narrow viewport', () => {
+    beforeEach(() => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(max-width: 834px)',
+      }));
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('starts the Filters panel collapsed when no default is given', () => {
+      render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
+      expect(screen.getByRole('button', { name: /filters/i })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
+    });
+
+    it('reports when the person opens and closes the Filters panel', async () => {
+      const onExpandedChange = vi.fn();
+      render(
+        <FilterControls
+          filters={emptyFilters}
+          onFiltersChange={vi.fn()}
+          onExpandedChange={onExpandedChange}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      expect(onExpandedChange.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it('starts the Filters panel as the caller asks', () => {
+      render(
+        <FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} defaultExpanded />,
+      );
+      expect(screen.getByRole('button', { name: /filters/i })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+  });
 });

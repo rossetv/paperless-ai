@@ -142,6 +142,18 @@ describe('LoginScreen', () => {
     expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled();
   });
 
+  it('puts focus back in the password field when a sign-in fails', async () => {
+    const { rerender } = renderScreen();
+    await userEvent.type(screen.getByLabelText('Password'), 'wrong');
+    // A browser drops focus to the body when the focused field gets disabled; jsdom does not.
+    (document.activeElement as HTMLElement).blur();
+    mockUseLogin.mockReturnValue(makeLogin({ isPending: true }));
+    rerender(<LoginScreen />);
+    mockUseLogin.mockReturnValue(makeLogin({ isError: true, error: new Unauthenticated() }));
+    rerender(<LoginScreen />);
+    expect(screen.getByLabelText('Password')).toHaveFocus();
+  });
+
   it('maps Unauthenticated (401 wrong creds) to a friendly message', () => {
     renderScreen(makeLogin({ isError: true, error: new Unauthenticated() }));
     expect(screen.getByRole('alert')).toHaveTextContent(/incorrect username or password/i);

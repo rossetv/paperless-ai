@@ -121,8 +121,13 @@
 
 .create {
   font-weight: var(--font-weight-caption-bold);
-  color: var(--colour-accent);
+  color: var(--colour-link);
   border-top: var(--spacing-1) solid var(--colour-border-button);
+}
+
+/* The accent blue is 3.2:1 on the dark surface; the dark link blue clears 4.5:1. */
+[data-theme="dark"] .option.selected .option-label {
+  color: var(--colour-link);
 }
 
 .create.highlighted {

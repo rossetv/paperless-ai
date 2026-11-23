@@ -31,6 +31,7 @@ import {
   useStreamingSearch,
 } from '../features/search/useStreamingSearch';
 import { ME_QUERY_KEY } from '../api/hooks';
+import { isNarrowViewport } from '../lib/isNarrowViewport';
 import {
   useSearchUrlState,
   EMPTY_FILTERS,
@@ -49,6 +50,11 @@ export function SearchPage(): React.ReactElement {
   const [highlightedIndex, setHighlightedIndex] = React.useState<
     number | undefined
   >(undefined);
+
+  // Each screen mounts its own filter panel; the person's open or closed choice is held
+  // here so it survives the screen changes of a search. A phone starts collapsed.
+  const [filtersExpanded, setFiltersExpanded] = React.useState(() => !isNarrowViewport());
+  const filterPanel = { defaultExpanded: filtersExpanded, onExpandedChange: setFiltersExpanded };
 
   // Only Back/Forward, or the document page's link back to the results, shows
   // the kept answer; any other link or a new query searches.
@@ -87,16 +93,13 @@ export function SearchPage(): React.ReactElement {
     }
   }, [query, state.query, state.status, state.error, queryClient]);
 
-  // Each screen has its own search field, so a submit unmounts the one the
-  // person typed in; focus goes back to the new screen's own field, never to
-  // another search input such as the filter panel's tag search.
+  // Each screen has its own search field, and a submit, chip or recent search
+  // unmounts what had focus; focus goes back to the new screen's own field, never
+  // to another search input such as the filter panel's tag search.
   const refocusField = React.useRef(false);
 
   function runSearch(submitted: string): void {
-    const active = document.activeElement;
-    refocusField.current =
-      active instanceof HTMLElement &&
-      (active.matches('input[type="search"]') || active.getAttribute('aria-label') === 'Search');
+    refocusField.current = true;
     setQuery(submitted.trim());
     setHighlightedIndex(undefined);
   }
@@ -182,6 +185,7 @@ export function SearchPage(): React.ReactElement {
           message={state.error.message}
           filters={filters}
           onFiltersChange={setFilters}
+          filterPanel={filterPanel}
           phaseRecords={state.phaseRecords}
           onRetry={() => run(query.trim(), filters)}
           onSearch={runSearch}
@@ -198,6 +202,7 @@ export function SearchPage(): React.ReactElement {
             query={query}
             filters={filters}
             onFiltersChange={setFilters}
+            filterPanel={filterPanel}
             onSearch={runSearch}
             onClearFilters={clearFilters}
             onSearchWithoutFilters={clearFilters}
@@ -212,6 +217,7 @@ export function SearchPage(): React.ReactElement {
           result={result}
           docCount={result.sources.length}
           onFiltersChange={setFilters}
+          filterPanel={filterPanel}
           onSearch={runSearch}
           onClearFilters={clearFilters}
           onCitationActivate={handleCitationActivate}
@@ -227,6 +233,7 @@ export function SearchPage(): React.ReactElement {
         query={query}
         filters={filters}
         onFiltersChange={setFilters}
+        filterPanel={filterPanel}
         phaseRecords={state.phaseRecords}
         activePhase={state.activePhase}
         onPreview={openPreview}
