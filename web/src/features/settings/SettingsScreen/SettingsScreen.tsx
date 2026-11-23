@@ -63,6 +63,7 @@ function SettingsContent({
   // A re-index-forcing save (embedding model / chunking) shows a toast: the whole library is
   // being re-embedded server-side.
   const [reindexNotice, setReindexNotice] = React.useState(false);
+  const [savedNotice, setSavedNotice] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
   // Reload, closing the tab and leaving the site would drop the edits. In-app navigation is not
@@ -94,7 +95,16 @@ function SettingsContent({
       { changes },
       {
         onSuccess: (data) => {
-          if (data.reindex_triggered) setReindexNotice(true);
+          if (data.reindex_triggered) {
+            setReindexNotice(true);
+            return;
+          }
+          setSavedNotice(true);
+          // The save bar goes inert with the focused button inside it; park focus on the page
+          // heading rather than let it fall to the body.
+          const heading = document.querySelector('h1');
+          heading?.setAttribute('tabindex', '-1');
+          heading?.focus();
         },
         onError: (error) => {
           setSaveError(errorDetail(error, 'Could not save the settings. Try again.'));
@@ -143,6 +153,14 @@ function SettingsContent({
           message={saveError}
           variant="error"
           onDismiss={() => setSaveError(null)}
+        />
+      )}
+      {savedNotice && (
+        <Toast
+          message="Settings saved."
+          variant="info"
+          onDismiss={() => setSavedNotice(false)}
+          dismissAfterMs={4000}
         />
       )}
       {reindexNotice && (

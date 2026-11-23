@@ -285,6 +285,19 @@ describe('SettingsScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('confirms a plain save with a toast and keeps focus on the page heading', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      { status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    expect(await screen.findByText('Settings saved.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
+  });
+
   it('shows the server error in a toast and keeps the edit when the save fails', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
