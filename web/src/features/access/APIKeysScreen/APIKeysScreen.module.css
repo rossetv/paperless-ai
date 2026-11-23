@@ -63,8 +63,8 @@
     flex-wrap: wrap;
   }
 
-  /* The buttons stay right-aligned; the start margin lets the column close 14px
-     tighter so the table fits its card where the side nav first appears. */
+  /* The buttons stay right-aligned; the negative start margin lets the column
+     close up so the table fits its card where the side nav first appears. */
   .row-actions {
     margin-inline-start: calc(-1 * var(--spacing-10));
   }
