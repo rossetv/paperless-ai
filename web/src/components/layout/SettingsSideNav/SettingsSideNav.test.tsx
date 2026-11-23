@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { SettingsSideNav } from './SettingsSideNav';
 import type { SettingsNavGroup } from './SettingsSideNav';
@@ -112,33 +112,6 @@ describe('SettingsSideNav', () => {
     expect(
       screen.getByRole('link', { name: 'Search Server' }),
     ).not.toHaveAttribute('aria-current');
-  });
-
-  it('scrolls to the hashed section once it mounts after the data loads', async () => {
-    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
-    render(
-      <MemoryRouter initialEntries={['/settings#search']}>
-        <SettingsSideNav
-          groups={[
-            {
-              title: 'Configuration',
-              items: [{ id: 'search', label: 'Search Server', to: '/settings#search' }],
-            },
-          ]}
-        />
-      </MemoryRouter>,
-    );
-    expect(scrollTo).not.toHaveBeenCalled();
-
-    const section = document.createElement('section');
-    section.id = 'search';
-    vi.spyOn(section, 'getBoundingClientRect').mockReturnValue({ top: 900 } as DOMRect);
-    document.body.appendChild(section);
-    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(1));
-    expect(scrollTo).toHaveBeenCalledWith({ top: 900 - 140 });
-
-    section.remove();
-    scrollTo.mockRestore();
   });
 
   it('falls back to the first anchor as active when no hash is present', () => {

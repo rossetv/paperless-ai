@@ -31,7 +31,7 @@ export interface SettingsSideNavProps {
 }
 
 /** Read --height-settings-sticky from CSS custom properties; fall back to 140. */
-function readStickyOffset(): number {
+export function readStickyOffset(): number {
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue('--height-settings-sticky')
     .trim();
@@ -160,27 +160,6 @@ export function SettingsSideNav({
     const max = Math.max(0, nav.scrollWidth - nav.clientWidth);
     nav.scrollLeft = Math.min(max, Math.max(0, Math.round(nav.scrollLeft + offset)));
   }, [location.pathname, location.hash, scrolledActiveId]);
-
-  // The sections mount after their data loads, so the browser's own anchor jump
-  // finds nothing: scroll to the landing hash once its section appears.
-  const landingId = React.useRef(location.hash.slice(1));
-  React.useEffect(() => {
-    const id = landingId.current;
-    if (id === '' || !anchorIds.includes(id)) return undefined;
-    const scrollToSection = (): boolean => {
-      const el = document.getElementById(id);
-      if (el === null) return false;
-      landingId.current = '';
-      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - readStickyOffset() });
-      return true;
-    };
-    if (scrollToSection()) return undefined;
-    const observer = new MutationObserver(() => {
-      if (scrollToSection()) observer.disconnect();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [anchorIds]);
 
   /** Scroll the target section into view, offset by the sticky header height. */
   const handleAnchorClick = React.useCallback(

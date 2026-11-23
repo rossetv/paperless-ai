@@ -213,6 +213,24 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('spinbutton', { name: 'Top K' })).toBeInTheDocument();
   });
 
+  it('scrolls to the section named in the url once the settings have loaded', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/settings#search']}>
+          <SettingsScreen />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    scrollTo.mockRestore();
+  });
+
   it('binds a field to its fetched value', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
