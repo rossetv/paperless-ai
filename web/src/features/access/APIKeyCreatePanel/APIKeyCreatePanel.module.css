@@ -36,7 +36,7 @@
 }
 
 .secret-box .secret-copy:hover:not(:disabled) {
-  background-color: rgb(0 0 0 / 40%);
+  background-color: var(--colour-dark-surface);
 }
 
 .secret-box .secret-copy:active:not(:disabled) {
