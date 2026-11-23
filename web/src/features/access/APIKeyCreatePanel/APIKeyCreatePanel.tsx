@@ -51,7 +51,12 @@ function RevealPanel({ secret, onClose }: RevealPanelProps): React.ReactElement 
         </p>
         <div className={styles['secret-box']}>
           <code className={styles['secret-value']}>{secret}</code>
-          <Button variant="secondary" type="button" onClick={() => void handleCopy()}>
+          <Button
+            variant="secondary"
+            type="button"
+            className={styles['secret-copy']!}
+            onClick={() => void handleCopy()}
+          >
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>

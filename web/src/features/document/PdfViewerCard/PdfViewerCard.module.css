@@ -39,6 +39,17 @@
   --colour-text-tertiary: var(--colour-text-on-dark);
 }
 
+/* The overlay is dark in both themes: the light-theme link blue and its hover are under 4.5:1 on it. */
+.placeholder a:not([download]),
+.placeholder a:not([download]):hover {
+  color: var(--colour-link-on-dark);
+}
+
+/* Links here are not underlined, so colour alone cannot signal hover. */
+.placeholder a:not([download]):hover {
+  text-decoration: underline;
+}
+
 /* Gives PdfFrame's height: 100% iframe a definite box to resolve against. */
 .frame {
   position: absolute;

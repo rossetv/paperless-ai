@@ -63,7 +63,59 @@ function SettingsContent({
   // A re-index-forcing save (embedding model / chunking) shows a toast: the whole library is
   // being re-embedded server-side.
   const [reindexNotice, setReindexNotice] = React.useState(false);
+  const [savedNotice, setSavedNotice] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const screenRef = React.useRef<HTMLDivElement>(null);
+  const barRef = React.useRef<HTMLDivElement>(null);
+  // The last settings control the person focused, where focus returns after a save.
+  const lastFieldRef = React.useRef<HTMLElement | null>(null);
+  // The last input the person used. Focusing a text field after a tap raises the on-screen
+  // keyboard, so only a keyboard save returns focus to a field.
+  const keyboardRef = React.useRef(false);
+
+  React.useEffect(() => {
+    const onKey = (): void => {
+      keyboardRef.current = true;
+    };
+    const onPointer = (): void => {
+      keyboardRef.current = false;
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const screen = screenRef.current;
+    if (screen === null) return undefined;
+    const remember = (event: FocusEvent): void => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.matches('input, select, textarea, button')) {
+        lastFieldRef.current = target;
+      }
+    };
+    screen.addEventListener('focusin', remember);
+    return () => screen.removeEventListener('focusin', remember);
+  }, []);
+
+  // After a save the focused Save button goes inert with the bar. Leave focus alone if the person
+  // has moved on to a field; otherwise, after a keyboard save, return it to the last field, or the heading as a last resort.
+  const restoreFocus = (fromKeyboard: boolean): void => {
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && !barRef.current?.contains(active)) return;
+    const field = lastFieldRef.current;
+    if (fromKeyboard && field?.isConnected === true && !field.hasAttribute('disabled') && !field.closest('[inert]')) {
+      field.focus({ preventScroll: true });
+      return;
+    }
+    // SettingsLayout takes no ref, so the heading is found within this screen.
+    const heading = screenRef.current?.querySelector('h1');
+    heading?.setAttribute('tabindex', '-1');
+    heading?.focus({ preventScroll: true });
+  };
 
   // Reload, closing the tab and leaving the site would drop the edits. In-app navigation is not
   // intercepted: BrowserRouter has no blocker.
@@ -89,12 +141,20 @@ function SettingsContent({
     for (const [key, value] of Object.entries(changedValues())) {
       changes[key] = serialiseValue(value);
     }
+    const fromKeyboard = keyboardRef.current;
     setSaveError(null);
+    setSavedNotice(false);
+    setReindexNotice(false);
     save.mutate(
       { changes },
       {
         onSuccess: (data) => {
-          if (data.reindex_triggered) setReindexNotice(true);
+          if (data.reindex_triggered) {
+            setReindexNotice(true);
+          } else {
+            setSavedNotice(true);
+          }
+          restoreFocus(fromKeyboard);
         },
         onError: (error) => {
           setSaveError(errorDetail(error, 'Could not save the settings. Try again.'));
@@ -105,44 +165,56 @@ function SettingsContent({
 
   return (
     <>
-      <SettingsLayout
-        title="Settings"
-        subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
-      >
-        {SETTINGS_SECTIONS.map((section) =>
-          section.id === 'connections' ? (
-            <ConnectionsPanel
-              key={section.id}
-              section={section}
-              values={draft}
-              onChange={handleChange}
-              reindexKeys={reindexKeys}
-              defaultKeys={defaultKeys}
-            />
-          ) : (
-            <SettingsSection
-              key={section.id}
-              section={section}
-              values={draft}
-              reindexKeys={reindexKeys}
-              defaultKeys={defaultKeys}
-              onChange={handleChange}
-            />
-          ),
-        )}
-      </SettingsLayout>
-      <SaveBar
-        dirtyCount={changedKeys.length}
-        isPending={save.isPending}
-        onDiscard={discard}
-        onSave={handleSave}
-        reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
-      />
+      <div ref={screenRef}>
+        <SettingsLayout
+          title="Settings"
+          subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
+        >
+          {SETTINGS_SECTIONS.map((section) =>
+            section.id === 'connections' ? (
+              <ConnectionsPanel
+                key={section.id}
+                section={section}
+                values={draft}
+                onChange={handleChange}
+                reindexKeys={reindexKeys}
+                defaultKeys={defaultKeys}
+              />
+            ) : (
+              <SettingsSection
+                key={section.id}
+                section={section}
+                values={draft}
+                reindexKeys={reindexKeys}
+                defaultKeys={defaultKeys}
+                onChange={handleChange}
+              />
+            ),
+          )}
+        </SettingsLayout>
+      </div>
+      <div ref={barRef} style={{ display: 'contents' }}>
+        <SaveBar
+          dirtyCount={changedKeys.length}
+          isPending={save.isPending}
+          onDiscard={discard}
+          onSave={handleSave}
+          reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
+        />
+      </div>
       {saveError !== null && (
         <Toast
           message={saveError}
           variant="error"
           onDismiss={() => setSaveError(null)}
+        />
+      )}
+      {savedNotice && (
+        <Toast
+          message="Settings saved."
+          variant="info"
+          onDismiss={() => setSavedNotice(false)}
+          dismissAfterMs={4000}
         />
       )}
       {reindexNotice && (

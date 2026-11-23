@@ -109,6 +109,7 @@ export function UserEditDrawer({
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+    if (busy) return;
     setServerError(null);
     const errors = validate();
     if (Object.keys(errors).length > 0) {
@@ -253,16 +254,19 @@ export function UserEditDrawer({
 
         <div className={cn(styles['footer'], selfHelpId && styles['footer-self'])}>
           <div className={styles['actions']} {...confirmDelete.armedProps}>
-            <div className={styles['destructive']}>
+            <div className={styles['destructive']} aria-busy={busy ? true : undefined}>
               {!isCreate && (
                 <>
                   <Button
                     variant="ghost"
                     size="small"
                     type="button"
+                    className={cn(busy && styles['pending-ghost'])}
                     aria-describedby={selfHelpId}
-                    disabled={isSelf || busy}
-                    onClick={() => void handleToggleStatus()}
+                    disabled={isSelf}
+                    onClick={() => {
+                      if (!busy) void handleToggleStatus();
+                    }}
                   >
                     {suspendLabel}
                   </Button>
@@ -272,11 +276,13 @@ export function UserEditDrawer({
                       variant="destructive"
                       size="small"
                       type="button"
+                      className={cn(busy && styles['pending'])}
                       aria-label={`Confirm delete ${user.username}`}
                       aria-describedby={selfHelpId}
-                      disabled={isSelf || busy}
+                      disabled={isSelf}
                       onClick={() => {
-                        if (confirmDelete.canConfirm()) void handleDelete();
+                        // Not disabled while busy: a disabled button would drop keyboard focus.
+                        if (confirmDelete.canConfirm() && !busy) void handleDelete();
                       }}
                     >
                       Confirm delete
@@ -302,11 +308,15 @@ export function UserEditDrawer({
               </p>
             )}
           </div>
-          <div className={styles['primary']}>
+          <div className={styles['primary']} aria-busy={busy ? true : undefined}>
             <Button variant="secondary" type="button" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" disabled={busy}>
+            <Button
+              variant="primary"
+              type="submit"
+              className={cn(busy && styles['pending-primary'])}
+            >
               {isCreate ? 'Create user' : 'Save'}
             </Button>
           </div>

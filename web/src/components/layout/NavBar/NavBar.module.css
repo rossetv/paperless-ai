@@ -51,3 +51,8 @@
 .spacer {
   flex: 1;
 }
+
+/* The nav bar is dark in both themes; the light-theme ring is 2.8:1 on it. The account menu popover is white, so its items keep the default ring. */
+:root:not([data-theme="dark"]) .navbar :focus-visible:not([role="menu"], [role="menuitem"]) {
+  outline-color: var(--colour-link-on-dark);
+}

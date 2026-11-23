@@ -226,6 +226,33 @@ describe('APIKeysScreen', () => {
     expect(within(activeRow).getByRole('button', { name: /revoke/i })).toBeInTheDocument();
   });
 
+  it('keeps focus on the confirm button while the revoke is pending and ignores a second tap', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const mutateAsync = vi.fn(() => new Promise<void>(() => {}));
+    mockDelete.mockReturnValue(stubDelete(mutateAsync));
+    mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
+    const { rerender } = renderScreen();
+    const activeRow = screen
+      .getByText('Claude · MCP integration')
+      .closest('tr') as HTMLElement;
+    await userEvent.click(within(activeRow).getByRole('button', { name: /revoke/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
+    await userEvent.click(within(activeRow).getByRole('button', { name: /confirm/i }));
+    mockDelete.mockReturnValue({ ...stubDelete(mutateAsync), isPending: true });
+    rerender(
+      <MemoryRouter initialEntries={['/settings/keys']}>
+        <APIKeysScreen />
+      </MemoryRouter>,
+    );
+    const confirmButton = within(activeRow).getByRole('button', { name: /confirm/i });
+    expect(confirmButton).not.toBeDisabled();
+    expect(confirmButton).toHaveFocus();
+    expect(confirmButton.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(confirmButton.className).toMatch(/pending/);
+    await userEvent.click(confirmButton);
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('offers Delete (not Revoke) for an already-expired key', () => {
     mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
     renderScreen();

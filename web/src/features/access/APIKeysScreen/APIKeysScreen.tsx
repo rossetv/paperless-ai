@@ -3,6 +3,7 @@ import { SettingsLayout } from '../../../components/layout/SettingsLayout/Settin
 import { Table } from '../../../components/primitives/Table/Table';
 import type { Column } from '../../../components/primitives/Table/Table';
 import { Button } from '../../../components/primitives/Button/Button';
+import { cn } from '../../../lib/cn';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
@@ -91,6 +92,7 @@ export function APIKeysScreen(): React.ReactElement {
     {
       key: 'name',
       header: 'Name & key',
+      width: '34%',
       render: (k) => {
         const state = keyStateOf(k);
         return (
@@ -105,7 +107,10 @@ export function APIKeysScreen(): React.ReactElement {
               )}
             </span>
             <span className={styles['key-meta']}>
-              <span className={styles['key-prefix']}>{k.key_prefix}••••••••••</span>
+              <span className={styles['key-prefix']}>
+                <span>{k.key_prefix}</span>
+                <span>••••••••••</span>
+              </span>
               <span className={styles['key-count']}>
                 {k.request_count.toLocaleString()} requests · created{' '}
                 {formatShortDate(k.created_at)}
@@ -150,7 +155,11 @@ export function APIKeysScreen(): React.ReactElement {
         // Editing is owner-only; the server enforces this too.
         const canEdit = state === 'active' && k.owner_id === me?.id;
         return (
-          <div className={styles['row-actions']} {...confirm.armedProps}>
+          <div
+            className={styles['row-actions']}
+            aria-busy={confirm.armed === k.id && deleteKey.isPending ? true : undefined}
+            {...confirm.armedProps}
+          >
             {canEdit && (
               <Button
                 variant="ghost"
@@ -164,10 +173,11 @@ export function APIKeysScreen(): React.ReactElement {
               <Button
                 variant="destructive"
                 size="small"
+                className={cn(deleteKey.isPending && styles['pending'])}
                 aria-label={`Confirm ${actionLabel.toLowerCase()} ${k.name}`}
-                disabled={deleteKey.isPending}
                 onClick={() => {
-                  if (confirm.canConfirm()) void handleDelete(k.id);
+                  // Not disabled while pending: a disabled button would drop keyboard focus.
+                  if (confirm.canConfirm() && !deleteKey.isPending) void handleDelete(k.id);
                 }}
               >
                 Confirm

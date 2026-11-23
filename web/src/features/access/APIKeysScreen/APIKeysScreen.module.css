@@ -10,6 +10,9 @@
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption-bold);
   color: var(--colour-text-primary);
+
+  /* A name with no break points wraps inside its cell instead of widening the table. */
+  overflow-wrap: anywhere;
 }
 
 [data-muted='true'] .key-name {
@@ -20,25 +23,11 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-6);
+  flex-wrap: wrap;
   margin-top: var(--spacing-3);
   font-family: var(--font-mono);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
-}
-
-/* Phones: the request count drops under the key prefix and the expired label stays whole. */
-@media (width <= 699.98px) {
-  .key-meta {
-    flex-wrap: wrap;
-  }
-
-  .key-prefix {
-    white-space: nowrap;
-  }
-
-  .expiry-expired {
-    white-space: nowrap;
-  }
 }
 
 .key-count {
@@ -54,6 +43,38 @@
 
 .expiry-expired {
   color: var(--colour-status-danger-fg);
+}
+
+/* The key prefix and the expired tag beside the name stay whole. */
+.key-prefix,
+.key-name .expiry-expired {
+  white-space: nowrap;
+}
+
+/* Beside the side nav the masked tail may drop under the prefix, never split,
+   and the expired tag under the name. */
+@media (width >= 700px) {
+  .key-name {
+    flex-wrap: wrap;
+  }
+
+  .key-prefix {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  /* The buttons stay right-aligned; the negative start margin lets the column
+     close up so the table fits its card where the side nav first appears. */
+  .row-actions {
+    margin-inline-start: calc(-1 * var(--spacing-10));
+  }
+}
+
+/* Phones: the Expires cell's label stays whole too. */
+@media (width <= 699.98px) {
+  .expiry-expired {
+    white-space: nowrap;
+  }
 }
 
 .row-actions {
@@ -73,3 +94,13 @@
   color: var(--colour-text-tertiary);
 }
 
+
+/* Looks disabled while the request runs; the button stays enabled so focus stays. */
+.pending.pending,
+.pending.pending:hover,
+.pending.pending:active {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

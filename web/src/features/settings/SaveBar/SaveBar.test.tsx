@@ -62,10 +62,20 @@ describe('SaveBar', () => {
     expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
   });
 
-  it('disables both buttons while pending', () => {
-    renderBar({ dirtyCount: 2, isPending: true });
-    expect(screen.getByRole('button', { name: /discard/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled();
+  it('keeps both buttons focusable but ignores them while pending', async () => {
+    const onSave = vi.fn();
+    const onDiscard = vi.fn();
+    const { container } = renderBar({ dirtyCount: 2, isPending: true, onSave, onDiscard });
+    const discard = screen.getByRole('button', { name: /discard/i });
+    const saving = screen.getByRole('button', { name: /saving/i });
+    expect(discard).toBeEnabled();
+    expect(saving).toBeEnabled();
+    await userEvent.click(discard);
+    await userEvent.click(saving);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onDiscard).not.toHaveBeenCalled();
+    expect(container.firstElementChild).toHaveAttribute('aria-busy', 'true');
+    expect(saving.className).toMatch(/pending/);
   });
 
   it('calls onDiscard when Discard is clicked', async () => {

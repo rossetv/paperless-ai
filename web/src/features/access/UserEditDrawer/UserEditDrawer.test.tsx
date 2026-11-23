@@ -182,6 +182,59 @@ describe('UserEditDrawer — edit mode', () => {
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith(2));
   });
 
+  it('keeps focus on Confirm delete while the delete is pending', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const mutateAsync = vi.fn(() => new Promise<undefined>(() => {}));
+    mockDelete.mockReturnValue(stubMutation(mutateAsync));
+    const { rerender } = render(
+      <UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await act(() => vi.advanceTimersByTimeAsync(700));
+    await userEvent.click(screen.getByRole('button', { name: /^confirm delete/i }));
+    mockDelete.mockReturnValue(stubMutation(mutateAsync, { isPending: true }));
+    rerender(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    const confirmButton = screen.getByRole('button', { name: /^confirm delete/i });
+    expect(confirmButton).not.toBeDisabled();
+    expect(confirmButton).toHaveFocus();
+    expect(confirmButton.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(confirmButton.className).toMatch(/pending/);
+    await userEvent.click(confirmButton);
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps focus on Save while the save is pending and does not submit twice', async () => {
+    const mutateAsync = vi.fn(() => new Promise<UserResponse>(() => {}));
+    mockUpdate.mockReturnValue(stubMutation(mutateAsync));
+    const { rerender } = render(
+      <UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />,
+    );
+    await userEvent.type(screen.getByLabelText('Display name'), 'x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    mockUpdate.mockReturnValue(stubMutation(mutateAsync, { isPending: true }));
+    rerender(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).not.toBeDisabled();
+    expect(save).toHaveFocus();
+    expect(save.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(save.className).toMatch(/pending/);
+    await userEvent.click(save);
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not suspend twice while a save is already running', async () => {
+    const mutateAsync = vi.fn(() => new Promise<UserResponse>(() => {}));
+    mockUpdate.mockReturnValue(stubMutation(mutateAsync));
+    const { rerender } = render(
+      <UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    mockUpdate.mockReturnValue(stubMutation(mutateAsync, { isPending: true }));
+    rerender(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('disables delete and suspend for one\'s own account', () => {
     render(<UserEditDrawer user={SAMPLE_USER} isSelf onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: /delete account/i })).toBeDisabled();

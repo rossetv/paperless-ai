@@ -5,6 +5,7 @@ import { Link } from '../../../components/primitives/Link/Link';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Toast } from '../../../components/patterns/Toast/Toast';
+import { cn } from '../../../lib/cn';
 import { errorDetail } from '../../../api/client';
 import { useAuth } from '../../../hooks/useAuth';
 import {
@@ -130,7 +131,7 @@ export function IndexScreen(): React.ReactElement {
           <IndexHealthHero health={statusQuery.data.health} />
 
           {stats !== undefined && (
-            <div className={styles['quad-row']}>
+            <div className={cn(styles['quad-row'], styles['stat-row'])}>
               <StatTile
                 value={(stats.document_count ?? 0).toLocaleString('en-GB')}
                 label="Documents indexed"
@@ -152,7 +153,11 @@ export function IndexScreen(): React.ReactElement {
               />
               {/* No dimension sub-line: GET /api/stats does not expose it, and a
                   hard-coded figure is wrong for any non-default model. */}
-              <StatTile value={breakableName(stats.embedding_model ?? '—')} label="Embedding model" />
+              <StatTile
+                value={breakableName(stats.embedding_model ?? '—')}
+                label="Embedding model"
+                className={cn(styles['model-tile'])}
+              />
               <StatTile
                 value={
                   stats.last_reconcile_at !== null
@@ -160,6 +165,7 @@ export function IndexScreen(): React.ReactElement {
                     : '—'
                 }
                 label="Last reconcile"
+                className={cn(styles['reconcile-tile'])}
                 {...(stats.last_reconcile_at !== null
                   ? {
                       sub: formatShortDate(stats.last_reconcile_at),
@@ -199,6 +205,9 @@ export function IndexScreen(): React.ReactElement {
                   </Link>
                 )}
               </div>
+              {activityQuery.data !== undefined && activityQuery.data.cycles.length === 0 && (
+                <p className={styles['activity-empty']}>No activity yet.</p>
+              )}
               <div>
                 {(showAllActivity
                   ? (activityQuery.data?.cycles ?? [])

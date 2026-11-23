@@ -50,6 +50,33 @@
   flex-shrink: 0;
 }
 
+/* Look disabled while the save runs; the buttons stay enabled so focus stays. */
+.pending-primary.pending-primary,
+.pending-secondary.pending-secondary {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.pending-primary.pending-primary:hover,
+.pending-primary.pending-primary:active,
+.pending-secondary.pending-secondary:hover,
+.pending-secondary.pending-secondary:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.pending-primary.pending-primary:hover,
+.pending-primary.pending-primary:active {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+}
+
+.pending-secondary.pending-secondary:hover,
+.pending-secondary.pending-secondary:active {
+  background-color: transparent;
+  border-color: var(--colour-border-button);
+}
+
 .dot {
   flex-shrink: 0;
   width: var(--size-conn-dot);

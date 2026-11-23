@@ -42,9 +42,9 @@
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-secondary);
 
-  /* Tighten width and left-align multi-line copy. */
+  /* Keep multi-line copy to a readable line length, centred under the heading. */
   max-width: var(--width-empty-state);
-  text-align: left;
+  text-align: center;
 }
 
 .action {

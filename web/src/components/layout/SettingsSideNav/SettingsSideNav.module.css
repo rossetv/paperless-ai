@@ -117,6 +117,9 @@
     gap: var(--spacing-2);
     overflow: auto hidden;
     padding: var(--spacing-8) var(--spacing-14);
+
+    /* As wide as the right-hand fade, so the last chip scrolls fully clear of it. */
+    padding-inline-end: var(--spacing-16);
     margin-bottom: var(--spacing-6);
     background-color: var(--colour-nav-bg);
     backdrop-filter: var(--backdrop-nav);

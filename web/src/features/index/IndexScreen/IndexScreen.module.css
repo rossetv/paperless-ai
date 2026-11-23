@@ -110,6 +110,16 @@
   color: var(--colour-text-primary);
 }
 
+/* Sits as far under its head as Failed documents' empty line does under its header. */
+.activity-empty {
+  margin: var(--spacing-10) 0 var(--spacing-14);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
 .header-actions {
   display: flex;
   gap: var(--spacing-8);
@@ -132,9 +142,28 @@
   padding: var(--spacing-section) var(--spacing-14);
 }
 
+/* A model name needs a full row to break at its hyphens rather than mid-word; it goes last so
+   the other three tiles fill the rows above it. */
+@media (width <= 1049px) {
+  .stat-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .model-tile {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+}
+
 @media (width <= 834px) {
-  .quad-row {
+  .quad-row,
+  .stat-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* With two columns the third tile would sit alone in a half-empty row. */
+  .reconcile-tile {
+    grid-column: 1 / -1;
   }
 
   .split-row {
