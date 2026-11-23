@@ -10,6 +10,8 @@
 }
 
 html {
+  --height-savebar: 72px;
+
   text-size-adjust: 100%;
   scroll-behavior: smooth;
 
@@ -26,6 +28,25 @@ html {
 @media (width <= 699.98px) {
   html {
     scroll-padding-bottom: calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0px) + var(--spacing-6));
+  }
+}
+
+/* The settings SaveBar is fixed over the page bottom while it shows; room for its tallest layout. */
+@media (width <= 600px) {
+  html {
+    --height-savebar: 104px;
+  }
+}
+
+html:has([data-save-bar='shown']) {
+  scroll-padding-bottom: calc(var(--height-savebar) + var(--spacing-6));
+}
+
+@media (width <= 699.98px) {
+  html:has([data-save-bar='shown']) {
+    scroll-padding-bottom: calc(
+      var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0px) + var(--height-savebar) + var(--spacing-6)
+    );
   }
 }
 

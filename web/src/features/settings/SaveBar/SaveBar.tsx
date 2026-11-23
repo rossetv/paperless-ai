@@ -50,6 +50,7 @@ export function SaveBar({
       <div
         ref={barRef}
         className={cn(styles['bar'], isHidden && styles['bar-hidden'])}
+        data-save-bar={isHidden ? undefined : 'shown'}
         aria-live="polite"
         aria-atomic="true"
         aria-busy={isPending ? true : undefined}
