@@ -10,6 +10,8 @@ import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
 import { isNarrowViewport } from '../../../lib/isNarrowViewport';
+import { IndexNotReadyScreen } from '../../search/IndexNotReadyScreen/IndexNotReadyScreen';
+import { ApiError } from '../../../api/client';
 import { LibraryCard } from '../LibraryCard/LibraryCard';
 import { useDocuments, useFacets } from '../../../api/hooks';
 import { formatShortDate } from '../../../lib/formatDate';
@@ -358,19 +360,23 @@ export function LibraryScreen(): React.ReactElement {
           <div className={styles['state']}>
             <Spinner size="large" label="Loading documents" />
           </div>
-        ) : documents.isError ? (
-          <div className={styles['state']} role="alert">
-            <EmptyState
-              icon="warning"
-              message="Could not load documents"
-              description="The library list is unavailable. Try again in a moment."
-              action={
-                <Button variant="secondary" onClick={() => void documents.refetch()}>
-                  Try again
-                </Button>
-              }
-            />
-          </div>
+        ) : documents.isError && documents.data === undefined ? (
+          documents.error instanceof ApiError && documents.error.status === 503 ? (
+            <IndexNotReadyScreen onRetry={() => void documents.refetch()} />
+          ) : (
+            <div className={styles['state']} role="alert">
+              <EmptyState
+                icon="warning"
+                message="Could not load documents"
+                description="The library list is unavailable. Try again in a moment."
+                action={
+                  <Button variant="secondary" onClick={() => void documents.refetch()}>
+                    Try again
+                  </Button>
+                }
+              />
+            </div>
+          )
         ) : total === 0 ? (
           <div className={styles['state']}>
             {hasFilters ? (
