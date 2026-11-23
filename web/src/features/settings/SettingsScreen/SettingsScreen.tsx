@@ -134,7 +134,10 @@ function SettingsContent({
   // A hash or search change within /settings moves between sections and never asks.
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      isDirty && currentLocation.pathname !== nextLocation.pathname,
+      isDirty &&
+      currentLocation.pathname !== nextLocation.pathname &&
+      // Sign-out and a lapsed session end here; they must never wait on a prompt.
+      nextLocation.pathname !== '/login',
   );
 
   const handleChange = (key: string, value: ConfigValue | null): void => {

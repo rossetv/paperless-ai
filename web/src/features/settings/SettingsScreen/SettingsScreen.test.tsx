@@ -145,6 +145,7 @@ function renderScreen(path = '/settings', client = newClient()) {
     [
       { path: '/settings', element: <SettingsScreen /> },
       { path: '/library', element: <p>Library page</p> },
+      { path: '/login', element: <p>Login page</p> },
     ],
     { initialEntries: [path] },
   );
@@ -624,6 +625,15 @@ describe('SettingsScreen', () => {
       await act(() => router.navigate('/library'));
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(router.state.location.pathname).toBe('/library');
+    });
+
+    it('lets a sign-out through to /login without asking', async () => {
+      mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+      const router = renderScreen();
+      await editTopK();
+      await act(() => router.navigate('/login'));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(router.state.location.pathname).toBe('/login');
     });
 
     it('never asks for a section change within Settings', async () => {
