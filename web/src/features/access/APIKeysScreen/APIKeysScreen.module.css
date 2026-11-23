@@ -42,10 +42,27 @@
   color: var(--colour-status-danger-fg);
 }
 
-/* The key prefix and the expired tag beside the name stay whole. */
-.key-prefix,
+/* The expired tag beside the name stays whole. */
 .key-name .expiry-expired {
   white-space: nowrap;
+}
+
+.key-prefix,
+.key-prefix-part {
+  white-space: nowrap;
+}
+
+/* Beside the side nav the Name column is the one that gives: the prefix may
+   drop its masked tail to a second line and the expired tag under the name,
+   but neither half of the prefix breaks. */
+@media (width >= 700px) {
+  .key-name {
+    flex-wrap: wrap;
+  }
+
+  .key-prefix {
+    white-space: normal;
+  }
 }
 
 /* Phones: the Expires cell's label stays whole too. */

@@ -106,7 +106,11 @@ export function APIKeysScreen(): React.ReactElement {
               )}
             </span>
             <span className={styles['key-meta']}>
-              <span className={styles['key-prefix']}>{k.key_prefix}••••••••••</span>
+              <span className={styles['key-prefix']}>
+                <span className={styles['key-prefix-part']}>{k.key_prefix}</span>
+                <wbr />
+                <span className={styles['key-prefix-part']}>••••••••••</span>
+              </span>
               <span className={styles['key-count']}>
                 {k.request_count.toLocaleString()} requests · created{' '}
                 {formatShortDate(k.created_at)}
