@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, field_validator
@@ -35,6 +36,24 @@ def _readable_date(value: str | None) -> str | None:
 
 # A blank date means no filter; anything else must be readable as a date.
 FilterDate = Annotated[str | None, AfterValidator(_readable_date)]
+
+
+def _library_date(value: str | None) -> str | None:
+    """Like :func:`_readable_date`, but by the store's own leading-day parse.
+
+    The Library listing has always honoured compact forms such as
+    ``20240101`` and ``2024W014``.
+    """
+    if value and value.strip():
+        try:
+            date.fromisoformat(value[:10])
+        except ValueError:
+            raise ValueError("must be a date in YYYY-MM-DD form") from None
+    return value
+
+
+# The Library listing's date parameter: blank means no filter.
+LibraryDate = Annotated[str | None, AfterValidator(_library_date)]
 
 
 class FilterRequest(BaseModel):
