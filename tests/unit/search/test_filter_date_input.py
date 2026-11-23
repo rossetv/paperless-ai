@@ -14,8 +14,23 @@ from tests.helpers.factories import make_search_settings
 from tests.helpers.mcp_client import connect_client
 from tests.unit.search.test_filter_id_range import _client
 
-_BAD_DATES = ["2024-13-45", "yesterday", "2024-02-30", "2024-1-1"]
-_GOOD_DATES = ["2024-02-29", "2024-02-29T10:00:00+00:00", "2024-W09-4", "", "  "]
+_BAD_DATES = [
+    "2024-13-45",
+    "yesterday",
+    "2024-02-30",
+    "2024-1-1",
+    "10000-01-01",
+    " 2024-01-01",
+]
+_GOOD_DATES = [
+    "2024-02-29",
+    "2024-02-29T10:00:00+00:00",
+    "2024-W09-4",
+    "20240101",
+    "2024W014",
+    "",
+    "  ",
+]
 
 
 @pytest.mark.parametrize("field", ["date_from", "date_to"])
@@ -63,7 +78,9 @@ def test_library_still_accepts_every_readable_date_form(
     )
 
     assert response.status_code == 503
-    store_reader.list_documents.assert_called_once()
+    query = store_reader.list_documents.call_args.args[0]
+    assert query.date_from == good
+    assert query.date_to == good
 
 
 @pytest.mark.anyio
@@ -110,20 +127,22 @@ async def test_mcp_keyword_search_accepts_a_timestamp_date() -> None:
 
 @pytest.mark.parametrize("blank", ["", "   "])
 @pytest.mark.parametrize("path", ["/api/search", "/api/search/stream"])
-def test_search_with_a_blank_date_is_not_refused(
+def test_search_with_a_blank_date_reaches_the_core_as_no_filter(
     tmp_path: Path, path: str, blank: str
 ) -> None:
     core = MagicMock()
     core.answer.side_effect = RuntimeError("stop")
     client, headers = _client(tmp_path, core, MagicMock())
 
-    response = client.post(
+    client.post(
         path,
         json={"query": "gas bill", "filters": {"date_from": blank, "date_to": blank}},
         headers=headers,
     )
 
-    assert response.status_code != 422
+    ui_filters = core.answer.call_args.kwargs["ui_filters"]
+    assert ui_filters.date_from is None
+    assert ui_filters.date_to is None
 
 
 @pytest.mark.anyio

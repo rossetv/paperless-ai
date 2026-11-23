@@ -63,3 +63,10 @@ def test_library_listing_with_the_last_day_as_end_date_returns_every_document(
     reader.close()
 
     assert page.total == 2
+
+
+def test_build_filters_honours_compact_iso_dates() -> None:
+    where, params = build_filters(_filters(date_from="20240101", date_to="2024W014"))
+
+    assert where == "WHERE d.created >= ? AND d.created < ?"
+    assert params == ["2024-01-01", "2024-01-05"]
