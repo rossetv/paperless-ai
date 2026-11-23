@@ -1,0 +1,6 @@
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: var(--spacing-section);
+}
