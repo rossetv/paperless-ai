@@ -110,6 +110,15 @@
   color: var(--colour-text-primary);
 }
 
+.activity-empty {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
 .header-actions {
   display: flex;
   gap: var(--spacing-8);

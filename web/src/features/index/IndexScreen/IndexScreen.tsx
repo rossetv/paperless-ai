@@ -199,6 +199,9 @@ export function IndexScreen(): React.ReactElement {
                   </Link>
                 )}
               </div>
+              {activityQuery.data !== undefined && activityQuery.data.cycles.length === 0 && (
+                <p className={styles['activity-empty']}>No activity yet.</p>
+              )}
               <div>
                 {(showAllActivity
                   ? (activityQuery.data?.cycles ?? [])

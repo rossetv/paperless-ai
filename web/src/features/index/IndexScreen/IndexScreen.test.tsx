@@ -171,6 +171,15 @@ describe('IndexScreen', () => {
     expect(screen.getByText(/incremental sync complete/)).toBeInTheDocument();
   });
 
+  it('shows an empty line when there are no activity cycles', () => {
+    primeAll();
+    mockActivity.mockReturnValue(
+      queryResult({ data: { cycles: [] }, isSuccess: true, status: 'success' }),
+    );
+    render(<IndexScreen />);
+    expect(screen.getByText('No activity yet.')).toBeInTheDocument();
+  });
+
   it('renders the failed-documents panel', () => {
     primeAll();
     render(<IndexScreen />);
