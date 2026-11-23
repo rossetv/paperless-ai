@@ -261,7 +261,7 @@ export function UserEditDrawer({
                     variant="ghost"
                     size="small"
                     type="button"
-                    className={busy ? styles['pending-ghost'] : undefined}
+                    className={cn(busy && styles['pending-ghost'])}
                     aria-describedby={selfHelpId}
                     disabled={isSelf}
                     onClick={() => {
@@ -276,7 +276,7 @@ export function UserEditDrawer({
                       variant="destructive"
                       size="small"
                       type="button"
-                      className={busy ? styles['pending'] : undefined}
+                      className={cn(busy && styles['pending'])}
                       aria-label={`Confirm delete ${user.username}`}
                       aria-describedby={selfHelpId}
                       disabled={isSelf}
@@ -315,7 +315,7 @@ export function UserEditDrawer({
             <Button
               variant="primary"
               type="submit"
-              className={busy ? styles['pending-primary'] : undefined}
+              className={cn(busy && styles['pending-primary'])}
             >
               {isCreate ? 'Create user' : 'Save'}
             </Button>

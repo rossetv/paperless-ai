@@ -3,6 +3,7 @@ import { SettingsLayout } from '../../../components/layout/SettingsLayout/Settin
 import { Table } from '../../../components/primitives/Table/Table';
 import type { Column } from '../../../components/primitives/Table/Table';
 import { Button } from '../../../components/primitives/Button/Button';
+import { cn } from '../../../lib/cn';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
@@ -168,7 +169,7 @@ export function APIKeysScreen(): React.ReactElement {
               <Button
                 variant="destructive"
                 size="small"
-                className={deleteKey.isPending ? styles['pending'] : undefined}
+                className={cn(deleteKey.isPending && styles['pending'])}
                 aria-label={`Confirm ${actionLabel.toLowerCase()} ${k.name}`}
                 onClick={() => {
                   // Not disabled while pending: a disabled button would drop keyboard focus.
