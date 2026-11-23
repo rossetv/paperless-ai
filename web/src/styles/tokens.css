@@ -309,6 +309,9 @@
    * land just below it; re-check the scroll-spy before retuning. */
   --height-settings-sticky:  140px;
 
+  /* Height of the sticky settings chip strip below 960 px (it sits under the nav). */
+  --height-settings-strip:   66px;
+
   /* Settings section-block (SettingsBlock) — section-level vertical rhythm. */
   --padding-block-top:       56px;   /* SettingsBlock top padding (not first-of-type) */
   --padding-block-top-first: 32px;   /* SettingsBlock first-of-type top padding */
