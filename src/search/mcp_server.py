@@ -26,6 +26,7 @@ from appdb.connection import connect
 from common.paperless import PaperlessClient
 from search.api_keys import SCOPE_MCP, resolve_api_key
 from search.auth import SESSION_COOKIE_NAME, extract_bearer
+from search.core import TokenTally
 from search.deps import refresh_last_seen
 from search.identity import mcp_asker, resolve_asker
 from search.models import SearchResult
@@ -218,15 +219,15 @@ def _run_search_tool(
     A core failure is logged server-side and raised to the client as a
     sanitised :class:`ToolError` with no internal detail.
     """
-    # Outside the try so an invalid query gets its own message, not the
-    # sanitised fallback.
+    # Outside the try so an invalid query or filter gets its own message, not
+    # the sanitised fallback.
     try:
         query = normalise_query(query)
+        ui_filters = _to_search_filters(filters)
     except ValueError as exc:
         raise ToolError(str(exc)) from None
 
     try:
-        ui_filters = _to_search_filters(filters)
         result = core_call(query, ui_filters, asker)
         return _serialise_result(result)
     except Exception:
@@ -293,6 +294,7 @@ def _register_search_tools(
         *,
         bills_llm: bool,
         cache_hits: list[None] | None = None,
+        spent: TokenTally | None = None,
     ) -> str:
         """Run a tool body off the loop, under the shared concurrency bound.
 
@@ -300,7 +302,8 @@ def _register_search_tools(
         contextvars, so callers must read any contextvar on the loop and
         capture it. With *bills_llm* the per-key spend quota is checked before
         the body (again once the slot is held) and the query's tokens are
-        recorded after (none when *cache_hits* shows a cached answer).
+        recorded after (none when *cache_hits* shows a cached answer). A body
+        that fails is charged for the tokens *spent* by its LLM calls.
         """
         core = await run_blocking(lambda: resolve_core(app_db_path))
         api_key_id = mcp_api_key_id.get()
@@ -329,7 +332,17 @@ def _register_search_tools(
                     # Calls queued for a slot passed the first check before
                     # any of them recorded usage; look again now they have run.
                     await _enforce_quota()
-                output = await run_blocking(lambda: build_output(core))
+                try:
+                    output = await run_blocking(lambda: build_output(core))
+                except Exception:
+                    if bills_llm and spent is not None and spent.total:
+                        await record_usage(
+                            api_key_id=api_key_id,
+                            quota=quota,
+                            tokens=spent.total,
+                            app_db_path=app_db_path,
+                        )
+                    raise
                 if bills_llm:
                     # Still holding the slot, so the next call's check sees this.
                     await record_usage(
@@ -360,7 +373,14 @@ def _register_search_tools(
         query: str,
         filters: dict[str, Any] | None,
         core_call: Callable[
-            [SearchCore, str, SearchFilters | None, str | None, Callable[[], None]],
+            [
+                SearchCore,
+                str,
+                SearchFilters | None,
+                str | None,
+                Callable[[], None],
+                TokenTally,
+            ],
             SearchResult,
         ],
         error_event: str,
@@ -370,6 +390,7 @@ def _register_search_tools(
         # Read on the loop: the worker thread does not inherit contextvars.
         raw_asker = mcp_asker.get()
         cache_hits: list[None] = []
+        spent = TokenTally()
 
         def _build(core: SearchCore) -> str:
             asker = resolve_asker(
@@ -384,12 +405,15 @@ def _register_search_tools(
                     ui_filters,
                     asker_arg,
                     lambda: cache_hits.append(None),
+                    spent,
                 ),
                 error_event=error_event,
                 asker=asker,
             )
 
-        return await _run_tool(_build, bills_llm=bills_llm, cache_hits=cache_hits)
+        return await _run_tool(
+            _build, bills_llm=bills_llm, cache_hits=cache_hits, spent=spent
+        )
 
     @mcp.tool(
         name="semantic_search",
@@ -410,7 +434,7 @@ def _register_search_tools(
         return await _dispatch(
             query=query,
             filters=filters,
-            core_call=lambda core, text, ui_filters, asker, _hit: core.retrieve(
+            core_call=lambda core, text, ui_filters, asker, _hit, _spent: core.retrieve(
                 query=text, ui_filters=ui_filters
             ),
             error_event="mcp.semantic_search_error",
@@ -436,8 +460,12 @@ def _register_search_tools(
         return await _dispatch(
             query=question,
             filters=filters,
-            core_call=lambda core, text, ui_filters, asker, hit: core.answer(
-                query=text, ui_filters=ui_filters, asker=asker, on_cache_hit=hit
+            core_call=lambda core, text, ui_filters, asker, hit, spent: core.answer(
+                query=text,
+                ui_filters=ui_filters,
+                asker=asker,
+                on_cache_hit=hit,
+                on_usage=spent,
             ),
             error_event="mcp.deep_search_error",
             bills_llm=True,
@@ -484,8 +512,8 @@ def _register_search_tools(
     @mcp.tool(
         name="keyword_search",
         description=(
-            "Free. Exact full-text keyword search over document content plus "
-            "title/correspondent/type, optionally narrowed by correspondent_id, "
+            "Free. Exact full-text keyword search over the document text, "
+            "optionally narrowed by correspondent_id, "
             "document_type_id, tag_ids, date_from/date_to; returns a ranked "
             "DOCUMENT list (not passages). Use for exact terms, names, or "
             "reference numbers, or to enumerate/filter (e.g. every document "
@@ -605,8 +633,8 @@ def build_mcp_app(
             "read the passages and answer yourself. Use for almost every "
             "question.\n"
             "- keyword_search(query?, filters?, limit?, offset?) — free. Exact "
-            "full-text search over document content plus title/correspondent/"
-            "type, optionally filtered by correspondent_id, document_type_id, "
+            "full-text search over the document text, "
+            "optionally filtered by correspondent_id, document_type_id, "
             "tag_ids, date_from/date_to; returns a ranked DOCUMENT list (not "
             "passages). Use for exact terms, names, reference numbers, or to "
             "enumerate/filter (e.g. every document tagged X from 2024). Omit "

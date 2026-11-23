@@ -40,6 +40,8 @@ from search.wire import (
     to_document_summary_response,
 )
 
+from store import SchemaNotReadyError
+
 if TYPE_CHECKING:
     from common.config import Settings
     from common.paperless import PaperlessClient
@@ -47,8 +49,8 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The index stores ids as SQLite INTEGER; a larger one can name no document.
-DocumentId = Annotated[int, Path(le=2**63 - 1)]
+# The index stores ids as SQLite INTEGER; one outside this range can name no document.
+DocumentId = Annotated[int, Path(ge=-(2**63), le=2**63 - 1)]
 
 
 def register_document_routes(
@@ -66,13 +68,20 @@ def register_document_routes(
         response_model=DocumentSummaryResponse,
     )
     async def document_summary(document_id: DocumentId) -> DocumentSummaryResponse:
-        """Return the summary for one document; 404 when it is not indexed.
+        """Return the summary for one document; 404 when it is not indexed,
+        503 while the index is not ready.
 
         Backs the shareable ``/documents/{id}`` SPA route.
         """
-        summary = await run_blocking(
-            lambda: store_reader.get_document_summary(document_id)
-        )
+        try:
+            summary = await run_blocking(
+                lambda: store_reader.get_document_summary(document_id)
+            )
+        except SchemaNotReadyError as exc:
+            log.info("api.document_index_not_ready")
+            raise HTTPException(
+                status_code=503, detail="The search index is not ready"
+            ) from exc
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
         settings = await run_blocking(current_settings)

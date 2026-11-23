@@ -10,10 +10,19 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from search.core import SearchCore
 from search.mcp_server import build_mcp_app
 from search.offload import LazySemaphore
-from store.models import DocumentSummary, KeywordHit, KeywordPage
+from store.models import (
+    ChunkInput,
+    DocumentMeta,
+    DocumentSummary,
+    KeywordHit,
+    KeywordPage,
+    TaxonomyEntry,
+)
 from tests.helpers.factories import make_search_settings
+from tests.helpers.store import open_reader, open_writer
 
 
 def _summary(doc_id: int = 42) -> DocumentSummary:
@@ -191,3 +200,61 @@ async def test_keyword_search_invalid_filter_tells_the_caller_which_field() -> N
     assert result.isError is True
     assert "tag_ids" in result.content[0].text
     core.keyword_search.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("query", "total"),
+    [("inspection", 1), ("Zephyr", 0), ("Quillon", 0), ("Receipt", 0)],
+)
+async def test_keyword_search_matches_document_text_not_its_metadata(
+    tmp_path, query: str, total: int
+) -> None:
+    from tests.helpers.mcp_client import connect_client
+
+    db_path = str(tmp_path / "index.db")
+    writer = open_writer(db_path)
+    writer.refresh_taxonomy(
+        [
+            TaxonomyEntry(kind="correspondent", id=10, name="Quillon"),
+            TaxonomyEntry(kind="document_type", id=20, name="Receipt"),
+        ]
+    )
+    writer.upsert_document(
+        DocumentMeta(
+            id=1,
+            title="Zephyr",
+            correspondent_id=10,
+            document_type_id=20,
+            tag_ids=(),
+            created="2024-01-01T00:00:00+00:00",
+            modified="2024-01-01T00:00:00+00:00",
+            content_hash="h1",
+            page_count=1,
+        ),
+        [
+            ChunkInput(
+                chunk_index=0,
+                text="annual inspection completed",
+                page_hint=1,
+                embedding=(1.0, 0.0, 0.0, 0.0),
+            )
+        ],
+    )
+    settings = make_search_settings()
+    core = SearchCore(
+        settings,
+        open_reader(db_path),
+        planner=MagicMock(),
+        retriever=MagicMock(),
+        synthesizer=MagicMock(),
+        judge=MagicMock(),
+    )
+    app = build_mcp_app(
+        lambda _p: core, "unused-app-db-path", search_semaphore=LazySemaphore(0)
+    )
+
+    async with connect_client(app._server) as client:
+        result = await client.call_tool("keyword_search", {"query": query})
+
+    assert json.loads(result.content[0].text)["total"] == total

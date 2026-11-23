@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -20,16 +20,21 @@ MAX_QUERY_LENGTH = 4000
 # Measured after trimming: a blank query would still spend LLM calls.
 MIN_QUERY_LENGTH = 1
 
+# The SQLite integer range: a wider id cannot be bound to a query.
+FILTER_ID_MIN = -(2**63)
+FILTER_ID_MAX = 2**63 - 1
+FilterId = Annotated[int, Field(ge=FILTER_ID_MIN, le=FILTER_ID_MAX)]
+
 
 class FilterRequest(BaseModel):
     """Optional filters supplied in a search request; unknown keys are ignored."""
 
     date_from: str | None = None
     date_to: str | None = None
-    correspondent_id: int | None = None
-    document_type_id: int | None = None
+    correspondent_id: FilterId | None = None
+    document_type_id: FilterId | None = None
     # Same bound as GET /api/documents: an unbounded list is cheap payload bloat.
-    tag_ids: list[int] = Field(default_factory=list, max_length=64)
+    tag_ids: list[FilterId] = Field(default_factory=list, max_length=64)
 
 
 def normalise_query(query: str) -> str:

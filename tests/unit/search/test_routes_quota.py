@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -27,12 +28,19 @@ from search.offload import LazySemaphore
 from search.routes import _search_stream, build_api_router
 from search.setup import SetupState
 from search.wire import SearchRequest
+from store import SchemaNotReadyError
 from tests.helpers.factories import (
+    make_facet_set,
     make_search_result,
     make_search_settings,
     make_search_stats,
 )
-from tests.helpers.search import mint_api_key
+from tests.helpers.llm import (
+    ScriptedLLMClient,
+    answered_response_json,
+    planner_response_json,
+)
+from tests.helpers.search import build_search_core, mint_api_key
 
 _QUOTA = 1000
 
@@ -88,6 +96,70 @@ def _fresh_core() -> MagicMock:
         stats=make_search_stats(total_tokens=500)
     )
     return core
+
+
+_PLANNER_TOKENS = 300
+
+
+class _BilledLLMClient(ScriptedLLMClient):
+    """Every chat call reports :data:`_PLANNER_TOKENS` tokens used."""
+
+    def route(self, **kwargs: Any) -> Any:
+        completion = super().route(**kwargs)
+        completion.usage = SimpleNamespace(
+            prompt_tokens=200,
+            completion_tokens=100,
+            total_tokens=_PLANNER_TOKENS,
+            completion_tokens_details=None,
+        )
+        return completion
+
+
+def _core_failing_after_the_planner(error: Exception) -> Any:
+    """A real pipeline whose planner bills tokens and whose retrieval raises."""
+    store_reader = MagicMock()
+    store_reader.list_facets.return_value = make_facet_set()
+    store_reader.vector_search.side_effect = error
+    store_reader.keyword_search.side_effect = error
+    embedding_client = MagicMock()
+    embedding_client.embed.return_value = [[0.1, 0.2, 0.3]]
+    return build_search_core(
+        settings=make_search_settings(SEARCH_CACHE_TTL_SECONDS=0),
+        llm_client=_BilledLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer [1].", citations=[1])
+            ],
+        ),
+        store_reader=store_reader,
+        embedding_client=embedding_client,
+    )
+
+
+class _EmptyReplyLLMClient(_BilledLLMClient):
+    """Bills every call, but the planner's reply carries no choices."""
+
+    def route(self, **kwargs: Any) -> Any:
+        completion = super().route(**kwargs)
+        completion.choices = []
+        return completion
+
+
+def _core_failing_inside_the_planner() -> Any:
+    """A real pipeline whose planner call bills tokens and then raises."""
+    store_reader = MagicMock()
+    store_reader.list_facets.return_value = make_facet_set()
+    return build_search_core(
+        settings=make_search_settings(SEARCH_CACHE_TTL_SECONDS=0),
+        llm_client=_EmptyReplyLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer [1].", citations=[1])
+            ],
+        ),
+        store_reader=store_reader,
+        embedding_client=MagicMock(),
+    )
 
 
 def _client(path: str, core: MagicMock) -> TestClient:
@@ -238,3 +310,86 @@ async def test_waiting_search_is_refused_when_the_first_fills_the_quota(
     assert isinstance(results[1], HTTPException)
     assert results[1].status_code == 429
     second.answer.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_before_a_failed_search_count_against_the_key(
+    tmp_path: Path,
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+    core = _core_failing_after_the_planner(SchemaNotReadyError("rebuilding"))
+
+    with pytest.raises(HTTPException) as raised:
+        await routes._search(
+            SearchRequest(query="when does my boiler warranty expire?"),
+            core,
+            LazySemaphore(1),
+            asker=None,
+            app_db_path=path,
+            api_key_id=key_id,
+            quota=_QUOTA,
+        )
+
+    assert raised.value.status_code == 503
+    assert _tokens_used(path, key_id) == _PLANNER_TOKENS
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_before_a_failed_stream_count_against_the_key(
+    tmp_path: Path,
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+    core = _core_failing_after_the_planner(RuntimeError("store fault"))
+
+    resp = await _search_stream(
+        SearchRequest(query="when does my boiler warranty expire?"),
+        core,
+        LazySemaphore(1),
+        app_db_path=path,
+        api_key_id=key_id,
+        quota=_QUOTA,
+    )
+    lines = await _lines(resp)
+
+    assert (lines[-1]["type"], lines[-1]["kind"]) == ("error", "internal")
+    assert _tokens_used(path, key_id) == _PLANNER_TOKENS
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_inside_the_phase_that_fails_count_against_the_key(
+    tmp_path: Path,
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+
+    with pytest.raises(IndexError):
+        await routes._search(
+            SearchRequest(query="when does my boiler warranty expire?"),
+            _core_failing_inside_the_planner(),
+            LazySemaphore(1),
+            asker=None,
+            app_db_path=path,
+            api_key_id=key_id,
+            quota=_QUOTA,
+        )
+
+    assert _tokens_used(path, key_id) == _PLANNER_TOKENS
+
+
+@pytest.mark.anyio
+async def test_tokens_spent_inside_the_phase_that_fails_a_stream_count_against_the_key(
+    tmp_path: Path,
+) -> None:
+    path, _raw_key, key_id = _app_db_with_key(tmp_path)
+
+    resp = await _search_stream(
+        SearchRequest(query="when does my boiler warranty expire?"),
+        _core_failing_inside_the_planner(),
+        LazySemaphore(1),
+        app_db_path=path,
+        api_key_id=key_id,
+        quota=_QUOTA,
+    )
+    lines = await _lines(resp)
+
+    assert (lines[-1]["type"], lines[-1]["kind"]) == ("error", "internal")
+    assert _tokens_used(path, key_id) == _PLANNER_TOKENS

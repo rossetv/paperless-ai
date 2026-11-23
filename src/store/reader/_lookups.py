@@ -454,6 +454,10 @@ def get_document_summary(
             tag_ids = _parse_tag_ids(row["tag_ids"], document_id=row["id"])
             tag_name_by_id = _resolve_tag_names(conn, tag_ids)
     except sqlite3.Error as exc:
+        if _is_missing_table_error(exc):
+            raise SchemaNotReadyError(
+                "get_document_summary query failed: the index schema is not present"
+            ) from exc
         raise StoreError("get_document_summary query failed") from exc
 
     tag_names = _names_for_tag_ids(tag_ids, tag_name_by_id)

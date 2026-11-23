@@ -23,6 +23,7 @@ from search.auth import SESSION_COOKIE_NAME
 from search.document_routes import build_document_router
 from search.sessions import begin_session
 from search.setup import SetupState
+from store import SchemaNotReadyError
 from store.models import DocumentSummary
 
 _PDF_BYTES = b"%PDF-1.7\nstreamed document body\n%%EOF"
@@ -486,6 +487,46 @@ def test_get_document_404_for_missing_id(app_db_path, conn) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "document not found"
+
+
+def test_get_document_503_while_the_index_is_not_ready(app_db_path, conn) -> None:
+    store_reader = MagicMock()
+    store_reader.get_document_summary.side_effect = SchemaNotReadyError("no schema")
+    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    response = client.get("/api/documents/42")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "The search index is not ready"
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix"),
+    [("GET", ""), ("PATCH", ""), ("DELETE", ""), ("POST", "/reclassify")],
+)
+def test_a_document_id_outside_the_index_id_range_is_rejected(
+    app_db_path, conn, method: str, suffix: str
+) -> None:
+    store_reader = MagicMock()
+    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="admin"))
+
+    for bad_id in (2**63, -(2**63) - 1):
+        response = client.request(method, f"/api/documents/{bad_id}{suffix}", json={})
+        assert response.status_code == 422
+    store_reader.get_document_summary.assert_not_called()
+
+
+def test_a_negative_document_id_in_range_is_still_a_404(app_db_path, conn) -> None:
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = None
+    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    response = client.get("/api/documents/-5")
+
+    assert response.status_code == 404
 
 
 def test_get_document_requires_auth(app_db_path) -> None:

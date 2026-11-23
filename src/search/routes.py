@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from appdb import recent_searches as recent_search_store
 from appdb.connection import connect
 from search.appstate import AppState, get_app_state
+from search.core import TokenTally
 from search.deps import Caller, get_app_db, resolve_caller
 from search.errors import LlmBudgetExceededError
 from search.identity import resolve_asker
@@ -47,6 +48,7 @@ from search.wire import (
     to_search_response,
     to_stats_response,
 )
+from search.wire.search import FILTER_ID_MAX, FILTER_ID_MIN, FilterId
 from search.wire.stream import error_line, event_line, result_line
 from store import SchemaNotReadyError, StoreError
 
@@ -302,9 +304,13 @@ def build_api_router(
         sort: BrowseSort = Query(default="added"),
         descending: bool = Query(default=True),
         query: str | None = Query(default=None, max_length=MAX_QUERY_LENGTH),
-        correspondent_id: int | None = Query(default=None),
-        document_type_id: int | None = Query(default=None),
-        tag_ids: list[int] = Query(default_factory=list, max_length=64),
+        correspondent_id: int | None = Query(
+            default=None, ge=FILTER_ID_MIN, le=FILTER_ID_MAX
+        ),
+        document_type_id: int | None = Query(
+            default=None, ge=FILTER_ID_MIN, le=FILTER_ID_MAX
+        ),
+        tag_ids: list[FilterId] = Query(default_factory=list, max_length=64),
         date_from: str | None = Query(default=None),
         date_to: str | None = Query(default=None),
     ) -> DocumentListResponse:
@@ -371,13 +377,15 @@ async def _search(
 
     The quota is checked again once the slot is held, since requests that
     passed the early check together may have spent it while waiting. The
-    search's tokens are then charged to the API key; a cached answer is free.
+    search's tokens are then charged to the API key; a cached answer is free,
+    and a failed one is charged for every token its LLM calls spent.
 
     A search during an index rebuild hits a missing schema; that becomes a 503
     like the other index-not-ready endpoints, not a 500.
     """
     ui_filters = to_search_filters(body.filters)
     cache_hits: list[None] = []
+    spent = TokenTally()
 
     async with semaphore.acquire():
         await _check_quota_or_429(
@@ -390,13 +398,23 @@ async def _search(
                     ui_filters=ui_filters,
                     asker=asker,
                     on_cache_hit=lambda: cache_hits.append(None),
+                    on_usage=spent,
                 )
             )
-        except SchemaNotReadyError as exc:
-            log.info("api.search_index_not_ready")
-            raise HTTPException(
-                status_code=503, detail="The search index is not ready"
-            ) from exc
+        except Exception as exc:
+            if spent.total:
+                await record_usage(
+                    api_key_id=api_key_id,
+                    quota=quota,
+                    tokens=spent.total,
+                    app_db_path=app_db_path,
+                )
+            if isinstance(exc, SchemaNotReadyError):
+                log.info("api.search_index_not_ready")
+                raise HTTPException(
+                    status_code=503, detail="The search index is not ready"
+                ) from exc
+            raise
         # Recorded before the slot is freed so the next waiter's check sees it.
         await record_usage(
             api_key_id=api_key_id,
@@ -438,7 +456,8 @@ async def _search_stream(
     ``app.db`` connection. The SPA aborts the stream on every new query, and
     the loop then closes the request's connection while this worker may still
     be running; separate connections avoid that race. ``app_db_path=None``
-    skips both writes and the quota re-check.
+    skips both writes and the quota re-check. A pipeline that fails is still
+    charged for every token its LLM calls spent.
 
     The search slot is released when the worker ends, not when the client
     goes: an abandoned pipeline keeps running and spending tokens. Once the
@@ -457,6 +476,8 @@ async def _search_stream(
     def run() -> None:
         """Run the blocking pipeline on a worker thread, feeding the queue."""
         cache_hits: list[None] = []
+        spent = TokenTally()
+        answered = False
         try:
             result = core.answer(
                 query=body.query,
@@ -464,7 +485,9 @@ async def _search_stream(
                 asker=asker,
                 on_event=on_event,
                 on_cache_hit=lambda: cache_hits.append(None),
+                on_usage=spent,
             )
+            answered = True
             loop.call_soon_threadsafe(queue.put_nowait, ("result", result))
             if app_db_path is not None and user is not None:
                 try:
@@ -498,6 +521,13 @@ async def _search_stream(
                 queue.put_nowait, ("error", ("internal", "search failed"))
             )
         finally:
+            if not answered and app_db_path is not None and spent.total:
+                record_usage_blocking(
+                    api_key_id=api_key_id,
+                    quota=quota,
+                    tokens=spent.total,
+                    app_db_path=app_db_path,
+                )
             loop.call_soon_threadsafe(queue.put_nowait, ("sentinel", sentinel))
 
     async def frames() -> AsyncIterator[str]:
