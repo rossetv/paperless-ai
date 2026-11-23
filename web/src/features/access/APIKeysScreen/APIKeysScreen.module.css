@@ -27,19 +27,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* The key prefix and the expired tag beside the name stay whole. */
-.key-prefix,
-.key-name .expiry-expired {
-  white-space: nowrap;
-}
-
-/* Phones: the Expires cell's label stays whole too. */
-@media (width <= 699.98px) {
-  .expiry-expired {
-    white-space: nowrap;
-  }
-}
-
 .key-count {
   font-family: var(--font-text);
   color: var(--colour-text-tertiary);
@@ -53,6 +40,19 @@
 
 .expiry-expired {
   color: var(--colour-status-danger-fg);
+}
+
+/* The key prefix and the expired tag beside the name stay whole. */
+.key-prefix,
+.key-name .expiry-expired {
+  white-space: nowrap;
+}
+
+/* Phones: the Expires cell's label stays whole too. */
+@media (width <= 699.98px) {
+  .expiry-expired {
+    white-space: nowrap;
+  }
 }
 
 .row-actions {
