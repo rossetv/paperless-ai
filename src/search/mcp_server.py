@@ -512,8 +512,8 @@ def _register_search_tools(
     @mcp.tool(
         name="keyword_search",
         description=(
-            "Free. Exact full-text keyword search over document content plus "
-            "title/correspondent/type, optionally narrowed by correspondent_id, "
+            "Free. Exact full-text keyword search over the document text, "
+            "optionally narrowed by correspondent_id, "
             "document_type_id, tag_ids, date_from/date_to; returns a ranked "
             "DOCUMENT list (not passages). Use for exact terms, names, or "
             "reference numbers, or to enumerate/filter (e.g. every document "
@@ -633,8 +633,8 @@ def build_mcp_app(
             "read the passages and answer yourself. Use for almost every "
             "question.\n"
             "- keyword_search(query?, filters?, limit?, offset?) — free. Exact "
-            "full-text search over document content plus title/correspondent/"
-            "type, optionally filtered by correspondent_id, document_type_id, "
+            "full-text search over the document text, "
+            "optionally filtered by correspondent_id, document_type_id, "
             "tag_ids, date_from/date_to; returns a ranked DOCUMENT list (not "
             "passages). Use for exact terms, names, reference numbers, or to "
             "enumerate/filter (e.g. every document tagged X from 2024). Omit "
