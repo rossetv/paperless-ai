@@ -29,17 +29,23 @@
   background-color: var(--colour-surface-dark);
 }
 
-/* The box is dark in both themes, so the Copy label needs the on-dark link colour
-   and, on hover and press, a dark background instead of the shared light one. */
+/* The box is dark in both themes, so the Copy label needs the on-dark link colour. */
 .secret-box .secret-copy {
   color: var(--colour-link-on-dark);
 }
 
-.secret-box .secret-copy:hover:not(:disabled) {
+/* In light the shared border and hover are pale on this dark box: give the button a
+   visible edge and darken it on hover and press. Dark keeps the shared lighter hover. */
+:root:not([data-theme='dark']) .secret-box .secret-copy,
+:root:not([data-theme='dark']) .secret-box .secret-copy:hover:not(:disabled) {
+  border-color: var(--colour-dark-text-secondary);
+}
+
+:root:not([data-theme='dark']) .secret-box .secret-copy:hover:not(:disabled) {
   background-color: var(--colour-dark-surface);
 }
 
-.secret-box .secret-copy:active:not(:disabled) {
+:root:not([data-theme='dark']) .secret-box .secret-copy:active:not(:disabled) {
   background-color: var(--colour-dark-bg);
 }
 
