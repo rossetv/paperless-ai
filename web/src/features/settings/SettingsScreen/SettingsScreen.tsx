@@ -65,8 +65,39 @@ function SettingsContent({
   const [reindexNotice, setReindexNotice] = React.useState(false);
   const [savedNotice, setSavedNotice] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
-  // SettingsLayout renders the h1 and takes no ref, so the heading is found within this screen.
   const screenRef = React.useRef<HTMLDivElement>(null);
+  const barRef = React.useRef<HTMLDivElement>(null);
+  // The last settings control the person focused, where focus returns after a save.
+  const lastFieldRef = React.useRef<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    const screen = screenRef.current;
+    if (screen === null) return undefined;
+    const remember = (event: FocusEvent): void => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.matches('input, select, textarea, button')) {
+        lastFieldRef.current = target;
+      }
+    };
+    screen.addEventListener('focusin', remember);
+    return () => screen.removeEventListener('focusin', remember);
+  }, []);
+
+  // After a save the focused Save button goes inert with the bar. Leave focus alone if the person
+  // has moved on to a field; otherwise return it to the last field, or the heading as a last resort.
+  const restoreFocus = (): void => {
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && !barRef.current?.contains(active)) return;
+    const field = lastFieldRef.current;
+    if (field?.isConnected === true && !field.hasAttribute('disabled') && !field.closest('[inert]')) {
+      field.focus({ preventScroll: true });
+      return;
+    }
+    // SettingsLayout takes no ref, so the heading is found within this screen.
+    const heading = screenRef.current?.querySelector('h1');
+    heading?.setAttribute('tabindex', '-1');
+    heading?.focus({ preventScroll: true });
+  };
 
   // Reload, closing the tab and leaving the site would drop the edits. In-app navigation is not
   // intercepted: BrowserRouter has no blocker.
@@ -93,6 +124,8 @@ function SettingsContent({
       changes[key] = serialiseValue(value);
     }
     setSaveError(null);
+    setSavedNotice(false);
+    setReindexNotice(false);
     save.mutate(
       { changes },
       {
@@ -102,11 +135,7 @@ function SettingsContent({
           } else {
             setSavedNotice(true);
           }
-          // The save bar goes inert with the focused button inside it; park focus on the page
-          // heading rather than let it fall to the body, without scrolling the person's place.
-          const heading = screenRef.current?.querySelector('h1');
-          heading?.setAttribute('tabindex', '-1');
-          heading?.focus({ preventScroll: true });
+          restoreFocus();
         },
         onError: (error) => {
           setSaveError(errorDetail(error, 'Could not save the settings. Try again.'));
@@ -145,13 +174,15 @@ function SettingsContent({
           )}
         </SettingsLayout>
       </div>
-      <SaveBar
-        dirtyCount={changedKeys.length}
-        isPending={save.isPending}
-        onDiscard={discard}
-        onSave={handleSave}
-        reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
-      />
+      <div ref={barRef} style={{ display: 'contents' }}>
+        <SaveBar
+          dirtyCount={changedKeys.length}
+          isPending={save.isPending}
+          onDiscard={discard}
+          onSave={handleSave}
+          reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
+        />
+      </div>
       {saveError !== null && (
         <Toast
           message={saveError}

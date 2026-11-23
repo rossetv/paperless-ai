@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -285,7 +285,7 @@ describe('SettingsScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('confirms a plain save with a toast and keeps focus on the page heading', async () => {
+  it('confirms a plain save with a toast and returns focus to the field last edited', async () => {
     mockFetchSequence([
       { status: 200, body: toSettingsBody(SETTINGS) },
       { status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) },
@@ -295,10 +295,10 @@ describe('SettingsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     expect(await screen.findByText('Settings saved.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Increase Top K' })).toHaveFocus();
   });
 
-  it('moves focus to the heading after a save without scrolling the page to the top', async () => {
+  it('falls back to the heading when no field was focused, without scrolling the page', async () => {
     mockFetchSequence([
       { status: 200, body: toSettingsBody(SETTINGS) },
       { status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) },
@@ -306,8 +306,9 @@ describe('SettingsScreen', () => {
     const focus = vi.spyOn(HTMLElement.prototype, 'focus');
     renderScreen();
     await screen.findByRole('spinbutton', { name: 'Top K' });
-    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    // fireEvent does not move focus, so no field is remembered and focus rests on the body.
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await screen.findByText('Settings saved.');
     const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
     expect(heading).toHaveFocus();
@@ -345,20 +346,28 @@ describe('SettingsScreen', () => {
     expect(await screen.findByText('Settings saved.')).toBeInTheDocument();
   });
 
-  it('keeps focus on Save when the save fails', async () => {
+  it('keeps focus on an enabled Save while the save runs and after it fails', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockResponse({ status: 422, body: { detail: 'SEARCH_TOP_K is out of range' } }),
-    );
+    let rejectPut: (value: object) => void = () => {};
+    const put = new Promise((resolve) => {
+      rejectPut = resolve;
+    });
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(() => put);
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    const saving = (await screen.findByText('Saving…')).closest('button') as HTMLButtonElement;
+    expect(saving).toBeEnabled();
+    expect(saving).toBe(document.activeElement);
+    rejectPut(mockResponse({ status: 422, body: { detail: 'SEARCH_TOP_K is out of range' } }));
     await screen.findByRole('alert');
-    expect(screen.getByRole('button', { name: /save changes/i })).toHaveFocus();
+    const save = screen.getByRole('button', { name: /save changes/i });
+    expect(save).toBeEnabled();
+    expect(save).toBe(document.activeElement);
   });
 
-  it('moves focus to the heading after a save that starts a re-index', async () => {
+  it('returns focus to the field last edited after a save that starts a re-index', async () => {
     mockFetchSequence([
       { status: 200, body: toSettingsBody(SETTINGS) },
       {
@@ -374,7 +383,70 @@ describe('SettingsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await screen.findByText(/re-embedding your library/i);
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Increase Top K' })).toHaveFocus();
+  });
+
+  it('leaves focus in the field the person moved to while a slow save finishes', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    const topK = await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    let resolvePut: (value: object) => void = () => {};
+    const put = new Promise((resolve) => {
+      resolvePut = resolve;
+    });
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation((_url, init?: RequestInit) =>
+      init?.method === 'PUT'
+        ? put
+        : Promise.resolve(mockResponse({ status: 200, body: toSettingsBody(SETTINGS) })),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText('Saving…');
+    await userEvent.click(topK);
+    resolvePut(mockResponse({ status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) }));
+    await screen.findByText('Settings saved.');
+    expect(topK).toHaveFocus();
+  });
+
+  it('clears the saved notice when a later save fails', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      { status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText('Settings saved.');
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockResponse({ status: 422, body: { detail: 'SEARCH_TOP_K is out of range' } }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Settings saved.')).not.toBeInTheDocument();
+  });
+
+  it('clears the re-index notice when a later plain save succeeds', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      {
+        status: 200,
+        body: { ...toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }), reindex_triggered: true },
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText(/re-embedding your library/i);
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockResponse({ status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 12 }) }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText('Settings saved.');
+    expect(screen.queryByText(/re-embedding your library/i)).not.toBeInTheDocument();
   });
 
   it('shows the server error in a toast and keeps the edit when the save fails', async () => {
