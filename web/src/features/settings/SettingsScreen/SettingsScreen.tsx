@@ -171,7 +171,10 @@ function SettingsContent({
   React.useEffect(() => {
     const el = landingHash === '' ? null : document.getElementById(landingHash);
     if (el === null) return;
-    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - readStickyOffset() });
+    window.scrollTo({
+      top: el.getBoundingClientRect().top + window.scrollY - readStickyOffset(),
+      behavior: 'instant',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

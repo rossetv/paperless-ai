@@ -228,6 +228,7 @@ describe('SettingsScreen', () => {
     );
     await screen.findByRole('spinbutton', { name: 'Top K' });
     expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'instant' }));
     scrollTo.mockRestore();
   });
 
