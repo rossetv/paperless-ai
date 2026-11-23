@@ -79,3 +79,55 @@ def test_absent_usage_records_zeros():
             model="m", provider="openai", prompt=0, completion=0, reasoning=0, total=0
         )
     ]
+
+
+class _PerModelStub(_Stub):
+    def __init__(self, by_model):
+        super().__init__(None)
+        self._by_model = by_model
+
+    def _create_with_compat(self, params, model):
+        return self._by_model[model]
+
+
+def _no_choices(total):
+    usage = SimpleNamespace(
+        prompt_tokens=1,
+        completion_tokens=0,
+        total_tokens=total,
+        completion_tokens_details=None,
+    )
+    return SimpleNamespace(choices=[], usage=usage)
+
+
+def test_reply_without_choices_falls_back_to_next_model_and_keeps_usage():
+    sink: list[LlmCallUsage] = []
+    stub = _PerModelStub(
+        {
+            "a": _no_choices(5),
+            "b": _completion("from b", prompt=2, completion=3, reasoning=0, total=5),
+        }
+    )
+    out = stub._complete_with_model_fallback(
+        primary_model="a",
+        messages=[],
+        fallback_models=["b"],
+        log_event_prefix="x",
+        usage_sink=sink,
+    )
+    assert out == "from b"
+    assert [u.model for u in sink] == ["a", "b"]
+
+
+def test_reply_without_choices_and_no_fallback_ends_like_exhausted_chain():
+    sink: list[LlmCallUsage] = []
+    stub = _PerModelStub({"a": _no_choices(5)})
+    out = stub._complete_with_model_fallback(
+        primary_model="a",
+        messages=[],
+        fallback_models=[],
+        log_event_prefix="x",
+        usage_sink=sink,
+    )
+    assert out is None
+    assert len(sink) == 1
