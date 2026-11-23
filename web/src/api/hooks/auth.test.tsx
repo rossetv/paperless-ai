@@ -34,4 +34,22 @@ describe('useLogin', () => {
     expect(qc.getQueryData(['search', 'kept'])).toBeUndefined();
     expect(qc.getQueryState(queryKeys.me())).toBeDefined();
   });
+
+  it('keeps the setup status and public stats, which are not per-user', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.setupStatus(), { needed: false });
+    qc.setQueryData(queryKeys.publicStats(), { document_count: 3 });
+    qc.setQueryData(queryKeys.stats(), { userId: 1 });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useLogin(), { wrapper });
+    result.current.mutate({ username: 'two', password: 'pw', remember: false });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(qc.getQueryData(queryKeys.setupStatus())).toEqual({ needed: false });
+    expect(qc.getQueryData(queryKeys.publicStats())).toEqual({ document_count: 3 });
+    expect(qc.getQueryData(queryKeys.stats())).toBeUndefined();
+  });
 });

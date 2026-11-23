@@ -24,6 +24,11 @@ import { queryKeys } from './keys';
 /** Marks requests whose 401 is an answer, not a lapsed session; the query client skips its session re-check. */
 const skipSessionCheck = { skipSessionCheck: true };
 
+/** Cached queries a sign-in leaves alone, as joined keys. */
+const KEPT_ON_LOGIN: ReadonlySet<string> = new Set(
+  [queryKeys.me(), queryKeys.setupStatus(), queryKeys.publicStats()].map((key) => key.join('/')),
+);
+
 /**
  * The current authenticated user — GET /api/auth/me. `useAuth` is built on it.
  *
@@ -85,9 +90,10 @@ export function useLogin(): UseMutationResult<LoginResponse, Error, LoginRequest
     meta: skipSessionCheck,
     onSuccess: () => {
       // A lapsed session leaves its cached data behind and the next sign-in may be
-      // another user, so drop all of it; only `me` stays, to be re-checked below.
+      // another user, so drop all of it. `me` stays, to be re-checked below; the
+      // setup status and public stats are not per-user, and the sign-in gate needs them.
       queryClient.removeQueries({
-        predicate: (query) => query.queryKey.join('/') !== queryKeys.me().join('/'),
+        predicate: (query) => !KEPT_ON_LOGIN.has(query.queryKey.join('/')),
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
