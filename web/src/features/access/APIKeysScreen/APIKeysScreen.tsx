@@ -165,9 +165,9 @@ export function APIKeysScreen(): React.ReactElement {
                 variant="destructive"
                 size="small"
                 aria-label={`Confirm ${actionLabel.toLowerCase()} ${k.name}`}
-                disabled={deleteKey.isPending}
                 onClick={() => {
-                  if (confirm.canConfirm()) void handleDelete(k.id);
+                  // Not disabled while pending: a disabled button would drop keyboard focus.
+                  if (confirm.canConfirm() && !deleteKey.isPending) void handleDelete(k.id);
                 }}
               >
                 Confirm

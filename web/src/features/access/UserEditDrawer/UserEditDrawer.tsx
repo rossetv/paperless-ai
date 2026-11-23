@@ -109,6 +109,7 @@ export function UserEditDrawer({
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+    if (busy) return;
     setServerError(null);
     const errors = validate();
     if (Object.keys(errors).length > 0) {
@@ -261,8 +262,10 @@ export function UserEditDrawer({
                     size="small"
                     type="button"
                     aria-describedby={selfHelpId}
-                    disabled={isSelf || busy}
-                    onClick={() => void handleToggleStatus()}
+                    disabled={isSelf}
+                    onClick={() => {
+                      if (!busy) void handleToggleStatus();
+                    }}
                   >
                     {suspendLabel}
                   </Button>
@@ -274,9 +277,10 @@ export function UserEditDrawer({
                       type="button"
                       aria-label={`Confirm delete ${user.username}`}
                       aria-describedby={selfHelpId}
-                      disabled={isSelf || busy}
+                      disabled={isSelf}
                       onClick={() => {
-                        if (confirmDelete.canConfirm()) void handleDelete();
+                        // Not disabled while busy: a disabled button would drop keyboard focus.
+                        if (confirmDelete.canConfirm() && !busy) void handleDelete();
                       }}
                     >
                       Confirm delete
@@ -306,7 +310,7 @@ export function UserEditDrawer({
             <Button variant="secondary" type="button" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" disabled={busy}>
+            <Button variant="primary" type="submit">
               {isCreate ? 'Create user' : 'Save'}
             </Button>
           </div>
