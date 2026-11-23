@@ -25,7 +25,7 @@
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-primary);
   background-color: var(--colour-button-light-bg);
-  border: var(--spacing-1) solid var(--colour-border);
+  border: var(--spacing-1) solid var(--colour-field-border);
   border-radius: var(--radius-comfortable);
   width: 100%;
   box-sizing: border-box;

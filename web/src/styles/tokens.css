@@ -39,6 +39,9 @@
   --colour-border:                  rgb(0 0 0 / 4%);
   --colour-border-button:           rgb(0 0 0 / 12%);
 
+  /* Resting edge of a form control: 3:1 against the page and the field surface (WCAG 1.4.11). */
+  --colour-field-border:            #8a8a8e;
+
   /* Button states */
   --colour-button-active-bg:        #ededf2;
   --colour-button-light-bg:         #fafafc;
@@ -435,6 +438,9 @@
   /* Hairline borders on the dark island */
   --colour-dark-border:         rgb(255 255 255 / 10%);
   --colour-dark-border-card:    rgb(255 255 255 / 6%);
+
+  /* Resting edge of a field on the dark island: 3:1 against the island and the control well */
+  --colour-dark-field-border:   #707076;
 
   /* Label text on the dark island */
   --colour-dark-label:          rgb(255 255 255 / 50%);

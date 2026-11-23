@@ -12,7 +12,7 @@
 .input-dark {
   background-color: var(--colour-dark-control-bg);
   color: var(--colour-dark-text-primary);
-  border-color: var(--colour-dark-border);
+  border-color: var(--colour-dark-field-border);
 }
 
 .input-dark::placeholder {

@@ -35,6 +35,7 @@
   /* Borders */
   --colour-border:          rgb(255 255 255 / 8%);
   --colour-border-button:   rgb(255 255 255 / 12%);
+  --colour-field-border:    #76767c;
 
   /* Button states */
   --colour-button-active-bg: #1d1d1f;

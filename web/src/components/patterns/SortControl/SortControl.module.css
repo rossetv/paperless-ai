@@ -9,7 +9,7 @@
   gap: var(--spacing-4);
   padding: var(--spacing-5) var(--spacing-8);
   background-color: var(--colour-surface);
-  border: var(--spacing-1) solid var(--colour-border);
+  border: var(--spacing-1) solid var(--colour-field-border);
   border-radius: var(--radius-large);
   cursor: pointer;
   font-family: var(--font-text);

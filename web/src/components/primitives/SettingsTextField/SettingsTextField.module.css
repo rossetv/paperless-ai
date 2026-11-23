@@ -6,7 +6,7 @@
 .input {
   width: 100%;
   padding: var(--spacing-7) var(--spacing-9);
-  border: var(--spacing-1) solid var(--colour-border-button);
+  border: var(--spacing-1) solid var(--colour-field-border);
   border-radius: var(--radius-large);
   background-color: var(--colour-surface);
   font-family: var(--font-text);
