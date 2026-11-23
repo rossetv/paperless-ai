@@ -4,6 +4,7 @@ import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
 import { DocumentScreen } from '../features/document/DocumentScreen/DocumentScreen';
 import { DocumentErrorScreen } from '../features/document/DocumentErrorScreen/DocumentErrorScreen';
+import { IndexNotReadyScreen } from '../features/search/IndexNotReadyScreen/IndexNotReadyScreen';
 import { FullPageLoading } from '../components/layout/FullPageLoading/FullPageLoading';
 import { useDocument, useMe } from '../api/hooks';
 import { ApiError } from '../api/client';
@@ -31,7 +32,14 @@ export function DocumentPage(): React.ReactElement {
 
   if (docQuery.isLoading) return <FullPageLoading />;
 
-  if (docQuery.isError || docQuery.data === undefined) {
+  if (docQuery.data === undefined) {
+    if (docQuery.error instanceof ApiError && docQuery.error.status === 503) {
+      return (
+        <Page nav={<AppNavBar />}>
+          <IndexNotReadyScreen messageAs="h1" onRetry={() => void docQuery.refetch()} />
+        </Page>
+      );
+    }
     const notFound =
       docQuery.error instanceof ApiError && docQuery.error.status === 404;
     return (

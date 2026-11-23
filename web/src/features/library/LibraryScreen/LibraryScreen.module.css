@@ -132,3 +132,8 @@
   letter-spacing: var(--letter-spacing-caption);
   color: var(--colour-text-tertiary);
 }
+
+/* The long placeholder is cut mid-word on a phone; end it with an ellipsis. */
+.search input {
+  text-overflow: ellipsis;
+}

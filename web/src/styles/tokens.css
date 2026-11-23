@@ -28,6 +28,10 @@
   --colour-link:                    #06c;
   --colour-link-on-dark:            #2997ff;
 
+  /* Link hover — a step away from the rest colour that still reads at 4.5:1. */
+  --colour-link-hover:              #0057b3;
+  --colour-link-on-dark-hover:      #5ab0ff;
+
   /* Focus ring */
   --colour-focus-ring:              #0071e3;
 
@@ -309,6 +313,9 @@
    * land just below it; re-check the scroll-spy before retuning. */
   --height-settings-sticky:  140px;
 
+  /* Height of the sticky settings chip strip below 960 px (it sits under the nav). */
+  --height-settings-strip:   66px;
+
   /* Settings section-block (SettingsBlock) — section-level vertical rhythm. */
   --padding-block-top:       56px;   /* SettingsBlock top padding (not first-of-type) */
   --padding-block-top-first: 32px;   /* SettingsBlock first-of-type top padding */
@@ -507,6 +514,8 @@
 
   /* The destructive button's fill carries white text, so it stays this red in both themes. */
   --colour-button-destructive-bg: #c0382e;
+  --colour-button-destructive-bg-hover:  #a8312a;
+  --colour-button-destructive-bg-active: #8f2a23;
 
   /* Semantic status colours for RoleBadge, StatusBadge and ScopePill: a
    * translucent tint plus a readable foreground; themes.css lightens the
@@ -526,6 +535,7 @@
 
   /* Informational / accent — blue */
   --colour-status-info-bg:      rgb(0 113 227 / 10%);
+  --colour-status-info-bg-soft: rgb(0 113 227 / 4%);   /* a row that holds an info pill */
   --colour-status-info-fg:      #06c;
 
   /* Distinct secondary — purple (the MCP scope) */
@@ -585,4 +595,9 @@
   --colour-avatar-3:   #5856d6;   /* Apple Purple   */
   --colour-avatar-4:   #ff3b30;   /* Apple Red      */
   --colour-avatar-5:   #0071e3;   /* Accent Blue    */
+}
+
+/* Dark counterpart of the link hover colour, kept beside its light value. */
+[data-theme="dark"] {
+  --colour-link-hover: #5ab0ff;
 }

@@ -211,7 +211,7 @@ export function APIKeysScreen(): React.ReactElement {
     >
       {keysQuery.isLoading ? (
         <Spinner size="large" label="Loading API keys…" />
-      ) : keysQuery.isError ? (
+      ) : keysQuery.isError && keysQuery.data === undefined ? (
         <div role="alert">
           <EmptyState
             icon="warning"

@@ -31,7 +31,7 @@ export interface SettingsSideNavProps {
 }
 
 /** Read --height-settings-sticky from CSS custom properties; fall back to 140. */
-function readStickyOffset(): number {
+export function readStickyOffset(): number {
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue('--height-settings-sticky')
     .trim();

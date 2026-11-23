@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter, Routes, Route, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { LibraryScreen } from './LibraryScreen';
+import { ApiError } from '../../../api/client';
 import type {
   DocumentsResponse,
   FacetsResponse,
@@ -115,6 +116,32 @@ describe('LibraryScreen', () => {
     );
     renderScreen();
     expect(screen.getByText(/could not load/i)).toBeInTheDocument();
+  });
+
+  it('keeps the loaded documents when a background refetch fails', () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult(
+        { documents: [makeDoc(1, 'Doc one')], total: 1, page: 1, page_size: 24 },
+        { isError: true },
+      ),
+    );
+    renderScreen();
+    expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Doc one')).toBeInTheDocument();
+  });
+
+  it('shows the index-initialising screen with a retry on a 503', async () => {
+    const refetch = vi.fn();
+    mockUseDocuments.mockReturnValue({
+      ...documentsResult(undefined, { isError: true }),
+      error: new ApiError(503, 'not ready'),
+      refetch,
+    });
+    renderScreen();
+    expect(screen.getByText('The index is initialising.')).toBeInTheDocument();
+    expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it('renders a card per document', () => {

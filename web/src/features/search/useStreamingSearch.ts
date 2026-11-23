@@ -106,12 +106,22 @@ function reducer(
   }
 }
 
+const UNAVAILABLE = 'The search is unavailable right now. Try again in a moment.';
+
+/** The request itself failed to reach the server; set apart from errors thrown later. */
+class RequestNotSent extends Error {}
+
 function toFailure(err: unknown): StreamFailure {
   if (err instanceof Unauthenticated) {
     return { status: 401, message: err.message };
   }
   if (err instanceof ApiError) {
-    return { status: err.status, message: err.message };
+    // Without a server detail, a 5xx or a non-JSON 2xx has only generic text.
+    const generic = err.detail === undefined && (err.status >= 500 || err.status < 400);
+    return { status: err.status, message: generic ? UNAVAILABLE : err.message };
+  }
+  if (err instanceof RequestNotSent) {
+    return { message: UNAVAILABLE };
   }
   return {
     message: err instanceof Error ? err.message : 'The search failed.',
@@ -208,10 +218,13 @@ export function useStreamingSearch(restore = false): UseStreamingSearch {
 
     void (async () => {
       try {
+        // fetch rejects with a TypeError when the network fails.
         const response = await streamSearch(
           { query, filters },
           controller.signal,
-        );
+        ).catch((err: unknown) => {
+          throw err instanceof TypeError ? new RequestNotSent() : err;
+        });
         if (!isCurrent()) {
           return;
         }

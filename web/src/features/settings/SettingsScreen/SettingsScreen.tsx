@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { SettingsLayout } from '../../../components/layout/SettingsLayout/SettingsLayout';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
@@ -15,6 +16,7 @@ import {
 import { useUnsavedSettings } from '../useUnsavedSettings';
 import { SettingsSection } from '../SettingsSection/SettingsSection';
 import { ConnectionsPanel } from '../ConnectionsPanel/ConnectionsPanel';
+import { readStickyOffset } from '../../../components/layout/SettingsSideNav/SettingsSideNav';
 import { SaveBar } from '../SaveBar/SaveBar';
 import { Toast } from '../../../components/patterns/Toast/Toast';
 
@@ -163,6 +165,19 @@ function SettingsContent({
     );
   };
 
+  // The sections only exist once the data has loaded, so the browser's own jump to the
+  // landing hash finds nothing; do it once they have rendered.
+  const landingHash = useLocation().hash.slice(1);
+  React.useEffect(() => {
+    const el = landingHash === '' ? null : document.getElementById(landingHash);
+    if (el === null) return;
+    window.scrollTo({
+      top: el.getBoundingClientRect().top + window.scrollY - readStickyOffset(),
+      behavior: 'instant',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       <div ref={screenRef}>
@@ -244,7 +259,7 @@ export function SettingsScreen(): React.ReactElement {
     );
   }
 
-  if (query.isError || query.data === undefined) {
+  if (query.data === undefined) {
     return (
       <SettingsLayout title="Settings">
         <div role="alert">

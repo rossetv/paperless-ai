@@ -174,4 +174,57 @@ describe('LibraryDocumentPage', () => {
     fireEvent.click(screen.getByRole('link', { name: 'next' }));
     expect(await screen.findByRole('button', { name: 'Edit title: Second' })).toBeInTheDocument();
   });
+
+  it('keeps the loaded document when a later refetch fails', async () => {
+    const getDocument = vi.spyOn(client, 'getDocument').mockResolvedValueOnce({
+      id: 42,
+      title: 'Kept doc',
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+      paperless_url: 'https://paperless.test/documents/42/',
+    });
+    getDocument.mockRejectedValue(new ApiError(500, 'boom'));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/library/document/42']}>
+          <Routes>
+            <Route path="/library/document/:id" element={<LibraryDocumentPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Kept doc');
+    await qc.invalidateQueries();
+    await waitFor(() => expect(getDocument).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(qc.getQueryState(['document', 42])?.status).toBe('error'));
+    expect(screen.getByText('Kept doc')).toBeInTheDocument();
+    expect(screen.queryByText(/could not load document/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the index-initialising screen with a retry on a 503', async () => {
+    const getDocument = vi
+      .spyOn(client, 'getDocument')
+      .mockRejectedValueOnce(new ApiError(503, 'not ready'));
+    getDocument.mockResolvedValue({
+      id: 42,
+      title: 'Ready doc',
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+      paperless_url: 'https://paperless.test/documents/42/',
+    });
+    renderAt('/library/document/42');
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'The index is initialising.' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/could not load document/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+    expect(await screen.findByText('Ready doc')).toBeInTheDocument();
+  });
 });

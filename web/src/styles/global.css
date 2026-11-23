@@ -12,6 +12,21 @@
 html {
   text-size-adjust: 100%;
   scroll-behavior: smooth;
+
+  /* Keep a focused control clear of the sticky bars. */
+  scroll-padding-top: calc(var(--height-nav) + var(--spacing-6));
+}
+
+@media (width <= 959.98px) {
+  html:has(nav[aria-label='Settings']) {
+    scroll-padding-top: calc(var(--height-nav) + var(--height-settings-strip) + var(--spacing-6));
+  }
+}
+
+@media (width <= 699.98px) {
+  html {
+    scroll-padding-bottom: calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0px) + var(--spacing-6));
+  }
 }
 
 body {

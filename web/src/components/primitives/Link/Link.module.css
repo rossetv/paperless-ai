@@ -23,7 +23,7 @@
 }
 
 .default:hover {
-  color: var(--colour-accent);
+  color: var(--colour-link-hover);
 }
 
 /* No underline: body links rely on colour alone. */
@@ -32,7 +32,7 @@
 }
 
 .inline:hover {
-  color: var(--colour-accent);
+  color: var(--colour-link-hover);
 }
 
 .on-dark {
@@ -40,5 +40,5 @@
 }
 
 .on-dark:hover {
-  color: var(--colour-accent);
+  color: var(--colour-link-on-dark-hover);
 }
