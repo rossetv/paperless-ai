@@ -72,3 +72,13 @@
   color: var(--colour-text-tertiary);
 }
 
+
+/* Looks disabled while the request runs; the button stays enabled so focus stays. */
+.pending.pending,
+.pending.pending:hover,
+.pending.pending:active {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

@@ -247,6 +247,8 @@ describe('APIKeysScreen', () => {
     const confirmButton = within(activeRow).getByRole('button', { name: /confirm/i });
     expect(confirmButton).not.toBeDisabled();
     expect(confirmButton).toHaveFocus();
+    expect(confirmButton.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(confirmButton.className).toMatch(/pending/);
     await userEvent.click(confirmButton);
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });

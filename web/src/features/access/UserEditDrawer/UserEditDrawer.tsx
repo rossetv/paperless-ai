@@ -254,13 +254,14 @@ export function UserEditDrawer({
 
         <div className={cn(styles['footer'], selfHelpId && styles['footer-self'])}>
           <div className={styles['actions']} {...confirmDelete.armedProps}>
-            <div className={styles['destructive']}>
+            <div className={styles['destructive']} aria-busy={busy ? true : undefined}>
               {!isCreate && (
                 <>
                   <Button
                     variant="ghost"
                     size="small"
                     type="button"
+                    className={busy ? styles['pending-ghost'] : undefined}
                     aria-describedby={selfHelpId}
                     disabled={isSelf}
                     onClick={() => {
@@ -275,6 +276,7 @@ export function UserEditDrawer({
                       variant="destructive"
                       size="small"
                       type="button"
+                      className={busy ? styles['pending'] : undefined}
                       aria-label={`Confirm delete ${user.username}`}
                       aria-describedby={selfHelpId}
                       disabled={isSelf}
@@ -306,11 +308,15 @@ export function UserEditDrawer({
               </p>
             )}
           </div>
-          <div className={styles['primary']}>
+          <div className={styles['primary']} aria-busy={busy ? true : undefined}>
             <Button variant="secondary" type="button" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit">
+            <Button
+              variant="primary"
+              type="submit"
+              className={busy ? styles['pending-primary'] : undefined}
+            >
               {isCreate ? 'Create user' : 'Save'}
             </Button>
           </div>

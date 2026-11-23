@@ -197,6 +197,8 @@ describe('UserEditDrawer — edit mode', () => {
     const confirmButton = screen.getByRole('button', { name: /^confirm delete/i });
     expect(confirmButton).not.toBeDisabled();
     expect(confirmButton).toHaveFocus();
+    expect(confirmButton.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(confirmButton.className).toMatch(/pending/);
     await userEvent.click(confirmButton);
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
@@ -214,6 +216,8 @@ describe('UserEditDrawer — edit mode', () => {
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save).not.toBeDisabled();
     expect(save).toHaveFocus();
+    expect(save.closest('[aria-busy="true"]')).not.toBeNull();
+    expect(save.className).toMatch(/pending/);
     await userEvent.click(save);
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });

@@ -85,3 +85,33 @@
   line-height: var(--line-height-caption);
   color: var(--colour-text-tertiary);
 }
+
+/* Look disabled while the request runs; the buttons stay enabled so focus stays. */
+.pending.pending,
+.pending.pending:hover,
+.pending.pending:active,
+.pending-primary.pending-primary,
+.pending-primary.pending-primary:hover,
+.pending-primary.pending-primary:active,
+.pending-ghost.pending-ghost,
+.pending-ghost.pending-ghost:hover,
+.pending-ghost.pending-ghost:active {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.pending-primary.pending-primary,
+.pending-primary.pending-primary:hover,
+.pending-primary.pending-primary:active {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+}
+
+.pending-ghost.pending-ghost,
+.pending-ghost.pending-ghost:hover,
+.pending-ghost.pending-ghost:active {
+  background-color: transparent;
+  color: var(--colour-text-secondary);
+}

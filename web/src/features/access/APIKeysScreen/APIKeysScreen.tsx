@@ -150,7 +150,11 @@ export function APIKeysScreen(): React.ReactElement {
         // Editing is owner-only; the server enforces this too.
         const canEdit = state === 'active' && k.owner_id === me?.id;
         return (
-          <div className={styles['row-actions']} {...confirm.armedProps}>
+          <div
+            className={styles['row-actions']}
+            aria-busy={confirm.armed === k.id && deleteKey.isPending ? true : undefined}
+            {...confirm.armedProps}
+          >
             {canEdit && (
               <Button
                 variant="ghost"
@@ -164,6 +168,7 @@ export function APIKeysScreen(): React.ReactElement {
               <Button
                 variant="destructive"
                 size="small"
+                className={deleteKey.isPending ? styles['pending'] : undefined}
                 aria-label={`Confirm ${actionLabel.toLowerCase()} ${k.name}`}
                 onClick={() => {
                   // Not disabled while pending: a disabled button would drop keyboard focus.
