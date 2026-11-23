@@ -10,6 +10,7 @@ import { Button } from '../../primitives/Button/Button';
 import { Stack } from '../../layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
 import { useDebounce } from '../../../hooks/useDebounce';
+import { isNarrowViewport } from '../../../lib/isNarrowViewport';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
 import styles from './FilterControls.module.css';
 
@@ -30,15 +31,6 @@ export interface FilterControlsProps {
    * below the fold.
    */
   defaultExpanded?: boolean;
-}
-
-/** True below the 834px breakpoint; matchMedia is missing in some test environments. */
-function isNarrowViewport(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(max-width: 834px)').matches
-  );
 }
 
 function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
