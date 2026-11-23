@@ -25,6 +25,9 @@
 
 .action:hover {
   background-color: var(--colour-button-active-bg);
+
+  /* Global a:hover turns the label link blue, under 4.5:1 on this fill. */
+  color: var(--colour-text-primary);
 }
 
 /*
@@ -39,16 +42,21 @@
   line-height: var(--line-height-caption);
 }
 
-/* In the PDF error overlay (dark in both themes) the light-surface button hides its on-dark label. */
-[role='alert'] .action {
+/*
+ * In the PDF error overlay (dark in both themes) the light-theme button would
+ * hide its label on a white fill; dark already reads on its own surface.
+ */
+:root:not([data-theme='dark']) [role='alert'] .action {
   background-color: transparent;
+  border-color: var(--colour-link-on-dark);
   color: var(--colour-link-on-dark);
 }
 
-[role='alert'] .action:hover {
+:root:not([data-theme='dark']) [role='alert'] .action:hover {
   background-color: var(--colour-dark-surface);
+  color: var(--colour-link-on-dark);
 }
 
-[role='alert'] .action:active {
+:root:not([data-theme='dark']) [role='alert'] .action:active {
   background-color: var(--colour-dark-bg);
 }
