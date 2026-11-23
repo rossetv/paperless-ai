@@ -66,12 +66,11 @@ def test_filter_request_rejects_over_64_tag_ids() -> None:
 
 
 @pytest.mark.parametrize("bad", ["April 2025", "2025-4-01", "2025-13-40"])
-def test_an_invalid_date_from_is_dropped_like_date_to(bad: str) -> None:
-    result = to_search_filters(FilterRequest(date_from=bad, date_to=bad))
-
-    assert result is not None
-    assert result.date_from is None
-    assert result.date_to is None
+def test_an_unreadable_date_is_refused(bad: str) -> None:
+    with pytest.raises(ValidationError, match="date_from"):
+        FilterRequest(date_from=bad)
+    with pytest.raises(ValidationError, match="date_to"):
+        FilterRequest(date_to=bad)
 
 
 def test_a_timestamp_date_from_keeps_only_its_day() -> None:

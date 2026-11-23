@@ -10,7 +10,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -48,7 +48,7 @@ from search.wire import (
     to_search_response,
     to_stats_response,
 )
-from search.wire.search import FILTER_ID_MAX, FILTER_ID_MIN, FilterId
+from search.wire.search import FILTER_ID_MAX, FILTER_ID_MIN, FilterDate, FilterId
 from search.wire.stream import error_line, event_line, result_line
 from store import SchemaNotReadyError, StoreError
 
@@ -311,8 +311,8 @@ def build_api_router(
             default=None, ge=FILTER_ID_MIN, le=FILTER_ID_MAX
         ),
         tag_ids: list[FilterId] = Query(default_factory=list, max_length=64),
-        date_from: str | None = Query(default=None),
-        date_to: str | None = Query(default=None),
+        date_from: Annotated[FilterDate, Query()] = None,
+        date_to: Annotated[FilterDate, Query()] = None,
     ) -> DocumentListResponse:
         """List indexed documents for the Library, paginated.
 

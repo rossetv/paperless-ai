@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
 
 from search.dates import normalise_iso_date
 from search.models import NoMatchReason
@@ -26,11 +26,22 @@ FILTER_ID_MAX = 2**63 - 1
 FilterId = Annotated[int, Field(ge=FILTER_ID_MIN, le=FILTER_ID_MAX)]
 
 
+def _readable_date(value: str | None) -> str | None:
+    """Pass an empty or absent date through; refuse one that cannot be read."""
+    if value and normalise_iso_date(value) is None:
+        raise ValueError("must be a date in YYYY-MM-DD form")
+    return value
+
+
+# An empty date means no filter; anything else must be readable as a date.
+FilterDate = Annotated[str | None, AfterValidator(_readable_date)]
+
+
 class FilterRequest(BaseModel):
     """Optional filters supplied in a search request; unknown keys are ignored."""
 
-    date_from: str | None = None
-    date_to: str | None = None
+    date_from: FilterDate = None
+    date_to: FilterDate = None
     correspondent_id: FilterId | None = None
     document_type_id: FilterId | None = None
     # Same bound as GET /api/documents: an unbounded list is cheap payload bloat.
