@@ -189,6 +189,30 @@ describe('SettingsScreen', () => {
     expect(await screen.findByText(/could not load/i)).toBeInTheDocument();
   });
 
+  it('keeps the loaded settings when a later refetch fails', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      { status: 500, body: { detail: 'boom' } },
+    ]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/settings']}>
+          <SettingsScreen />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await client.invalidateQueries();
+    await waitFor(() =>
+      expect(client.getQueryCache().findAll().some((q) => q.state.status === 'error')).toBe(true),
+    );
+    expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Top K' })).toBeInTheDocument();
+  });
+
   it('binds a field to its fetched value', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();

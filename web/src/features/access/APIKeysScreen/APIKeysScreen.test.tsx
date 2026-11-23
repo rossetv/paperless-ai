@@ -147,6 +147,16 @@ describe('APIKeysScreen', () => {
     expect(screen.getByText(/could not load/i)).toBeInTheDocument();
   });
 
+  it('keeps the loaded keys when a background refetch fails', () => {
+    mockKeys.mockReturnValue(
+      keysResult({ isError: true, error: new Error('x'), data: { keys: KEYS } }),
+    );
+    renderScreen();
+    expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'API Keys' })).toBeInTheDocument();
+    expect(screen.getByText(KEYS[0]!.name)).toBeInTheDocument();
+  });
+
   it('renders the API Keys page title', () => {
     mockKeys.mockReturnValue(keysResult({ isSuccess: true, data: { keys: KEYS } }));
     renderScreen();

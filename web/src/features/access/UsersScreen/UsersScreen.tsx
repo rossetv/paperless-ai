@@ -130,7 +130,7 @@ export function UsersScreen(): React.ReactElement {
     >
       {usersQuery.isLoading ? (
         <Spinner size="large" label="Loading users…" />
-      ) : usersQuery.isError ? (
+      ) : usersQuery.isError && usersQuery.data === undefined ? (
         <div role="alert">
           <EmptyState
             icon="warning"

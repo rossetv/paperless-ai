@@ -102,6 +102,15 @@ describe('UsersScreen', () => {
     expect(screen.getByText(/could not load users/i)).toBeInTheDocument();
   });
 
+  it('keeps the loaded users when a background refetch fails', () => {
+    mockUseUsers.mockReturnValue(
+      usersResult({ isError: true, error: new Error('nope'), data: { users: USERS } }),
+    );
+    renderScreen();
+    expect(screen.queryByText(/could not load users/i)).not.toBeInTheDocument();
+    expect(screen.getByText('total accounts')).toBeInTheDocument();
+  });
+
   it('renders the Users page title', () => {
     mockUseUsers.mockReturnValue(usersResult({ isSuccess: true, data: { users: USERS } }));
     renderScreen();

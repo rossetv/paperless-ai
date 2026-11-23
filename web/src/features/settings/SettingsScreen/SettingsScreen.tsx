@@ -244,7 +244,7 @@ export function SettingsScreen(): React.ReactElement {
     );
   }
 
-  if (query.isError || query.data === undefined) {
+  if (query.data === undefined) {
     return (
       <SettingsLayout title="Settings">
         <div role="alert">
