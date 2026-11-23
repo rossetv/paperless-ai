@@ -61,6 +61,9 @@ def _default_paperless_factory(settings: Settings) -> PaperlessClient:
 
 log = structlog.get_logger(__name__)
 
+# The SQLite integer range: a larger offset cannot be bound to the query.
+OFFSET_MAX = 2**63 - 1
+
 # Strong references to tool bodies whose caller was cancelled: the loop holds
 # tasks only weakly, and a body must run on to free its slot.
 _in_flight: set[asyncio.Task[str]] = set()
@@ -534,6 +537,8 @@ def _register_search_tools(
                 f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
             )
         bounded_limit = max(1, min(int(limit), 50))
+        if offset > OFFSET_MAX:
+            raise ToolError(f"offset must not exceed {OFFSET_MAX}")
         bounded_offset = max(0, int(offset))
         try:
             ui_filters = _to_search_filters(filters)

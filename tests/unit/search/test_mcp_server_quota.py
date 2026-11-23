@@ -374,12 +374,18 @@ async def test_tokens_spent_before_a_failed_deep_search_count_against_the_key(
     assert _tokens_used(app_db_path) == 30
 
 
-class _EmptyReplyLLMClient(_BilledLLMClient):
-    """Bills every call, but the planner's reply carries no choices."""
+class _UnreadableChoice:
+    @property
+    def message(self) -> Any:
+        raise RuntimeError("unreadable reply")
+
+
+class _BrokenReplyLLMClient(_BilledLLMClient):
+    """Bills every call, but reading the reply's text raises."""
 
     def route(self, **kwargs: Any) -> Any:
         completion = super().route(**kwargs)
-        completion.choices = []
+        completion.choices = [_UnreadableChoice()]
         return completion
 
 
@@ -395,7 +401,7 @@ async def test_tokens_spent_inside_the_phase_that_fails_a_deep_search_count_agai
         settings=make_search_settings(
             SEARCH_KEY_DAILY_TOKEN_QUOTA=QUOTA, SEARCH_CACHE_TTL_SECONDS=0
         ),
-        llm_client=_EmptyReplyLLMClient(
+        llm_client=_BrokenReplyLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[
                 answered_response_json("Answer [1].", citations=[1])

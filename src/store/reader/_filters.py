@@ -69,14 +69,18 @@ def _exclusive_upper_bound(date_to: str) -> str | None:
 
     *date_to* comes verbatim from a UI query param or the LLM planner, so it
     may be a full timestamp or garbage. Only its leading ``YYYY-MM-DD`` is used;
-    an unparseable value returns ``None`` and the bound is dropped rather than
-    failing the search.
+    an unparseable value, or the last representable day, returns ``None`` and
+    the bound is dropped rather than failing the search.
     """
     try:
         day = date.fromisoformat(date_to[:10])
     except ValueError:
         return None
-    return str(day + timedelta(days=1))
+    try:
+        return str(day + timedelta(days=1))
+    except OverflowError:
+        # The last representable day: nothing is later, so there is no bound.
+        return None
 
 
 def escape_fts_term(term: str) -> str:

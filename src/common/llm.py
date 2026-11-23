@@ -389,6 +389,9 @@ class OpenAIChatMixin:
                         total=getattr(usage, "total_tokens", 0) or 0,
                     )
                 )
+            if not completion.choices:
+                log.warning("llm.empty_choices", stage=log_event_prefix, model=model)
+                continue
             return completion.choices[0].message.content or ""
 
         return None

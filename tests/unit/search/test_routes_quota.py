@@ -136,12 +136,18 @@ def _core_failing_after_the_planner(error: Exception) -> Any:
     )
 
 
-class _EmptyReplyLLMClient(_BilledLLMClient):
-    """Bills every call, but the planner's reply carries no choices."""
+class _UnreadableChoice:
+    @property
+    def message(self) -> Any:
+        raise RuntimeError("unreadable reply")
+
+
+class _BrokenReplyLLMClient(_BilledLLMClient):
+    """Bills every call, but reading the reply's text raises."""
 
     def route(self, **kwargs: Any) -> Any:
         completion = super().route(**kwargs)
-        completion.choices = []
+        completion.choices = [_UnreadableChoice()]
         return completion
 
 
@@ -151,7 +157,7 @@ def _core_failing_inside_the_planner() -> Any:
     store_reader.list_facets.return_value = make_facet_set()
     return build_search_core(
         settings=make_search_settings(SEARCH_CACHE_TTL_SECONDS=0),
-        llm_client=_EmptyReplyLLMClient(
+        llm_client=_BrokenReplyLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[
                 answered_response_json("Answer [1].", citations=[1])
@@ -361,7 +367,7 @@ async def test_tokens_spent_inside_the_phase_that_fails_count_against_the_key(
 ) -> None:
     path, _raw_key, key_id = _app_db_with_key(tmp_path)
 
-    with pytest.raises(IndexError):
+    with pytest.raises(RuntimeError):
         await routes._search(
             SearchRequest(query="when does my boiler warranty expire?"),
             _core_failing_inside_the_planner(),
