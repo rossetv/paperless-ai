@@ -65,6 +65,8 @@ function SettingsContent({
   const [reindexNotice, setReindexNotice] = React.useState(false);
   const [savedNotice, setSavedNotice] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // SettingsLayout renders the h1 and takes no ref, so the heading is found within this screen.
+  const screenRef = React.useRef<HTMLDivElement>(null);
 
   // Reload, closing the tab and leaving the site would drop the edits. In-app navigation is not
   // intercepted: BrowserRouter has no blocker.
@@ -101,10 +103,10 @@ function SettingsContent({
           }
           setSavedNotice(true);
           // The save bar goes inert with the focused button inside it; park focus on the page
-          // heading rather than let it fall to the body.
-          const heading = document.querySelector('h1');
+          // heading rather than let it fall to the body, without scrolling the person's place.
+          const heading = screenRef.current?.querySelector('h1');
           heading?.setAttribute('tabindex', '-1');
-          heading?.focus();
+          heading?.focus({ preventScroll: true });
         },
         onError: (error) => {
           setSaveError(errorDetail(error, 'Could not save the settings. Try again.'));
@@ -115,32 +117,34 @@ function SettingsContent({
 
   return (
     <>
-      <SettingsLayout
-        title="Settings"
-        subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
-      >
-        {SETTINGS_SECTIONS.map((section) =>
-          section.id === 'connections' ? (
-            <ConnectionsPanel
-              key={section.id}
-              section={section}
-              values={draft}
-              onChange={handleChange}
-              reindexKeys={reindexKeys}
-              defaultKeys={defaultKeys}
-            />
-          ) : (
-            <SettingsSection
-              key={section.id}
-              section={section}
-              values={draft}
-              reindexKeys={reindexKeys}
-              defaultKeys={defaultKeys}
-              onChange={handleChange}
-            />
-          ),
-        )}
-      </SettingsLayout>
+      <div ref={screenRef}>
+        <SettingsLayout
+          title="Settings"
+          subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
+        >
+          {SETTINGS_SECTIONS.map((section) =>
+            section.id === 'connections' ? (
+              <ConnectionsPanel
+                key={section.id}
+                section={section}
+                values={draft}
+                onChange={handleChange}
+                reindexKeys={reindexKeys}
+                defaultKeys={defaultKeys}
+              />
+            ) : (
+              <SettingsSection
+                key={section.id}
+                section={section}
+                values={draft}
+                reindexKeys={reindexKeys}
+                defaultKeys={defaultKeys}
+                onChange={handleChange}
+              />
+            ),
+          )}
+        </SettingsLayout>
+      </div>
       <SaveBar
         dirtyCount={changedKeys.length}
         isPending={save.isPending}

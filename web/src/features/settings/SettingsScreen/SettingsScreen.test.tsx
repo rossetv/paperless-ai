@@ -298,6 +298,24 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toHaveFocus();
   });
 
+  it('moves focus to the heading after a save without scrolling the page to the top', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      { status: 200, body: toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }) },
+    ]);
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await screen.findByText('Settings saved.');
+    const heading = screen.getByRole('heading', { level: 1, name: 'Settings' });
+    expect(heading).toHaveFocus();
+    const headingCall = focus.mock.contexts.findIndex((el) => el === heading);
+    expect(focus.mock.calls[headingCall]).toEqual([{ preventScroll: true }]);
+    focus.mockRestore();
+  });
+
   it('shows the server error in a toast and keeps the edit when the save fails', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
