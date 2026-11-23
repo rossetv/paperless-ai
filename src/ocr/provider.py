@@ -113,6 +113,10 @@ class OcrProvider(OpenAIChatMixin):
                 # _create_with_compat already logged and counted the api_error.
                 continue
 
+            if not response.choices:
+                log.warning("Model returned no choices", model=model, **log_ctx)
+                continue
+
             text = (response.choices[0].message.content or "").strip()
 
             if is_model_refusal(

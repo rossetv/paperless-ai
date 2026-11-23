@@ -252,6 +252,30 @@ class TestOcrProviderAllFail:
         assert page.model == ""
 
 
+class TestOcrProviderEmptyChoices:
+    def test_falls_back_when_a_model_returns_no_choices(self):
+        provider = OcrProvider(_make_settings(OCR_MODELS=["model-a", "model-b"]))
+        provider._create_completion = MagicMock(
+            side_effect=[MagicMock(choices=[]), _make_response("Fallback text")]
+        )
+
+        page = provider.transcribe_image(_make_test_image())
+
+        assert page.text == "Fallback text"
+        assert page.model == "model-b"
+
+    def test_no_choices_without_fallback_returns_refusal_mark(self):
+        provider = OcrProvider(
+            _make_settings(OCR_MODELS=["model-a"], REFUSAL_MARK="REFUSED")
+        )
+        provider._create_completion = MagicMock(return_value=MagicMock(choices=[]))
+
+        page = provider.transcribe_image(_make_test_image())
+
+        assert page.text == "REFUSED"
+        assert page.model == ""
+
+
 class TestOcrProviderBlankImage:
     @patch("ocr.provider.is_blank", return_value=True)
     def test_blank_image_returns_empty_without_api_call(self, mock_is_blank):
