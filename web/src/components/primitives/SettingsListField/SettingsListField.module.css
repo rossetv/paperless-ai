@@ -132,7 +132,7 @@
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-accent);
+  color: var(--colour-link);
   cursor: pointer;
 }
 
@@ -143,4 +143,5 @@
 
 .add-button:hover:not(:disabled) {
   background-color: var(--colour-button-light-bg);
+  color: var(--colour-link-hover);
 }

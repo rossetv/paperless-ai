@@ -26,6 +26,7 @@ describe('SaveBar', () => {
     const bar = container.firstElementChild as HTMLElement;
     expect(bar.className).toMatch(/bar-hidden/);
     expect(bar).toHaveAttribute('inert', '');
+    expect(bar).not.toHaveAttribute('data-save-bar');
   });
 
   it('is visible when dirtyCount is greater than zero', () => {
@@ -33,6 +34,7 @@ describe('SaveBar', () => {
     const bar = container.firstElementChild as HTMLElement;
     expect(bar.className).not.toMatch(/bar-hidden/);
     expect(bar).not.toHaveAttribute('inert');
+    expect(bar).toHaveAttribute('data-save-bar', 'shown');
   });
 
   it('carries aria-live and aria-atomic for screen-reader announcements', () => {

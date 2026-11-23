@@ -32,7 +32,10 @@ export function LibraryDocumentPage(): React.ReactElement {
 
   if (docQuery.isLoading) return <FullPageLoading />;
 
-  if (docQuery.data === undefined) {
+  // A cached copy survives a failed refetch, but not a 404: the document is gone.
+  const notFound = docQuery.error instanceof ApiError && docQuery.error.status === 404;
+
+  if (docQuery.data === undefined || notFound) {
     if (docQuery.error instanceof ApiError && docQuery.error.status === 503) {
       return (
         <Page nav={<AppNavBar />}>
@@ -40,8 +43,6 @@ export function LibraryDocumentPage(): React.ReactElement {
         </Page>
       );
     }
-    const notFound =
-      docQuery.error instanceof ApiError && docQuery.error.status === 404;
     return (
       <Page nav={<AppNavBar />}>
         <DocumentErrorScreen notFound={notFound} />

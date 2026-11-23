@@ -108,6 +108,30 @@ class TestClassifyTextApiErrorFallback:
         assert stats["fallback_successes"] == 1
 
 
+class TestClassifyTextEmptyChoices:
+    def test_falls_back_when_a_model_returns_no_choices(self):
+        provider = make_provider(CLASSIFY_MODELS=["model-a", "model-b"])
+        good_response = make_completion_response(valid_classification_json())
+        provider._create_completion = MagicMock(
+            side_effect=[MagicMock(choices=[]), good_response]
+        )
+
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert result is not None
+        assert model == "model-b"
+        assert provider.get_stats()["fallback_successes"] == 1
+
+    def test_no_choices_without_fallback_returns_none(self):
+        provider = make_provider(CLASSIFY_MODELS=["model-a"])
+        provider._create_completion = MagicMock(return_value=MagicMock(choices=[]))
+
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert result is None
+        assert model == ""
+
+
 class TestClassifyTextAllModelsFail:
     def test_returns_none_when_all_fail(self):
         provider = make_provider(CLASSIFY_MODELS=["model-a", "model-b"])
