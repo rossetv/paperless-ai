@@ -64,6 +64,14 @@ function parseAnswer(answer: string): Segment[] {
   return segments;
 }
 
+/** Split an answer into plain and `**bold**` runs; unpaired markers stay text. */
+function splitBold(answer: string): { bold: boolean; value: string }[] {
+  // The single capture group puts every bold run at an odd index.
+  return answer
+    .split(/\*\*(\S(?:.*?\S)?)\*\*/)
+    .map((value, i) => ({ bold: i % 2 === 1, value }));
+}
+
 /** "What to try" hints shown below the nudge message in retry states. */
 const RETRY_HINT: Record<'clarify' | 'no_match', string> = {
   clarify:
@@ -103,7 +111,31 @@ export function AnswerCard({
     );
   }
 
-  const segments = parseAnswer(answer);
+  const renderCited = (text: string): React.ReactNode[] =>
+    parseAnswer(text).map((segment, i) => {
+      if (segment.type === 'text') {
+        return <React.Fragment key={i}>{segment.value}</React.Fragment>;
+      }
+
+      // A document that didn't make the result set renders verbatim rather
+      // than as a dead control.
+      const sourceIndex = sources.findIndex(
+        (s) => s.document_id === segment.docId,
+      );
+      if (sourceIndex === -1) {
+        return <React.Fragment key={i}>[{segment.docId}]</React.Fragment>;
+      }
+
+      return (
+        <CitationMark
+          key={i}
+          index={sourceIndex + 1}
+          {...(onCitationActivate !== undefined ? { onActivate: onCitationActivate } : {})}
+          sourceTitle={sources[sourceIndex]?.title ?? null}
+        />
+      );
+    });
+
   const costLabel =
     cost !== undefined ? formatSummaryCostLabel(cost) : undefined;
 
@@ -114,31 +146,13 @@ export function AnswerCard({
       refined={stats.refined}
       {...(costLabel !== undefined ? { costLabel } : {})}
     >
-      {segments.map((segment, i) => {
-        if (segment.type === 'text') {
-          return <React.Fragment key={i}>{segment.value}</React.Fragment>;
-        }
-
-        // A document that didn't make the result set renders verbatim rather
-        // than as a dead control.
-        const sourceIndex = sources.findIndex(
-          (s) => s.document_id === segment.docId,
-        );
-        if (sourceIndex === -1) {
-          return <React.Fragment key={i}>[{segment.docId}]</React.Fragment>;
-        }
-
-        const oneBasedIndex = sourceIndex + 1;
-        const source = sources[sourceIndex];
-        return (
-          <CitationMark
-            key={i}
-            index={oneBasedIndex}
-            {...(onCitationActivate !== undefined ? { onActivate: onCitationActivate } : {})}
-            sourceTitle={source?.title ?? null}
-          />
-        );
-      })}
+      {splitBold(answer).map((run, i) =>
+        run.bold ? (
+          <strong key={i}>{renderCited(run.value)}</strong>
+        ) : (
+          <React.Fragment key={i}>{renderCited(run.value)}</React.Fragment>
+        ),
+      )}
     </AnswerSurface>
   );
 }

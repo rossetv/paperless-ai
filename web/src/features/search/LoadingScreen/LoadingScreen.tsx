@@ -65,10 +65,14 @@ export function LoadingScreen({
   const activeStage = stages.find((s) => s.state === 'active');
 
   // The live rail omits per-phase cost chips, so the header shows the running total.
-  const spent = phaseRecords.reduce(
+  // One unpriced call makes the whole total unknown.
+  const spent = phaseRecords.reduce<{ tokens: number; usd: number | null }>(
     (acc, r) => ({
       tokens: acc.tokens + (r.tokens?.total ?? 0),
-      usd: acc.usd + (r.cost?.usd ?? 0),
+      usd:
+        acc.usd === null || r.cost?.usd === null
+          ? null
+          : acc.usd + (r.cost?.usd ?? 0),
     }),
     { tokens: 0, usd: 0 },
   );

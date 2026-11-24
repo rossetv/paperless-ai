@@ -154,6 +154,6 @@ The list's format, with illustrative prices:
 | `LLM_MAX_CONCURRENT` | `4` | LLM calls in flight per process; `0` for no limit. |
 | `MAX_RETRIES` | `3` | Attempts for a failed network call. |
 | `MAX_RETRY_BACKOFF_SECONDS` | `30` | Longest wait between attempts. |
-| `REQUEST_TIMEOUT` | `180` | Seconds before a model call times out. |
+| `REQUEST_TIMEOUT` | `180` | Seconds before a model call times out. Search answers on OpenAI use at most 60 per attempt. |
 | `LOG_LEVEL` | `INFO` | |
 | `LOG_FORMAT` | `console` | `console` or `json`. |

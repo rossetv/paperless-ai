@@ -8,6 +8,8 @@ for its LLM transport.
 
 from __future__ import annotations
 
+import pytest
+
 from search.models import Answered, NeedsMore, RetrievedChunk
 from search.synthesizer import Synthesizer
 from tests.helpers.factories import make_retrieved_chunk, make_search_settings
@@ -193,6 +195,26 @@ class TestMalformedResponseExploratory:
         outcome = synthesiser.synthesise("Any question?", chunks, mode="exploratory")
 
         assert isinstance(outcome, (Answered, NeedsMore))
+
+
+class TestAnswerTimeout:
+    @pytest.mark.parametrize(
+        ("provider", "request_timeout", "expected"),
+        [("openai", 180, 60), ("openai", 30, 30), ("ollama", 180, None)],
+    )
+    def test_only_hosted_answers_are_capped(
+        self, provider: str, request_timeout: int, expected: int | None
+    ) -> None:
+        synthesiser = build_synthesizer(
+            make_search_settings(
+                SEARCH_ANSWER_PROVIDER=provider, REQUEST_TIMEOUT=request_timeout
+            ),
+            answered_response_json("a [1].", citations=[1]),
+        )
+        synthesiser.synthesise("q", [_chunk(1, "t")], mode="exploratory")
+
+        call_kwargs = synthesiser._create_completion.call_args.kwargs
+        assert call_kwargs.get("timeout") == expected
 
 
 class TestSynthesiserUsageSink:

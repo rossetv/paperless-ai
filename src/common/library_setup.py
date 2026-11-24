@@ -63,6 +63,8 @@ def _build_provider_client(
         base_url=base_url,
         http_client=http_client,
         timeout=timeout,
+        # The SDK retries silently and would multiply our own logged retries.
+        max_retries=0,
     )
     return client, http_client
 
