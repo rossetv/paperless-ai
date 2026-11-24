@@ -42,6 +42,9 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# Per attempt: a hung hosted call is retried while the person is still waiting.
+_ANSWER_TIMEOUT_SECONDS = 60
+
 _FALLBACK_FINAL_ANSWER = (
     "No answer could be produced: the retrieved context did not yield "
     "a parseable response."
@@ -132,6 +135,12 @@ class Synthesizer(OpenAIChatMixin):
             # tierless requests. Omitted for non-OpenAI providers.
             service_tier=(
                 "default" if self.settings.SEARCH_ANSWER_PROVIDER == "openai" else None
+            ),
+            # Local models can legitimately need the full REQUEST_TIMEOUT.
+            timeout=(
+                min(self.settings.REQUEST_TIMEOUT, _ANSWER_TIMEOUT_SECONDS)
+                if self.settings.SEARCH_ANSWER_PROVIDER == "openai"
+                else None
             ),
             usage_sink=usage_sink,
         )

@@ -74,6 +74,7 @@ class TestOpenAIProvider:
         # Every chat call is bounded by REQUEST_TIMEOUT so a stalled provider
         # cannot hang a search for the SDK's ~600s default × retries.
         assert call_kwargs["timeout"] == 180
+        assert call_kwargs["max_retries"] == 0
         assert llm_mod._openai_holder.is_ready("openai")
         # No Ollama connection → that slot stays empty.
         assert not llm_mod._openai_holder.is_ready("ollama")
@@ -105,6 +106,7 @@ class TestOllamaProvider:
         call_kwargs = mock_openai_cls.call_args.kwargs
         assert call_kwargs["base_url"] == "http://ollama:11434/v1/"
         assert call_kwargs["api_key"] == "dummy"
+        assert call_kwargs["max_retries"] == 0
         assert llm_mod._openai_holder.is_ready("ollama")
         assert not llm_mod._openai_holder.is_ready("openai")
 

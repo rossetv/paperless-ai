@@ -176,6 +176,16 @@ describe('LoadingScreen', () => {
     expect(screen.getByText(/5\.7k tok · \$0\.014/)).toBeInTheDocument();
   });
 
+  it('shows an unknown total when any phase is unpriced', () => {
+    renderLoading({
+      phaseRecords: [
+        { ...PLAN_RECORD, cost: { usd: null, local: false } },
+        JUDGE_RECORD,
+      ],
+    });
+    expect(screen.getByText(/2\.1k tok · —/)).toBeInTheDocument();
+  });
+
   it('does not render the cost counter when total tokens is zero', () => {
     renderLoading({
       phaseRecords: [],

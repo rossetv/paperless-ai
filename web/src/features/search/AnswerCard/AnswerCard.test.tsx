@@ -33,6 +33,28 @@ describe('AnswerCard', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders bold runs, including a citation inside one', () => {
+    render(
+      <AnswerCard
+        answer="Pay **€1,097.86** from **21 November [1]**."
+        sources={[makeSource(1)]}
+        stats={stats}
+      />,
+    );
+    expect(screen.getByText('€1,097.86').tagName).toBe('STRONG');
+    expect(
+      screen.getByRole('button', { name: /view source 1/i }).closest('strong'),
+    ).not.toBeNull();
+    expect(screen.queryByText(/\*\*/)).not.toBeInTheDocument();
+  });
+
+  it('leaves unpaired asterisks as text', () => {
+    render(
+      <AnswerCard answer="2 ** 3 is **8" sources={[]} stats={stats} />,
+    );
+    expect(screen.getByText('2 ** 3 is **8')).toBeInTheDocument();
+  });
+
   it('renders a citation button for each inline [n] marker', () => {
     render(
       <AnswerCard

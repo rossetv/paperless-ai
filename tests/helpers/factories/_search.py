@@ -397,6 +397,7 @@ def make_search_settings(**overrides: Any) -> Any:
         # Keep the planner and synthesiser ``@retry`` decorators well-formed.
         "MAX_RETRIES": 3,
         "MAX_RETRY_BACKOFF_SECONDS": 30,
+        "REQUEST_TIMEOUT": 180,
         # "openai" so the structured-output helpers build a schema.
         "LLM_PROVIDER": "openai",
         # All openai so the structured-output / reasoning gates fire and the
